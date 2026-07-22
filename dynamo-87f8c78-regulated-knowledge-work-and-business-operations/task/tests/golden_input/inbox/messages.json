@@ -1,0 +1,244 @@
+{
+  "messages": [
+    {
+      "alternate_available": true,
+      "body": "Can we move the west briefing, but the sender forgot to include a proposed alternate time.",
+      "conflict": true,
+      "message_id": "msg-001",
+      "missing_required_details": true,
+      "no_legal_alternative": false,
+      "requires_escalation": false,
+      "subject": "West briefing time"
+    },
+    {
+      "alternate_available": true,
+      "body": "The follow-up conflicts with the current hold, but the sender proposed 15:45 in New York.",
+      "conflict": true,
+      "message_id": "msg-002",
+      "missing_required_details": false,
+      "no_legal_alternative": false,
+      "requires_escalation": false,
+      "subject": "Client east follow-up"
+    },
+    {
+      "alternate_available": false,
+      "body": "The request is outside policy and there is no legal alternative.",
+      "conflict": true,
+      "message_id": "msg-003",
+      "missing_required_details": false,
+      "no_legal_alternative": true,
+      "requires_escalation": false,
+      "subject": "Late dinner request"
+    },
+    {
+      "alternate_available": true,
+      "body": "This needs authority beyond the assistant limit even though an alternate slot exists.",
+      "conflict": true,
+      "message_id": "msg-004",
+      "missing_required_details": false,
+      "no_legal_alternative": false,
+      "requires_escalation": true,
+      "subject": "VIP override approval"
+    },
+    {
+      "alternate_available": false,
+      "body": "Please confirm the board debrief can stay at the original time.",
+      "conflict": false,
+      "message_id": "msg-005",
+      "missing_required_details": false,
+      "no_legal_alternative": false,
+      "requires_escalation": false,
+      "subject": "Board debrief confirmation"
+    },
+    {
+      "alternate_available": true,
+      "body": "We need the attendee list and an authority override is also being requested.",
+      "conflict": true,
+      "message_id": "msg-006",
+      "missing_required_details": true,
+      "no_legal_alternative": false,
+      "requires_escalation": true,
+      "subject": "Missing attendee list"
+    },
+    {
+      "alternate_available": true,
+      "body": "The sender already supplied a workable alternate, but the change still needs executive approval.",
+      "conflict": true,
+      "message_id": "msg-007",
+      "missing_required_details": false,
+      "no_legal_alternative": false,
+      "requires_escalation": true,
+      "subject": "Executive escalation"
+    },
+    {
+      "alternate_available": true,
+      "body": "The proposed move has no legal workaround even though a different slot was mentioned.",
+      "conflict": true,
+      "message_id": "msg-008",
+      "missing_required_details": false,
+      "no_legal_alternative": true,
+      "requires_escalation": false,
+      "subject": "No legal workaround"
+    },
+    {
+      "alternate_available": true,
+      "body": "The request conflicts with the current plan and a clean alternate is available.",
+      "conflict": true,
+      "message_id": "msg-009",
+      "missing_required_details": false,
+      "no_legal_alternative": false,
+      "requires_escalation": false,
+      "subject": "Routine slot shift"
+    },
+    {
+      "alternate_available": false,
+      "body": "This is just a routine status update with no action required.",
+      "conflict": false,
+      "message_id": "msg-010",
+      "missing_required_details": false,
+      "no_legal_alternative": false,
+      "requires_escalation": false,
+      "subject": "Status-only update"
+    },
+    {
+      "alternate_available": false,
+      "body": "The sender omitted the venue and the desired start time.",
+      "conflict": true,
+      "message_id": "msg-011",
+      "missing_required_details": true,
+      "no_legal_alternative": false,
+      "requires_escalation": false,
+      "subject": "Another missing detail"
+    },
+    {
+      "alternate_available": false,
+      "body": "Feasible as written and no policy exception is needed.",
+      "conflict": false,
+      "message_id": "msg-012",
+      "missing_required_details": false,
+      "no_legal_alternative": false,
+      "requires_escalation": false,
+      "subject": "Another routine note"
+    },
+    {
+      "alternate_available": false,
+      "body": "Missing the target date, and separately there is no legal workaround either way.",
+      "conflict": true,
+      "message_id": "msg-013",
+      "missing_required_details": true,
+      "no_legal_alternative": true,
+      "requires_escalation": false,
+      "subject": "Details and no workaround"
+    },
+    {
+      "alternate_available": true,
+      "body": "Needs executive sign-off; the sender also proposed a fallback slot.",
+      "conflict": true,
+      "message_id": "msg-014",
+      "missing_required_details": false,
+      "no_legal_alternative": false,
+      "requires_escalation": true,
+      "subject": "Escalation with alternate on the table"
+    },
+    {
+      "alternate_available": true,
+      "body": "No legal alternative exists, even though a fallback time was mentioned in passing.",
+      "conflict": true,
+      "message_id": "msg-015",
+      "missing_required_details": false,
+      "no_legal_alternative": true,
+      "requires_escalation": false,
+      "subject": "Decline outranks the alternate"
+    },
+    {
+      "alternate_available": false,
+      "body": "The request conflicts with the plan and the sender did not propose anything else.",
+      "conflict": true,
+      "message_id": "msg-016",
+      "missing_required_details": false,
+      "no_legal_alternative": false,
+      "requires_escalation": false,
+      "subject": "Conflict with no offer"
+    },
+    {
+      "alternate_available": true,
+      "body": "Missing details, needs escalation, and there is no legal alternative besides.",
+      "conflict": true,
+      "message_id": "msg-017",
+      "missing_required_details": true,
+      "no_legal_alternative": true,
+      "requires_escalation": true,
+      "subject": "Everything at once"
+    },
+    {
+      "alternate_available": true,
+      "body": "Needs authority above the assistant limit; separately flagged as having no legal alternative.",
+      "conflict": true,
+      "message_id": "msg-018",
+      "missing_required_details": false,
+      "no_legal_alternative": true,
+      "requires_escalation": true,
+      "subject": "Escalation beats decline"
+    },
+    {
+      "alternate_available": true,
+      "body": "Sender proposed an alternate time even though nothing on the calendar conflicts.",
+      "conflict": false,
+      "message_id": "msg-019",
+      "missing_required_details": false,
+      "no_legal_alternative": false,
+      "requires_escalation": false,
+      "subject": "Alternate offered but nothing conflicts"
+    },
+    {
+      "alternate_available": false,
+      "body": "Missing the requested duration; there happens to be no scheduling conflict either.",
+      "conflict": false,
+      "message_id": "msg-020",
+      "missing_required_details": true,
+      "no_legal_alternative": false,
+      "requires_escalation": false,
+      "subject": "Missing details, no conflict noted"
+    },
+    {
+      "alternate_available": false,
+      "body": "This is simply outside policy with no legal alternative, independent of any conflict.",
+      "conflict": false,
+      "message_id": "msg-021",
+      "missing_required_details": false,
+      "no_legal_alternative": true,
+      "requires_escalation": false,
+      "subject": "No legal alternative, no conflict noted"
+    },
+    {
+      "alternate_available": false,
+      "body": "Requires executive sign-off regardless of whether anything on the calendar conflicts.",
+      "conflict": false,
+      "message_id": "msg-022",
+      "missing_required_details": false,
+      "no_legal_alternative": false,
+      "requires_escalation": true,
+      "subject": "Escalation, no conflict noted"
+    },
+    {
+      "alternate_available": true,
+      "body": "Conflicts with an existing hold; a workable alternate slot was included.",
+      "conflict": true,
+      "message_id": "msg-023",
+      "missing_required_details": false,
+      "no_legal_alternative": false,
+      "requires_escalation": false,
+      "subject": "Clean propose-alternate case"
+    },
+    {
+      "alternate_available": false,
+      "body": "Conflicts with the plan; no alternate was proposed and no policy exception applies.",
+      "conflict": true,
+      "message_id": "msg-024",
+      "missing_required_details": false,
+      "no_legal_alternative": false,
+      "requires_escalation": false,
+      "subject": "Conflict, no alternate, no exception flags"
+    }
+  ]
+}

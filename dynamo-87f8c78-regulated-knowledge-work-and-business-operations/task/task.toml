@@ -1,0 +1,38 @@
+artifacts = ["/app/output.json"]  # paths the verifier reads from the agent (e.g. ["/app/output.json"]) — must be above the first [section]
+
+[task]
+name = "dynamo/exec-schedule-triage"  # required format: org/name (Harbor needs the slash); name part lowercase kebab-case, <=3 words
+description = "Expand recurring executive calendars, resolve interacting scheduling policy conflicts, and triage inbox replies."
+
+[metadata]
+# --- Pre-seeded for you when this repo was created — DO NOT EDIT ---
+category = "Regulated Knowledge Work and Business Operations"                      # diversity category, assigned to your task by the Dynamo team
+subcategory = "Personal Assistant Productivity"                   # diversity subcategory, assigned by the Dynamo team
+# --- Fixed for this dataset — LEAVE AS-IS ---
+model_tested = "Opus-4.8"           # difficulty-benchmarking model (do not change)
+agent_tested = "Terminus-2"        # difficulty-benchmarking agent (do not change)
+# --- You fill these in ---
+# task_objective / artifact_type: pick from .dynamo/diversity-taxonomy.toml (lowercase snake_case).
+task_objective = ["optimize", "analyze"]                # e.g. ["implement", "debug"]
+artifact_type = ["generated_output_artifact"]                 # e.g. ["codebase", "configuration_file"]
+expert_time_estimate_hours = 4.0     # best-case hours for a focused domain expert with the intended insight
+difficulty_explanation = "Solving this requires modeling several scheduling constraints that only produce the correct answer when applied jointly: protected blocks, a VIP-override exception that both bypasses the after-hours cutoff and can conditionally unlock bumping a protected block (without guaranteeing it -- objective_order still decides whether that's actually optimal), travel-time buffers between venues, meeting dependencies chained up to three deep, and RRULE-style recurrence expansion (COUNT vs UNTIL, EXDATE, multi-day BYDAY) across both a US and a UK DST transition inside one 33-day window spanning three timezone regions. Most of the movable events and their conflicting fixed counterparts sit in roughly a dozen small, mostly-independent conflict clusters that a careful search handles easily regardless of method; two clusters (26 and 28 same-venue candidate meetings, each competing for a window that can only fit a fraction of their combined duration, with priorities deliberately clustered close together) are genuinely NP-hard multiple-choice weighted interval scheduling instances where naive branch-and-bound with priority-sum pruning explores a large space before it can prove optimality, while a correctly-scoped exact method (e.g. CP-SAT/ILP) stays fast; the reference solves each via OR-Tools CP-SAT with sequential lexicographic optimization. Beyond recognizing that these two clusters need an exact combinatorial method at all, the objective's own tie-break clause (lexicographic minimization over the full occurrence set) is itself a trap: encoding it as a sequence of per-occurrence solver calls is textbook-correct but scales linearly in total occurrence count and can stall or exhaust the time budget, whereas encoding the same tie-break as a single weighted objective solves in one pass. A locally-plausible greedy choice (assuming higher raw priority always wins, that recognizing 'many independent small clusters' generalizes to the dense ones too, or reaching for the textbook per-occurrence tie-break encoding) produces a suboptimal, outright wrong, or unfinished result. With over 200 scheduled/deferred occurrences and 24 classified messages all graded by exact match, the sheer surface area of required-correct decisions further compounds the odds that a single mis-modeled rule or inefficient encoding produces at least one wrong value or a timeout. This mirrors the real judgment calls a chief of staff or senior EA makes when reconciling multiple calendars against travel and policy constraints at scale, and it cannot be done reliably by hand: the agent must write code to expand recurrences, convert time zones, detect conflicts, and search the placement space, recognizing where a naive search -- or a naive encoding of the tie-break -- stops being sufficient."
+solution_explanation = "The reference solution expands every calendar event into concrete UTC occurrences using dateutil.rrule plus EXDATE removal and zoneinfo for DST-correct conversion, computes each occurrence's legal placements under the after-hours/VIP-override rule, partitions occurrences into connected components by possible conflict (or shared dependency), and solves each component for the assignment that maximizes scheduled priority, then minimizes lateness, then moved count: an exhaustive search for small components, and OR-Tools CP-SAT (sequential lexicographic optimization plus a uniqueness check) for the two components too large to brute force. It keeps every locally-tied-optimal assignment, then combines components to minimize total travel minutes and break remaining ties by occurrence_id rank. Inbox replies are classified by directly applying the disclosed reply_rule_order to each message's boolean fields."
+verification_explanation = "A hidden verifier (not visible to the agent) compares /app/output.json against a precomputed reference fixture produced by the reference solver, requiring exact structural equality: the same set of scheduled occurrences (with their actual start/end/venue), the same moved and deferred occurrence_id sets, the same reply_categories mapping, and the same objective_score. It also byte-compares every file under /app/input/ against a golden copy to catch input tampering."
+
+[verifier]
+timeout_sec = 120.0                # increase based on your test suite's runtime demands
+# Canonical TB2: the verifier runs in the environment image (no separate tests/Dockerfile).
+# Harbor overlays tests/ at /tests only at verify time; leave environment_mode unset for this shared model.
+
+[agent]
+timeout_sec = 1800.0                # raise for hard tasks — agents may run for many minutes or hours
+
+[environment]
+build_timeout_sec = 600.0          # max seconds for the Docker build
+cpus = 1                           # increase for parallel/compute-heavy workloads
+memory_mb = 2048                   # increase for large datasets or in-memory processing
+storage_mb = 10240                 # increase for tasks with large files or build artifacts
+gpus = 0                           # max 1, expect H100
+allow_internet = true              # open internet is available to the agent
+mcp_servers = []                   # optional MCP servers to expose to the agent

@@ -1,0 +1,50 @@
+{
+  "after_hours_cutoff_local": "18:00",
+  "objective_definitions": {
+    "lateness_minutes": "Sum, over occurrences in final_schedule whose scheduled start is later than their original start_local (in the event's own timezone), of (scheduled_start_utc - original_start_utc) in minutes. Occurrences kept at or moved earlier than their original start contribute 0.",
+    "moved_count": "Number of occurrences in final_schedule whose scheduled start_local/venue differs from their original start_local/venue.",
+    "priority_score": "Sum of the priority field of every occurrence present in final_schedule.",
+    "travel_minutes": "Sum over every pair of occurrences that are chronologically adjacent in final_schedule (no other scheduled occurrence starts between them) of the travel_matrix.csv minutes between their two venues. Adjacent occurrences at the same venue contribute 0."
+  },
+  "objective_order": [
+    "maximize_priority_score",
+    "minimize_lateness_minutes",
+    "minimize_moved_count",
+    "minimize_travel_minutes",
+    "lexicographic_by_occurrence_id"
+  ],
+  "planning_window": {
+    "end_utc": "2026-04-03T23:59:59Z",
+    "start_utc": "2026-03-02T00:00:00Z"
+  },
+  "reply_categories": [
+    "ACK",
+    "DECLINE",
+    "PROPOSE_ALTERNATE",
+    "REQUEST_INFO",
+    "ESCALATE"
+  ],
+  "reply_rule_definitions": {
+    "conflict_with_alternate": "Else if conflict=true and alternate_available=true, its category is PROPOSE_ALTERNATE.",
+    "default_ack": "Else its category is ACK.",
+    "missing_required_details": "If a message's missing_required_details=true, its category is REQUEST_INFO, regardless of any other field.",
+    "no_legal_alternative": "Else if no_legal_alternative=true, its category is DECLINE.",
+    "requires_escalation": "Else if requires_escalation=true, its category is ESCALATE."
+  },
+  "reply_rule_order": [
+    "missing_required_details",
+    "requires_escalation",
+    "no_legal_alternative",
+    "conflict_with_alternate",
+    "default_ack"
+  ],
+  "scheduling_rules": {
+    "after_hours_rule": "An occurrence whose start_local time-of-day (in its own timezone) is at or after after_hours_cutoff_local is only allowed in final_schedule if after_hours_ok=true or vip_override=true; otherwise that start_local/venue combination is not a legal placement for the occurrence.",
+    "conflict_rule": "Two scheduled occurrences may never overlap in time. Two scheduled occurrences at different venues that do not overlap still conflict if the gap between them is smaller than the travel_matrix.csv minutes required between their venues; occurrences at the same venue never require a travel gap.",
+    "dependency_rule": "If occurrence B lists occurrence A's event_id in its dependencies, and both A and B appear in final_schedule, B's scheduled start must be no earlier than A's scheduled end. If A is not in final_schedule, B has no ordering constraint from this rule.",
+    "movable_rule": "An occurrence with movable=false has exactly one legal placement (its original start_local/venue) and can only be included as-is or left out of final_schedule entirely. An occurrence with movable=true may instead be placed at its original start_local/venue or at any of its candidate_slots, subject to the after-hours rule above.",
+    "protected_rule": "An occurrence with protected=true can never be moved and can only be left out of final_schedule if it directly conflicts with another scheduled occurrence whose vip_override=true; in every other situation a protected occurrence must appear in final_schedule at its original start_local/venue.",
+    "tie_break_rule": "After the four objective_order metrics above are optimized, any remaining tie is broken by comparing, in ascending order of occurrence_id, the rank of each occurrence's chosen placement: rank 0 is its original start_local/venue, and ranks 1, 2, ... are its remaining candidate_slots entries in listed order, skipping any candidate_slots entry that exactly duplicates the original placement or an earlier candidate_slots entry (such a duplicate is not a distinct placement and receives no rank of its own). An occurrence left out of final_schedule entirely ranks after all of its distinct placements. The valid final_schedule is the one whose sequence of ranks, read in occurrence_id order, is lexicographically smallest.",
+    "vip_override_rule": "An occurrence with vip_override=true is exempt from the after-hours cutoff. It is also the only thing that can unlock leaving a protected occurrence out of final_schedule (see protected_rule): if a scheduled vip_override occurrence directly conflicts with a protected occurrence, deferring that protected occurrence becomes a legal choice, and objective_order then decides -- like any other choice -- whether deferring it actually is optimal. Being vip_override=true does not by itself guarantee an occurrence beats a protected occurrence; it only makes that outcome reachable."
+  }
+}

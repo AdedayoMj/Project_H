@@ -1,0 +1,1025 @@
+{
+  "calendar": "operations",
+  "events": [
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "ops-sync",
+      "exdates": [],
+      "movable": false,
+      "priority": 76,
+      "protected": false,
+      "rrule": {
+        "byweekday": [
+          "MO",
+          "TU",
+          "WE",
+          "TH",
+          "FR"
+        ],
+        "freq": "DAILY",
+        "until": "2026-04-03T11:00:00"
+      },
+      "start_local": "2026-03-02T11:00:00",
+      "timezone": "UTC",
+      "title": "Ops sync",
+      "venue": "Remote",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "ops-review",
+      "exdates": [],
+      "movable": false,
+      "priority": 80,
+      "protected": false,
+      "rrule": {
+        "byweekday": [
+          "TU",
+          "TH"
+        ],
+        "freq": "WEEKLY",
+        "until": "2026-04-03T10:00:00"
+      },
+      "start_local": "2026-03-03T10:00:00",
+      "timezone": "America/New_York",
+      "title": "Client pipeline review",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 20,
+      "event_id": "ops-tracker",
+      "exdates": [],
+      "movable": false,
+      "priority": 68,
+      "protected": false,
+      "rrule": {
+        "byweekday": [
+          "MO",
+          "WE",
+          "FR"
+        ],
+        "freq": "WEEKLY",
+        "until": "2026-04-03T16:00:00"
+      },
+      "start_local": "2026-03-02T16:00:00",
+      "timezone": "America/Los_Angeles",
+      "title": "Weekly tracker update",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "ops-pulse",
+      "exdates": [],
+      "movable": false,
+      "priority": 60,
+      "protected": false,
+      "rrule": {
+        "byweekday": [
+          "MO",
+          "TU",
+          "WE",
+          "TH",
+          "FR"
+        ],
+        "freq": "DAILY",
+        "until": "2026-04-03T22:00:00"
+      },
+      "start_local": "2026-03-02T22:00:00",
+      "timezone": "UTC",
+      "title": "Afternoon pulse",
+      "venue": "Remote",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "asia-sync",
+      "exdates": [],
+      "movable": false,
+      "priority": 70,
+      "protected": false,
+      "rrule": {
+        "byweekday": [
+          "MO",
+          "WE",
+          "FR"
+        ],
+        "freq": "WEEKLY",
+        "until": "2026-04-03T09:00:00"
+      },
+      "start_local": "2026-03-02T09:00:00",
+      "timezone": "Asia/Singapore",
+      "title": "Asia regional sync",
+      "venue": "Singapore_Hub",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-10T10:15:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-10T15:45:00",
+          "venue": "NY_Client"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-east-follow",
+      "exdates": [],
+      "movable": true,
+      "priority": 88,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-10T10:15:00",
+      "timezone": "America/New_York",
+      "title": "East follow-up",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-11T11:15:00",
+          "venue": "Remote"
+        },
+        {
+          "start_local": "2026-03-11T09:30:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [
+        "mov-east-follow"
+      ],
+      "duration_minutes": 45,
+      "event_id": "mov-client-handoff",
+      "exdates": [],
+      "movable": true,
+      "priority": 85,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-11T11:15:00",
+      "timezone": "UTC",
+      "title": "Client handoff",
+      "venue": "Remote",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-12T14:30:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-12T16:00:00",
+          "venue": "LA_Studio"
+        }
+      ],
+      "dependencies": [
+        "mov-client-handoff"
+      ],
+      "duration_minutes": 45,
+      "event_id": "mov-strategy-call",
+      "exdates": [],
+      "movable": true,
+      "priority": 67,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-12T14:30:00",
+      "timezone": "America/Los_Angeles",
+      "title": "Strategy call",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-24T15:00:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-24T16:30:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-chain-a",
+      "exdates": [],
+      "movable": true,
+      "priority": 70,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-24T15:00:00",
+      "timezone": "America/New_York",
+      "title": "Chain A",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-24T15:30:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-24T17:00:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [
+        "mov-chain-a"
+      ],
+      "duration_minutes": 30,
+      "event_id": "mov-chain-b",
+      "exdates": [],
+      "movable": true,
+      "priority": 65,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-24T15:30:00",
+      "timezone": "America/New_York",
+      "title": "Chain B",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-24T15:45:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-24T17:45:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [
+        "mov-chain-b"
+      ],
+      "duration_minutes": 30,
+      "event_id": "mov-chain-c",
+      "exdates": [],
+      "movable": true,
+      "priority": 60,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-24T15:45:00",
+      "timezone": "America/New_York",
+      "title": "Chain C",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T15:10:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T15:25:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-summit-01",
+      "exdates": [],
+      "movable": true,
+      "priority": 68,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T15:05:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 1",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T15:00:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T13:55:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-summit-02",
+      "exdates": [],
+      "movable": true,
+      "priority": 74,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T15:10:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 2",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T14:55:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T15:55:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-summit-03",
+      "exdates": [],
+      "movable": true,
+      "priority": 77,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T16:45:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 3",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T16:30:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T15:40:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 40,
+      "event_id": "mov-summit-04",
+      "exdates": [],
+      "movable": true,
+      "priority": 80,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T16:55:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 4",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T16:15:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T17:00:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-summit-05",
+      "exdates": [],
+      "movable": true,
+      "priority": 74,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T16:55:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 5",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T15:40:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T16:10:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 40,
+      "event_id": "mov-summit-06",
+      "exdates": [],
+      "movable": true,
+      "priority": 56,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T17:05:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 6",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T14:45:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T16:35:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-summit-07",
+      "exdates": [],
+      "movable": true,
+      "priority": 68,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T14:20:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 7",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T15:00:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T16:35:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-summit-08",
+      "exdates": [],
+      "movable": true,
+      "priority": 56,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T14:30:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 8",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T15:15:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T15:00:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-summit-09",
+      "exdates": [],
+      "movable": true,
+      "priority": 56,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T14:35:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 9",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T14:50:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T15:55:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-summit-10",
+      "exdates": [],
+      "movable": true,
+      "priority": 65,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T14:30:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 10",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T15:40:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T16:20:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-summit-11",
+      "exdates": [],
+      "movable": true,
+      "priority": 80,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T14:35:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 11",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T17:25:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T14:50:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-summit-12",
+      "exdates": [],
+      "movable": true,
+      "priority": 74,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T15:45:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 12",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T14:25:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T16:10:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-summit-13",
+      "exdates": [],
+      "movable": true,
+      "priority": 59,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T13:35:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 13",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T14:40:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T14:35:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-summit-14",
+      "exdates": [],
+      "movable": true,
+      "priority": 71,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T15:05:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 14",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T16:15:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T14:15:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-summit-15",
+      "exdates": [],
+      "movable": true,
+      "priority": 62,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T14:00:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 15",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T14:40:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T15:45:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-summit-16",
+      "exdates": [],
+      "movable": true,
+      "priority": 80,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T16:25:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 16",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T15:20:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T14:50:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 40,
+      "event_id": "mov-summit-17",
+      "exdates": [],
+      "movable": true,
+      "priority": 56,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T15:00:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 17",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T17:15:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T13:30:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 40,
+      "event_id": "mov-summit-18",
+      "exdates": [],
+      "movable": true,
+      "priority": 77,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T14:30:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 18",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T16:50:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T16:30:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-summit-19",
+      "exdates": [],
+      "movable": true,
+      "priority": 71,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T14:40:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 19",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T14:05:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T15:20:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 40,
+      "event_id": "mov-summit-20",
+      "exdates": [],
+      "movable": true,
+      "priority": 59,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T17:05:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 20",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T14:20:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T15:30:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-summit-21",
+      "exdates": [],
+      "movable": true,
+      "priority": 62,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T14:00:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 21",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T17:00:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T15:00:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-summit-22",
+      "exdates": [],
+      "movable": true,
+      "priority": 65,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T14:30:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 22",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T16:55:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T14:50:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-summit-23",
+      "exdates": [],
+      "movable": true,
+      "priority": 77,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T17:20:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 23",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T14:25:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T17:10:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 40,
+      "event_id": "mov-summit-24",
+      "exdates": [],
+      "movable": true,
+      "priority": 65,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T16:10:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 24",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T13:55:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T13:30:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-summit-25",
+      "exdates": [],
+      "movable": true,
+      "priority": 62,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T15:25:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 25",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T17:00:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T14:25:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-summit-26",
+      "exdates": [],
+      "movable": true,
+      "priority": 68,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T15:15:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 26",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T15:00:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T16:40:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-summit-27",
+      "exdates": [],
+      "movable": true,
+      "priority": 59,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T14:05:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 27",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-20T15:35:00",
+          "venue": "NY_Office"
+        },
+        {
+          "start_local": "2026-03-20T16:30:00",
+          "venue": "NY_Office"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-summit-28",
+      "exdates": [],
+      "movable": true,
+      "priority": 71,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-20T16:50:00",
+      "timezone": "America/New_York",
+      "title": "Summit slot 28",
+      "venue": "NY_Office",
+      "vip_override": false
+    }
+  ]
+}

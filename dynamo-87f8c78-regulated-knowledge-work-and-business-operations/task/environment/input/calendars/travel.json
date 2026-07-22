@@ -1,0 +1,73 @@
+{
+  "calendar": "travel",
+  "events": [
+    {
+      "after_hours_ok": true,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 150,
+      "event_id": "travel-nyc-hold",
+      "exdates": [],
+      "movable": false,
+      "priority": 20,
+      "protected": true,
+      "rrule": null,
+      "start_local": "2026-03-10T19:00:00",
+      "timezone": "America/New_York",
+      "title": "Airport transit hold",
+      "venue": "Airport",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": true,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 540,
+      "event_id": "travel-lon-hold",
+      "exdates": [],
+      "movable": false,
+      "priority": 20,
+      "protected": true,
+      "rrule": null,
+      "start_local": "2026-03-14T23:30:00",
+      "timezone": "Europe/London",
+      "title": "Intercontinental transfer hold",
+      "venue": "Airport",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": true,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 480,
+      "event_id": "travel-sg-hold",
+      "exdates": [],
+      "movable": false,
+      "priority": 20,
+      "protected": true,
+      "rrule": null,
+      "start_local": "2026-03-22T20:00:00",
+      "timezone": "America/Los_Angeles",
+      "title": "Long-haul transfer hold",
+      "venue": "Airport",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": true,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 300,
+      "event_id": "travel-return-hold",
+      "exdates": [],
+      "movable": false,
+      "priority": 20,
+      "protected": true,
+      "rrule": null,
+      "start_local": "2026-04-01T06:00:00",
+      "timezone": "Europe/London",
+      "title": "Return transfer hold",
+      "venue": "Airport",
+      "vip_override": false
+    }
+  ]
+}

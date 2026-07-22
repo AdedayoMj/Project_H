@@ -1,0 +1,11 @@
+venue,LA_HQ,LA_Studio,NY_Office,NY_Client,London_Hub,London_Client,Remote,Airport,Singapore_Hub,Singapore_Client
+LA_HQ,0,25,40,42,50,52,5,15,60,62
+LA_Studio,25,0,42,44,52,54,10,18,62,64
+NY_Office,40,42,0,20,48,50,15,18,65,67
+NY_Client,42,44,20,0,50,52,18,20,66,68
+London_Hub,50,52,48,50,0,15,12,20,58,60
+London_Client,52,54,50,52,15,0,12,22,60,62
+Remote,5,10,15,18,12,12,0,8,14,16
+Airport,15,18,18,20,20,22,8,0,25,27
+Singapore_Hub,60,62,65,66,58,60,14,25,0,20
+Singapore_Client,62,64,67,68,60,62,16,27,20,0

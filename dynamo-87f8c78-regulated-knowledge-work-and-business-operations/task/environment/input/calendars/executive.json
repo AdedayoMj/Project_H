@@ -1,0 +1,1122 @@
+{
+  "calendar": "executive",
+  "events": [
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "exe-focus",
+      "exdates": [],
+      "movable": false,
+      "priority": 100,
+      "protected": true,
+      "rrule": {
+        "byweekday": [
+          "MO",
+          "TU",
+          "WE",
+          "TH",
+          "FR"
+        ],
+        "freq": "DAILY",
+        "until": "2026-04-03T08:30:00"
+      },
+      "start_local": "2026-03-02T08:30:00",
+      "timezone": "America/Los_Angeles",
+      "title": "Morning focus block",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "exe-standup",
+      "exdates": [
+        "2026-03-12T09:20:00",
+        "2026-03-26T09:20:00"
+      ],
+      "movable": false,
+      "priority": 92,
+      "protected": false,
+      "rrule": {
+        "byweekday": [
+          "MO",
+          "TU",
+          "WE",
+          "TH",
+          "FR"
+        ],
+        "freq": "DAILY",
+        "until": "2026-04-03T09:20:00"
+      },
+      "start_local": "2026-03-02T09:20:00",
+      "timezone": "America/Los_Angeles",
+      "title": "Leadership standup",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "exe-global",
+      "exdates": [],
+      "movable": false,
+      "priority": 84,
+      "protected": false,
+      "rrule": {
+        "byweekday": [
+          "MO",
+          "WE",
+          "FR"
+        ],
+        "freq": "WEEKLY",
+        "until": "2026-04-03T13:00:00"
+      },
+      "start_local": "2026-03-02T13:00:00",
+      "timezone": "Europe/London",
+      "title": "Global leadership update",
+      "venue": "London_Hub",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "exe-london-brief",
+      "exdates": [],
+      "movable": false,
+      "priority": 81,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-11T13:45:00",
+      "timezone": "Europe/London",
+      "title": "London partner briefing",
+      "venue": "London_Hub",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-09T10:10:00",
+          "venue": "LA_Studio"
+        },
+        {
+          "start_local": "2026-03-09T11:30:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-west-brief",
+      "exdates": [],
+      "movable": true,
+      "priority": 96,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-09T10:10:00",
+      "timezone": "America/Los_Angeles",
+      "title": "West client briefing",
+      "venue": "LA_Studio",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-09T12:30:00",
+          "venue": "LA_Studio"
+        },
+        {
+          "start_local": "2026-03-09T13:45:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [
+        "mov-west-brief"
+      ],
+      "duration_minutes": 45,
+      "event_id": "mov-product-demo",
+      "exdates": [],
+      "movable": true,
+      "priority": 73,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-09T12:30:00",
+      "timezone": "America/Los_Angeles",
+      "title": "Product demo prep",
+      "venue": "LA_Studio",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-13T16:30:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-13T17:45:00",
+          "venue": "LA_Studio"
+        }
+      ],
+      "dependencies": [
+        "mov-product-demo"
+      ],
+      "duration_minutes": 45,
+      "event_id": "mov-board-debrief",
+      "exdates": [],
+      "movable": true,
+      "priority": 82,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-13T16:30:00",
+      "timezone": "America/Los_Angeles",
+      "title": "Board debrief",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-10T17:30:00",
+          "venue": "London_Client"
+        },
+        {
+          "start_local": "2026-03-10T18:15:00",
+          "venue": "London_Hub"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-vip-touch",
+      "exdates": [],
+      "movable": true,
+      "priority": 90,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-10T17:30:00",
+      "timezone": "Europe/London",
+      "title": "VIP touchbase",
+      "venue": "London_Client",
+      "vip_override": true
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-14T19:15:00",
+          "venue": "London_Client"
+        },
+        {
+          "start_local": "2026-03-14T19:45:00",
+          "venue": "London_Hub"
+        }
+      ],
+      "dependencies": [
+        "mov-vip-touch"
+      ],
+      "duration_minutes": 45,
+      "event_id": "mov-optional-dinner",
+      "exdates": [],
+      "movable": true,
+      "priority": 40,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-14T19:15:00",
+      "timezone": "Europe/London",
+      "title": "Optional dinner",
+      "venue": "London_Client",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "exe-quiet-hour",
+      "exdates": [],
+      "movable": false,
+      "priority": 90,
+      "protected": true,
+      "rrule": null,
+      "start_local": "2026-03-17T14:00:00",
+      "timezone": "America/Los_Angeles",
+      "title": "Quiet hour",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-crisis-call-low",
+      "exdates": [],
+      "movable": false,
+      "priority": 72,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-17T14:00:00",
+      "timezone": "America/Los_Angeles",
+      "title": "Low-priority crisis call",
+      "venue": "LA_HQ",
+      "vip_override": true
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "exe-security-briefing",
+      "exdates": [],
+      "movable": false,
+      "priority": 75,
+      "protected": true,
+      "rrule": null,
+      "start_local": "2026-03-18T14:30:00",
+      "timezone": "America/New_York",
+      "title": "Security briefing",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-urgent-nonvip",
+      "exdates": [],
+      "movable": false,
+      "priority": 91,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-18T14:30:00",
+      "timezone": "America/New_York",
+      "title": "Urgent non-VIP request",
+      "venue": "NY_Office",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "exe-routine-check",
+      "exdates": [],
+      "movable": false,
+      "priority": 55,
+      "protected": true,
+      "rrule": null,
+      "start_local": "2026-03-19T15:00:00",
+      "timezone": "America/Los_Angeles",
+      "title": "Routine check-in",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-board-emergency",
+      "exdates": [],
+      "movable": false,
+      "priority": 89,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-19T15:00:00",
+      "timezone": "America/Los_Angeles",
+      "title": "Board emergency",
+      "venue": "LA_HQ",
+      "vip_override": true
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-23T10:00:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-23T11:00:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-tie-alpha",
+      "exdates": [],
+      "movable": true,
+      "priority": 60,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-23T10:00:00",
+      "timezone": "America/Los_Angeles",
+      "title": "Sync A",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-23T10:15:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-23T11:15:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-tie-beta",
+      "exdates": [],
+      "movable": true,
+      "priority": 60,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-23T10:15:00",
+      "timezone": "America/Los_Angeles",
+      "title": "Sync B",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-31T14:00:00",
+          "venue": "London_Hub"
+        },
+        {
+          "start_local": "2026-03-31T15:30:00",
+          "venue": "London_Hub"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-post-dst-review",
+      "exdates": [],
+      "movable": true,
+      "priority": 78,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-31T14:00:00",
+      "timezone": "Europe/London",
+      "title": "Post-transition review",
+      "venue": "London_Hub",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-23T16:00:00",
+          "venue": "Singapore_Hub"
+        },
+        {
+          "start_local": "2026-03-23T09:35:00",
+          "venue": "Singapore_Hub"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-asia-handoff",
+      "exdates": [],
+      "movable": true,
+      "priority": 83,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-23T16:00:00",
+      "timezone": "Asia/Singapore",
+      "title": "Asia handoff",
+      "venue": "Singapore_Hub",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T11:25:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T14:25:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-war-01",
+      "exdates": [],
+      "movable": true,
+      "priority": 58,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T13:20:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 1",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T10:35:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T12:00:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-war-02",
+      "exdates": [],
+      "movable": true,
+      "priority": 64,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T10:05:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 2",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T14:55:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T14:10:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-war-03",
+      "exdates": [],
+      "movable": true,
+      "priority": 73,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T15:05:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 3",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T10:50:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T10:35:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 40,
+      "event_id": "mov-war-04",
+      "exdates": [],
+      "movable": true,
+      "priority": 61,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T15:00:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 4",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T12:00:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T10:50:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-war-05",
+      "exdates": [],
+      "movable": true,
+      "priority": 67,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T10:10:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 5",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T14:25:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T16:00:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-war-06",
+      "exdates": [],
+      "movable": true,
+      "priority": 58,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T13:40:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 6",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T10:35:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T13:00:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-war-07",
+      "exdates": [],
+      "movable": true,
+      "priority": 82,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T13:50:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 7",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T15:50:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T11:30:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-war-08",
+      "exdates": [],
+      "movable": true,
+      "priority": 67,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T12:40:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 8",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T14:30:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T12:40:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-war-09",
+      "exdates": [],
+      "movable": true,
+      "priority": 73,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T14:50:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 9",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T13:10:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T14:10:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-war-10",
+      "exdates": [],
+      "movable": true,
+      "priority": 79,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T10:05:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 10",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T13:45:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T11:00:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-war-11",
+      "exdates": [],
+      "movable": true,
+      "priority": 61,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T13:10:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 11",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T11:45:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T15:15:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-war-12",
+      "exdates": [],
+      "movable": true,
+      "priority": 82,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T12:10:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 12",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T12:00:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T12:40:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-war-13",
+      "exdates": [],
+      "movable": true,
+      "priority": 76,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T13:05:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 13",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T15:55:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T16:15:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-war-14",
+      "exdates": [],
+      "movable": true,
+      "priority": 70,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T11:10:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 14",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T14:40:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T16:00:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 45,
+      "event_id": "mov-war-15",
+      "exdates": [],
+      "movable": true,
+      "priority": 61,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T14:20:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 15",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T13:15:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T14:50:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-war-16",
+      "exdates": [],
+      "movable": true,
+      "priority": 58,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T14:10:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 16",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T16:00:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T15:20:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-war-17",
+      "exdates": [],
+      "movable": true,
+      "priority": 73,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T15:45:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 17",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T14:15:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T11:35:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 40,
+      "event_id": "mov-war-18",
+      "exdates": [],
+      "movable": true,
+      "priority": 79,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T14:05:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 18",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T12:20:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T14:50:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-war-19",
+      "exdates": [],
+      "movable": true,
+      "priority": 70,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T16:10:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 19",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T14:40:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T10:25:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-war-20",
+      "exdates": [],
+      "movable": true,
+      "priority": 70,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T10:20:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 20",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T11:00:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T10:00:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-war-21",
+      "exdates": [],
+      "movable": true,
+      "priority": 67,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T15:35:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 21",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T15:30:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T15:10:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 40,
+      "event_id": "mov-war-22",
+      "exdates": [],
+      "movable": true,
+      "priority": 76,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T12:35:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 22",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T16:00:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T12:10:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-war-23",
+      "exdates": [],
+      "movable": true,
+      "priority": 76,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T10:25:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 23",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T16:20:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T13:00:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-war-24",
+      "exdates": [],
+      "movable": true,
+      "priority": 64,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T14:00:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 24",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T13:55:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T16:15:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 35,
+      "event_id": "mov-war-25",
+      "exdates": [],
+      "movable": true,
+      "priority": 64,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T14:15:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 25",
+      "venue": "LA_HQ",
+      "vip_override": false
+    },
+    {
+      "after_hours_ok": false,
+      "candidate_slots": [
+        {
+          "start_local": "2026-03-26T14:55:00",
+          "venue": "LA_HQ"
+        },
+        {
+          "start_local": "2026-03-26T14:45:00",
+          "venue": "LA_HQ"
+        }
+      ],
+      "dependencies": [],
+      "duration_minutes": 30,
+      "event_id": "mov-war-26",
+      "exdates": [],
+      "movable": true,
+      "priority": 79,
+      "protected": false,
+      "rrule": null,
+      "start_local": "2026-03-26T13:25:00",
+      "timezone": "America/Los_Angeles",
+      "title": "War room slot 26",
+      "venue": "LA_HQ",
+      "vip_override": false
+    }
+  ]
+}

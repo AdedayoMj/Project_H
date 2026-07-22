@@ -1,0 +1,1443 @@
+{
+  "deferred_items": [
+    "asia-sync@2026-03-11T09:00:00",
+    "exe-routine-check@2026-03-19T15:00:00",
+    "mov-crisis-call-low@2026-03-17T14:00:00",
+    "mov-east-follow@2026-03-10T10:15:00",
+    "mov-optional-dinner@2026-03-14T19:15:00",
+    "mov-post-dst-review@2026-03-31T14:00:00",
+    "mov-summit-01@2026-03-20T15:05:00",
+    "mov-summit-02@2026-03-20T15:10:00",
+    "mov-summit-04@2026-03-20T16:55:00",
+    "mov-summit-05@2026-03-20T16:55:00",
+    "mov-summit-06@2026-03-20T17:05:00",
+    "mov-summit-08@2026-03-20T14:30:00",
+    "mov-summit-09@2026-03-20T14:35:00",
+    "mov-summit-10@2026-03-20T14:30:00",
+    "mov-summit-13@2026-03-20T13:35:00",
+    "mov-summit-14@2026-03-20T15:05:00",
+    "mov-summit-16@2026-03-20T16:25:00",
+    "mov-summit-17@2026-03-20T15:00:00",
+    "mov-summit-19@2026-03-20T14:40:00",
+    "mov-summit-20@2026-03-20T17:05:00",
+    "mov-summit-21@2026-03-20T14:00:00",
+    "mov-summit-22@2026-03-20T14:30:00",
+    "mov-summit-23@2026-03-20T17:20:00",
+    "mov-summit-24@2026-03-20T16:10:00",
+    "mov-summit-25@2026-03-20T15:25:00",
+    "mov-summit-26@2026-03-20T15:15:00",
+    "mov-summit-27@2026-03-20T14:05:00",
+    "mov-urgent-nonvip@2026-03-18T14:30:00",
+    "mov-war-02@2026-03-26T10:05:00",
+    "mov-war-03@2026-03-26T15:05:00",
+    "mov-war-04@2026-03-26T15:00:00",
+    "mov-war-06@2026-03-26T13:40:00",
+    "mov-war-08@2026-03-26T12:40:00",
+    "mov-war-11@2026-03-26T13:10:00",
+    "mov-war-13@2026-03-26T13:05:00",
+    "mov-war-15@2026-03-26T14:20:00",
+    "mov-war-16@2026-03-26T14:10:00",
+    "mov-war-19@2026-03-26T16:10:00",
+    "mov-war-20@2026-03-26T10:20:00",
+    "mov-war-22@2026-03-26T12:35:00",
+    "mov-war-23@2026-03-26T10:25:00",
+    "mov-war-24@2026-03-26T14:00:00",
+    "mov-war-25@2026-03-26T14:15:00",
+    "ops-pulse@2026-03-02T22:00:00",
+    "ops-pulse@2026-03-03T22:00:00",
+    "ops-pulse@2026-03-04T22:00:00",
+    "ops-pulse@2026-03-05T22:00:00",
+    "ops-pulse@2026-03-06T22:00:00",
+    "ops-pulse@2026-03-09T22:00:00",
+    "ops-pulse@2026-03-10T22:00:00",
+    "ops-pulse@2026-03-11T22:00:00",
+    "ops-pulse@2026-03-12T22:00:00",
+    "ops-pulse@2026-03-13T22:00:00",
+    "ops-pulse@2026-03-16T22:00:00",
+    "ops-pulse@2026-03-17T22:00:00",
+    "ops-pulse@2026-03-18T22:00:00",
+    "ops-pulse@2026-03-19T22:00:00",
+    "ops-pulse@2026-03-20T22:00:00",
+    "ops-pulse@2026-03-23T22:00:00",
+    "ops-pulse@2026-03-24T22:00:00",
+    "ops-pulse@2026-03-25T22:00:00",
+    "ops-pulse@2026-03-26T22:00:00",
+    "ops-pulse@2026-03-27T22:00:00",
+    "ops-pulse@2026-03-30T22:00:00",
+    "ops-pulse@2026-03-31T22:00:00",
+    "ops-pulse@2026-04-01T22:00:00",
+    "ops-pulse@2026-04-02T22:00:00",
+    "ops-pulse@2026-04-03T22:00:00",
+    "ops-sync@2026-03-23T11:00:00"
+  ],
+  "final_schedule": [
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-02T01:30:00Z",
+      "event_id": "asia-sync",
+      "occurrence_id": "asia-sync@2026-03-02T09:00:00",
+      "start_utc": "2026-03-02T01:00:00Z",
+      "venue": "Singapore_Hub"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-02T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-02T11:00:00",
+      "start_utc": "2026-03-02T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-02T13:30:00Z",
+      "event_id": "exe-global",
+      "occurrence_id": "exe-global@2026-03-02T13:00:00",
+      "start_utc": "2026-03-02T13:00:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-02T17:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-02T08:30:00",
+      "start_utc": "2026-03-02T16:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-02T17:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-02T09:20:00",
+      "start_utc": "2026-03-02T17:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-03T00:20:00Z",
+      "event_id": "ops-tracker",
+      "occurrence_id": "ops-tracker@2026-03-02T16:00:00",
+      "start_utc": "2026-03-03T00:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-03T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-03T11:00:00",
+      "start_utc": "2026-03-03T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-03T15:45:00Z",
+      "event_id": "ops-review",
+      "occurrence_id": "ops-review@2026-03-03T10:00:00",
+      "start_utc": "2026-03-03T15:00:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-03T17:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-03T08:30:00",
+      "start_utc": "2026-03-03T16:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-03T17:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-03T09:20:00",
+      "start_utc": "2026-03-03T17:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-04T01:30:00Z",
+      "event_id": "asia-sync",
+      "occurrence_id": "asia-sync@2026-03-04T09:00:00",
+      "start_utc": "2026-03-04T01:00:00Z",
+      "venue": "Singapore_Hub"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-04T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-04T11:00:00",
+      "start_utc": "2026-03-04T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-04T13:30:00Z",
+      "event_id": "exe-global",
+      "occurrence_id": "exe-global@2026-03-04T13:00:00",
+      "start_utc": "2026-03-04T13:00:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-04T17:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-04T08:30:00",
+      "start_utc": "2026-03-04T16:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-04T17:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-04T09:20:00",
+      "start_utc": "2026-03-04T17:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-05T00:20:00Z",
+      "event_id": "ops-tracker",
+      "occurrence_id": "ops-tracker@2026-03-04T16:00:00",
+      "start_utc": "2026-03-05T00:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-05T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-05T11:00:00",
+      "start_utc": "2026-03-05T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-05T15:45:00Z",
+      "event_id": "ops-review",
+      "occurrence_id": "ops-review@2026-03-05T10:00:00",
+      "start_utc": "2026-03-05T15:00:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-05T17:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-05T08:30:00",
+      "start_utc": "2026-03-05T16:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-05T17:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-05T09:20:00",
+      "start_utc": "2026-03-05T17:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-06T01:30:00Z",
+      "event_id": "asia-sync",
+      "occurrence_id": "asia-sync@2026-03-06T09:00:00",
+      "start_utc": "2026-03-06T01:00:00Z",
+      "venue": "Singapore_Hub"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-06T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-06T11:00:00",
+      "start_utc": "2026-03-06T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-06T13:30:00Z",
+      "event_id": "exe-global",
+      "occurrence_id": "exe-global@2026-03-06T13:00:00",
+      "start_utc": "2026-03-06T13:00:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-06T17:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-06T08:30:00",
+      "start_utc": "2026-03-06T16:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-06T17:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-06T09:20:00",
+      "start_utc": "2026-03-06T17:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-07T00:20:00Z",
+      "event_id": "ops-tracker",
+      "occurrence_id": "ops-tracker@2026-03-06T16:00:00",
+      "start_utc": "2026-03-07T00:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-09T01:30:00Z",
+      "event_id": "asia-sync",
+      "occurrence_id": "asia-sync@2026-03-09T09:00:00",
+      "start_utc": "2026-03-09T01:00:00Z",
+      "venue": "Singapore_Hub"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-09T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-09T11:00:00",
+      "start_utc": "2026-03-09T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-09T13:30:00Z",
+      "event_id": "exe-global",
+      "occurrence_id": "exe-global@2026-03-09T13:00:00",
+      "start_utc": "2026-03-09T13:00:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-09T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-09T08:30:00",
+      "start_utc": "2026-03-09T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-09T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-09T09:20:00",
+      "start_utc": "2026-03-09T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-09T19:15:00Z",
+      "event_id": "mov-west-brief",
+      "occurrence_id": "mov-west-brief@2026-03-09T10:10:00",
+      "start_utc": "2026-03-09T18:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-09T21:30:00Z",
+      "event_id": "mov-product-demo",
+      "occurrence_id": "mov-product-demo@2026-03-09T12:30:00",
+      "start_utc": "2026-03-09T20:45:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-09T23:20:00Z",
+      "event_id": "ops-tracker",
+      "occurrence_id": "ops-tracker@2026-03-09T16:00:00",
+      "start_utc": "2026-03-09T23:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-10T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-10T11:00:00",
+      "start_utc": "2026-03-10T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-10T14:45:00Z",
+      "event_id": "ops-review",
+      "occurrence_id": "ops-review@2026-03-10T10:00:00",
+      "start_utc": "2026-03-10T14:00:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-10T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-10T08:30:00",
+      "start_utc": "2026-03-10T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-10T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-10T09:20:00",
+      "start_utc": "2026-03-10T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-10T19:00:00Z",
+      "event_id": "mov-vip-touch",
+      "occurrence_id": "mov-vip-touch@2026-03-10T17:30:00",
+      "start_utc": "2026-03-10T18:15:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "travel",
+      "end_utc": "2026-03-11T01:30:00Z",
+      "event_id": "travel-nyc-hold",
+      "occurrence_id": "travel-nyc-hold@2026-03-10T19:00:00",
+      "start_utc": "2026-03-10T23:00:00Z",
+      "venue": "Airport"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-11T10:15:00Z",
+      "event_id": "mov-client-handoff",
+      "occurrence_id": "mov-client-handoff@2026-03-11T11:15:00",
+      "start_utc": "2026-03-11T09:30:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-11T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-11T11:00:00",
+      "start_utc": "2026-03-11T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-11T13:30:00Z",
+      "event_id": "exe-global",
+      "occurrence_id": "exe-global@2026-03-11T13:00:00",
+      "start_utc": "2026-03-11T13:00:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-11T14:30:00Z",
+      "event_id": "exe-london-brief",
+      "occurrence_id": "exe-london-brief@2026-03-11T13:45:00",
+      "start_utc": "2026-03-11T13:45:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-11T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-11T08:30:00",
+      "start_utc": "2026-03-11T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-11T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-11T09:20:00",
+      "start_utc": "2026-03-11T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-11T23:20:00Z",
+      "event_id": "ops-tracker",
+      "occurrence_id": "ops-tracker@2026-03-11T16:00:00",
+      "start_utc": "2026-03-11T23:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-12T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-12T11:00:00",
+      "start_utc": "2026-03-12T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-12T14:45:00Z",
+      "event_id": "ops-review",
+      "occurrence_id": "ops-review@2026-03-12T10:00:00",
+      "start_utc": "2026-03-12T14:00:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-12T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-12T08:30:00",
+      "start_utc": "2026-03-12T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-12T22:15:00Z",
+      "event_id": "mov-strategy-call",
+      "occurrence_id": "mov-strategy-call@2026-03-12T14:30:00",
+      "start_utc": "2026-03-12T21:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-13T01:30:00Z",
+      "event_id": "asia-sync",
+      "occurrence_id": "asia-sync@2026-03-13T09:00:00",
+      "start_utc": "2026-03-13T01:00:00Z",
+      "venue": "Singapore_Hub"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-13T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-13T11:00:00",
+      "start_utc": "2026-03-13T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-13T13:30:00Z",
+      "event_id": "exe-global",
+      "occurrence_id": "exe-global@2026-03-13T13:00:00",
+      "start_utc": "2026-03-13T13:00:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-13T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-13T08:30:00",
+      "start_utc": "2026-03-13T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-13T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-13T09:20:00",
+      "start_utc": "2026-03-13T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-13T23:20:00Z",
+      "event_id": "ops-tracker",
+      "occurrence_id": "ops-tracker@2026-03-13T16:00:00",
+      "start_utc": "2026-03-13T23:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-14T00:15:00Z",
+      "event_id": "mov-board-debrief",
+      "occurrence_id": "mov-board-debrief@2026-03-13T16:30:00",
+      "start_utc": "2026-03-13T23:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "travel",
+      "end_utc": "2026-03-15T08:30:00Z",
+      "event_id": "travel-lon-hold",
+      "occurrence_id": "travel-lon-hold@2026-03-14T23:30:00",
+      "start_utc": "2026-03-14T23:30:00Z",
+      "venue": "Airport"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-16T01:30:00Z",
+      "event_id": "asia-sync",
+      "occurrence_id": "asia-sync@2026-03-16T09:00:00",
+      "start_utc": "2026-03-16T01:00:00Z",
+      "venue": "Singapore_Hub"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-16T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-16T11:00:00",
+      "start_utc": "2026-03-16T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-16T13:30:00Z",
+      "event_id": "exe-global",
+      "occurrence_id": "exe-global@2026-03-16T13:00:00",
+      "start_utc": "2026-03-16T13:00:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-16T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-16T08:30:00",
+      "start_utc": "2026-03-16T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-16T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-16T09:20:00",
+      "start_utc": "2026-03-16T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-16T23:20:00Z",
+      "event_id": "ops-tracker",
+      "occurrence_id": "ops-tracker@2026-03-16T16:00:00",
+      "start_utc": "2026-03-16T23:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-17T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-17T11:00:00",
+      "start_utc": "2026-03-17T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-17T14:45:00Z",
+      "event_id": "ops-review",
+      "occurrence_id": "ops-review@2026-03-17T10:00:00",
+      "start_utc": "2026-03-17T14:00:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-17T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-17T08:30:00",
+      "start_utc": "2026-03-17T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-17T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-17T09:20:00",
+      "start_utc": "2026-03-17T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-17T21:30:00Z",
+      "event_id": "exe-quiet-hour",
+      "occurrence_id": "exe-quiet-hour@2026-03-17T14:00:00",
+      "start_utc": "2026-03-17T21:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-18T01:30:00Z",
+      "event_id": "asia-sync",
+      "occurrence_id": "asia-sync@2026-03-18T09:00:00",
+      "start_utc": "2026-03-18T01:00:00Z",
+      "venue": "Singapore_Hub"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-18T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-18T11:00:00",
+      "start_utc": "2026-03-18T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-18T13:30:00Z",
+      "event_id": "exe-global",
+      "occurrence_id": "exe-global@2026-03-18T13:00:00",
+      "start_utc": "2026-03-18T13:00:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-18T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-18T08:30:00",
+      "start_utc": "2026-03-18T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-18T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-18T09:20:00",
+      "start_utc": "2026-03-18T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-18T19:00:00Z",
+      "event_id": "exe-security-briefing",
+      "occurrence_id": "exe-security-briefing@2026-03-18T14:30:00",
+      "start_utc": "2026-03-18T18:30:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-18T23:20:00Z",
+      "event_id": "ops-tracker",
+      "occurrence_id": "ops-tracker@2026-03-18T16:00:00",
+      "start_utc": "2026-03-18T23:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-19T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-19T11:00:00",
+      "start_utc": "2026-03-19T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-19T14:45:00Z",
+      "event_id": "ops-review",
+      "occurrence_id": "ops-review@2026-03-19T10:00:00",
+      "start_utc": "2026-03-19T14:00:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-19T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-19T08:30:00",
+      "start_utc": "2026-03-19T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-19T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-19T09:20:00",
+      "start_utc": "2026-03-19T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-19T22:30:00Z",
+      "event_id": "mov-board-emergency",
+      "occurrence_id": "mov-board-emergency@2026-03-19T15:00:00",
+      "start_utc": "2026-03-19T22:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-20T01:30:00Z",
+      "event_id": "asia-sync",
+      "occurrence_id": "asia-sync@2026-03-20T09:00:00",
+      "start_utc": "2026-03-20T01:00:00Z",
+      "venue": "Singapore_Hub"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-20T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-20T11:00:00",
+      "start_utc": "2026-03-20T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-20T13:30:00Z",
+      "event_id": "exe-global",
+      "occurrence_id": "exe-global@2026-03-20T13:00:00",
+      "start_utc": "2026-03-20T13:00:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-20T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-20T08:30:00",
+      "start_utc": "2026-03-20T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-20T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-20T09:20:00",
+      "start_utc": "2026-03-20T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-20T18:10:00Z",
+      "event_id": "mov-summit-18",
+      "occurrence_id": "mov-summit-18@2026-03-20T14:30:00",
+      "start_utc": "2026-03-20T17:30:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-20T18:55:00Z",
+      "event_id": "mov-summit-07",
+      "occurrence_id": "mov-summit-07@2026-03-20T14:20:00",
+      "start_utc": "2026-03-20T18:20:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-20T19:40:00Z",
+      "event_id": "mov-summit-03",
+      "occurrence_id": "mov-summit-03@2026-03-20T16:45:00",
+      "start_utc": "2026-03-20T18:55:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-20T20:15:00Z",
+      "event_id": "mov-summit-11",
+      "occurrence_id": "mov-summit-11@2026-03-20T14:35:00",
+      "start_utc": "2026-03-20T19:40:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-20T20:45:00Z",
+      "event_id": "mov-summit-15",
+      "occurrence_id": "mov-summit-15@2026-03-20T14:00:00",
+      "start_utc": "2026-03-20T20:15:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-20T21:25:00Z",
+      "event_id": "mov-summit-28",
+      "occurrence_id": "mov-summit-28@2026-03-20T16:50:00",
+      "start_utc": "2026-03-20T20:50:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-20T21:55:00Z",
+      "event_id": "mov-summit-12",
+      "occurrence_id": "mov-summit-12@2026-03-20T15:45:00",
+      "start_utc": "2026-03-20T21:25:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-20T23:20:00Z",
+      "event_id": "ops-tracker",
+      "occurrence_id": "ops-tracker@2026-03-20T16:00:00",
+      "start_utc": "2026-03-20T23:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-23T01:30:00Z",
+      "event_id": "asia-sync",
+      "occurrence_id": "asia-sync@2026-03-23T09:00:00",
+      "start_utc": "2026-03-23T01:00:00Z",
+      "venue": "Singapore_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-23T02:20:00Z",
+      "event_id": "mov-asia-handoff",
+      "occurrence_id": "mov-asia-handoff@2026-03-23T16:00:00",
+      "start_utc": "2026-03-23T01:35:00Z",
+      "venue": "Singapore_Hub"
+    },
+    {
+      "calendar": "travel",
+      "end_utc": "2026-03-23T11:00:00Z",
+      "event_id": "travel-sg-hold",
+      "occurrence_id": "travel-sg-hold@2026-03-22T20:00:00",
+      "start_utc": "2026-03-23T03:00:00Z",
+      "venue": "Airport"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-23T13:30:00Z",
+      "event_id": "exe-global",
+      "occurrence_id": "exe-global@2026-03-23T13:00:00",
+      "start_utc": "2026-03-23T13:00:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-23T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-23T08:30:00",
+      "start_utc": "2026-03-23T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-23T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-23T09:20:00",
+      "start_utc": "2026-03-23T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-23T17:30:00Z",
+      "event_id": "mov-tie-alpha",
+      "occurrence_id": "mov-tie-alpha@2026-03-23T10:00:00",
+      "start_utc": "2026-03-23T17:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-23T18:45:00Z",
+      "event_id": "mov-tie-beta",
+      "occurrence_id": "mov-tie-beta@2026-03-23T10:15:00",
+      "start_utc": "2026-03-23T18:15:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-23T23:20:00Z",
+      "event_id": "ops-tracker",
+      "occurrence_id": "ops-tracker@2026-03-23T16:00:00",
+      "start_utc": "2026-03-23T23:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-24T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-24T11:00:00",
+      "start_utc": "2026-03-24T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-24T14:45:00Z",
+      "event_id": "ops-review",
+      "occurrence_id": "ops-review@2026-03-24T10:00:00",
+      "start_utc": "2026-03-24T14:00:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-24T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-24T08:30:00",
+      "start_utc": "2026-03-24T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-24T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-24T09:20:00",
+      "start_utc": "2026-03-24T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-24T19:45:00Z",
+      "event_id": "mov-chain-a",
+      "occurrence_id": "mov-chain-a@2026-03-24T15:00:00",
+      "start_utc": "2026-03-24T19:00:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-24T21:30:00Z",
+      "event_id": "mov-chain-b",
+      "occurrence_id": "mov-chain-b@2026-03-24T15:30:00",
+      "start_utc": "2026-03-24T21:00:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-24T22:15:00Z",
+      "event_id": "mov-chain-c",
+      "occurrence_id": "mov-chain-c@2026-03-24T15:45:00",
+      "start_utc": "2026-03-24T21:45:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-25T01:30:00Z",
+      "event_id": "asia-sync",
+      "occurrence_id": "asia-sync@2026-03-25T09:00:00",
+      "start_utc": "2026-03-25T01:00:00Z",
+      "venue": "Singapore_Hub"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-25T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-25T11:00:00",
+      "start_utc": "2026-03-25T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-25T13:30:00Z",
+      "event_id": "exe-global",
+      "occurrence_id": "exe-global@2026-03-25T13:00:00",
+      "start_utc": "2026-03-25T13:00:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-25T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-25T08:30:00",
+      "start_utc": "2026-03-25T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-25T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-25T09:20:00",
+      "start_utc": "2026-03-25T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-25T23:20:00Z",
+      "event_id": "ops-tracker",
+      "occurrence_id": "ops-tracker@2026-03-25T16:00:00",
+      "start_utc": "2026-03-25T23:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-26T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-26T11:00:00",
+      "start_utc": "2026-03-26T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-26T14:45:00Z",
+      "event_id": "ops-review",
+      "occurrence_id": "ops-review@2026-03-26T10:00:00",
+      "start_utc": "2026-03-26T14:00:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-26T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-26T08:30:00",
+      "start_utc": "2026-03-26T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-26T17:30:00Z",
+      "event_id": "mov-war-21",
+      "occurrence_id": "mov-war-21@2026-03-26T15:35:00",
+      "start_utc": "2026-03-26T17:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-26T18:20:00Z",
+      "event_id": "mov-war-07",
+      "occurrence_id": "mov-war-07@2026-03-26T13:50:00",
+      "start_utc": "2026-03-26T17:35:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-26T19:00:00Z",
+      "event_id": "mov-war-01",
+      "occurrence_id": "mov-war-01@2026-03-26T13:20:00",
+      "start_utc": "2026-03-26T18:25:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-26T19:35:00Z",
+      "event_id": "mov-war-05",
+      "occurrence_id": "mov-war-05@2026-03-26T10:10:00",
+      "start_utc": "2026-03-26T19:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-26T20:10:00Z",
+      "event_id": "mov-war-09",
+      "occurrence_id": "mov-war-09@2026-03-26T14:50:00",
+      "start_utc": "2026-03-26T19:40:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-26T20:45:00Z",
+      "event_id": "mov-war-10",
+      "occurrence_id": "mov-war-10@2026-03-26T10:05:00",
+      "start_utc": "2026-03-26T20:10:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-26T21:45:00Z",
+      "event_id": "mov-war-18",
+      "occurrence_id": "mov-war-18@2026-03-26T14:05:00",
+      "start_utc": "2026-03-26T21:05:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-26T22:15:00Z",
+      "event_id": "mov-war-26",
+      "occurrence_id": "mov-war-26@2026-03-26T13:25:00",
+      "start_utc": "2026-03-26T21:45:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-26T22:45:00Z",
+      "event_id": "mov-war-12",
+      "occurrence_id": "mov-war-12@2026-03-26T12:10:00",
+      "start_utc": "2026-03-26T22:15:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-26T23:15:00Z",
+      "event_id": "mov-war-17",
+      "occurrence_id": "mov-war-17@2026-03-26T15:45:00",
+      "start_utc": "2026-03-26T22:45:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-26T23:45:00Z",
+      "event_id": "mov-war-14",
+      "occurrence_id": "mov-war-14@2026-03-26T11:10:00",
+      "start_utc": "2026-03-26T23:15:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-27T01:30:00Z",
+      "event_id": "asia-sync",
+      "occurrence_id": "asia-sync@2026-03-27T09:00:00",
+      "start_utc": "2026-03-27T01:00:00Z",
+      "venue": "Singapore_Hub"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-27T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-27T11:00:00",
+      "start_utc": "2026-03-27T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-27T13:30:00Z",
+      "event_id": "exe-global",
+      "occurrence_id": "exe-global@2026-03-27T13:00:00",
+      "start_utc": "2026-03-27T13:00:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-27T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-27T08:30:00",
+      "start_utc": "2026-03-27T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-27T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-27T09:20:00",
+      "start_utc": "2026-03-27T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-27T23:20:00Z",
+      "event_id": "ops-tracker",
+      "occurrence_id": "ops-tracker@2026-03-27T16:00:00",
+      "start_utc": "2026-03-27T23:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-30T01:30:00Z",
+      "event_id": "asia-sync",
+      "occurrence_id": "asia-sync@2026-03-30T09:00:00",
+      "start_utc": "2026-03-30T01:00:00Z",
+      "venue": "Singapore_Hub"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-30T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-30T11:00:00",
+      "start_utc": "2026-03-30T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-30T12:30:00Z",
+      "event_id": "exe-global",
+      "occurrence_id": "exe-global@2026-03-30T13:00:00",
+      "start_utc": "2026-03-30T12:00:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-30T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-30T08:30:00",
+      "start_utc": "2026-03-30T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-30T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-30T09:20:00",
+      "start_utc": "2026-03-30T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-30T23:20:00Z",
+      "event_id": "ops-tracker",
+      "occurrence_id": "ops-tracker@2026-03-30T16:00:00",
+      "start_utc": "2026-03-30T23:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-31T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-03-31T11:00:00",
+      "start_utc": "2026-03-31T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-03-31T14:45:00Z",
+      "event_id": "ops-review",
+      "occurrence_id": "ops-review@2026-03-31T10:00:00",
+      "start_utc": "2026-03-31T14:00:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-31T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-03-31T08:30:00",
+      "start_utc": "2026-03-31T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-03-31T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-03-31T09:20:00",
+      "start_utc": "2026-03-31T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-04-01T01:30:00Z",
+      "event_id": "asia-sync",
+      "occurrence_id": "asia-sync@2026-04-01T09:00:00",
+      "start_utc": "2026-04-01T01:00:00Z",
+      "venue": "Singapore_Hub"
+    },
+    {
+      "calendar": "travel",
+      "end_utc": "2026-04-01T10:00:00Z",
+      "event_id": "travel-return-hold",
+      "occurrence_id": "travel-return-hold@2026-04-01T06:00:00",
+      "start_utc": "2026-04-01T05:00:00Z",
+      "venue": "Airport"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-04-01T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-04-01T11:00:00",
+      "start_utc": "2026-04-01T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-04-01T12:30:00Z",
+      "event_id": "exe-global",
+      "occurrence_id": "exe-global@2026-04-01T13:00:00",
+      "start_utc": "2026-04-01T12:00:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-04-01T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-04-01T08:30:00",
+      "start_utc": "2026-04-01T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-04-01T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-04-01T09:20:00",
+      "start_utc": "2026-04-01T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-04-01T23:20:00Z",
+      "event_id": "ops-tracker",
+      "occurrence_id": "ops-tracker@2026-04-01T16:00:00",
+      "start_utc": "2026-04-01T23:00:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-04-02T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-04-02T11:00:00",
+      "start_utc": "2026-04-02T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-04-02T14:45:00Z",
+      "event_id": "ops-review",
+      "occurrence_id": "ops-review@2026-04-02T10:00:00",
+      "start_utc": "2026-04-02T14:00:00Z",
+      "venue": "NY_Office"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-04-02T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-04-02T08:30:00",
+      "start_utc": "2026-04-02T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-04-02T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-04-02T09:20:00",
+      "start_utc": "2026-04-02T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-04-03T01:30:00Z",
+      "event_id": "asia-sync",
+      "occurrence_id": "asia-sync@2026-04-03T09:00:00",
+      "start_utc": "2026-04-03T01:00:00Z",
+      "venue": "Singapore_Hub"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-04-03T11:30:00Z",
+      "event_id": "ops-sync",
+      "occurrence_id": "ops-sync@2026-04-03T11:00:00",
+      "start_utc": "2026-04-03T11:00:00Z",
+      "venue": "Remote"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-04-03T12:30:00Z",
+      "event_id": "exe-global",
+      "occurrence_id": "exe-global@2026-04-03T13:00:00",
+      "start_utc": "2026-04-03T12:00:00Z",
+      "venue": "London_Hub"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-04-03T16:00:00Z",
+      "event_id": "exe-focus",
+      "occurrence_id": "exe-focus@2026-04-03T08:30:00",
+      "start_utc": "2026-04-03T15:30:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "executive",
+      "end_utc": "2026-04-03T16:50:00Z",
+      "event_id": "exe-standup",
+      "occurrence_id": "exe-standup@2026-04-03T09:20:00",
+      "start_utc": "2026-04-03T16:20:00Z",
+      "venue": "LA_HQ"
+    },
+    {
+      "calendar": "operations",
+      "end_utc": "2026-04-03T23:20:00Z",
+      "event_id": "ops-tracker",
+      "occurrence_id": "ops-tracker@2026-04-03T16:00:00",
+      "start_utc": "2026-04-03T23:00:00Z",
+      "venue": "LA_HQ"
+    }
+  ],
+  "moved_items": [
+    "mov-asia-handoff@2026-03-23T16:00:00",
+    "mov-chain-b@2026-03-24T15:30:00",
+    "mov-chain-c@2026-03-24T15:45:00",
+    "mov-client-handoff@2026-03-11T11:15:00",
+    "mov-product-demo@2026-03-09T12:30:00",
+    "mov-summit-03@2026-03-20T16:45:00",
+    "mov-summit-11@2026-03-20T14:35:00",
+    "mov-summit-12@2026-03-20T15:45:00",
+    "mov-summit-15@2026-03-20T14:00:00",
+    "mov-summit-18@2026-03-20T14:30:00",
+    "mov-tie-beta@2026-03-23T10:15:00",
+    "mov-vip-touch@2026-03-10T17:30:00",
+    "mov-war-01@2026-03-26T13:20:00",
+    "mov-war-05@2026-03-26T10:10:00",
+    "mov-war-07@2026-03-26T13:50:00",
+    "mov-war-09@2026-03-26T14:50:00",
+    "mov-war-10@2026-03-26T10:05:00",
+    "mov-war-12@2026-03-26T12:10:00",
+    "mov-war-14@2026-03-26T11:10:00",
+    "mov-war-21@2026-03-26T15:35:00",
+    "mov-war-26@2026-03-26T13:25:00",
+    "mov-west-brief@2026-03-09T10:10:00"
+  ],
+  "objective_score": {
+    "lateness_minutes": 1635,
+    "moved_count": 22,
+    "priority_score": 13124,
+    "travel_minutes": 2832
+  },
+  "reply_categories": {
+    "msg-001": "REQUEST_INFO",
+    "msg-002": "PROPOSE_ALTERNATE",
+    "msg-003": "DECLINE",
+    "msg-004": "ESCALATE",
+    "msg-005": "ACK",
+    "msg-006": "REQUEST_INFO",
+    "msg-007": "ESCALATE",
+    "msg-008": "DECLINE",
+    "msg-009": "PROPOSE_ALTERNATE",
+    "msg-010": "ACK",
+    "msg-011": "REQUEST_INFO",
+    "msg-012": "ACK",
+    "msg-013": "REQUEST_INFO",
+    "msg-014": "ESCALATE",
+    "msg-015": "DECLINE",
+    "msg-016": "ACK",
+    "msg-017": "REQUEST_INFO",
+    "msg-018": "ESCALATE",
+    "msg-019": "ACK",
+    "msg-020": "REQUEST_INFO",
+    "msg-021": "DECLINE",
+    "msg-022": "ESCALATE",
+    "msg-023": "PROPOSE_ALTERNATE",
+    "msg-024": "ACK"
+  }
+}
