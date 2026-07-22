@@ -1,0 +1,46 @@
+{
+  "recipes": [
+    {
+      "recipe_id": "R1",
+      "n_positions": 5,
+      "composition": {"F": 2, "Cl": 2, "Me": 1},
+      "forbidden_adjacent_pairs": []
+    },
+    {
+      "recipe_id": "R2",
+      "n_positions": 6,
+      "composition": {"F": 2, "Cl": 2, "Me": 2},
+      "forbidden_adjacent_pairs": []
+    },
+    {
+      "recipe_id": "R3",
+      "n_positions": 7,
+      "composition": {"F": 3, "Cl": 2, "Me": 2},
+      "forbidden_adjacent_pairs": [["F", "Cl"]]
+    },
+    {
+      "recipe_id": "R4",
+      "n_positions": 8,
+      "composition": {"F": 2, "Cl": 2, "Me": 2, "OMe": 2},
+      "forbidden_adjacent_pairs": [["F", "Cl"], ["Me", "OMe"]]
+    },
+    {
+      "recipe_id": "R5",
+      "n_positions": 9,
+      "composition": {"F": 3, "Cl": 3, "Me": 3},
+      "forbidden_adjacent_pairs": [["F", "Cl"], ["Cl", "Me"], ["F", "Me"]]
+    },
+    {
+      "recipe_id": "R6",
+      "n_positions": 10,
+      "composition": {"Br": 2, "Ph": 2, "Me": 4, "OMe": 2},
+      "forbidden_adjacent_pairs": [["Br", "Ph"]]
+    },
+    {
+      "recipe_id": "R7",
+      "n_positions": 30,
+      "composition": {"F": 8, "Cl": 7, "Me": 8, "OMe": 4, "CN": 3},
+      "forbidden_adjacent_pairs": [["F", "Cl"], ["Cl", "OMe"], ["Me", "OMe"], ["F", "CN"]]
+    }
+  ]
+}
