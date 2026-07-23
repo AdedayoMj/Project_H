@@ -121,6 +121,16 @@
       "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
+      "line_id": "E25",
+      "reimbursable_cents": 6000,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E26",
+      "reimbursable_cents": 8000,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
       "line_id": "M01",
       "reimbursable_cents": 1567,
       "status": "APPROVED"
@@ -139,20 +149,20 @@
   "trip_summary": {
     "category_breakdown": {
       "AIRFARE": {
-        "flagged_for_approval_cents": 235000,
-        "reimbursable_cents": 235000
+        "flagged_for_approval_cents": 243000,
+        "reimbursable_cents": 243000
       },
       "MEALS": {
-        "flagged_for_approval_cents": 69270,
-        "reimbursable_cents": 126681
+        "flagged_for_approval_cents": 75270,
+        "reimbursable_cents": 132681
       },
       "MILEAGE": {
         "flagged_for_approval_cents": 1866,
         "reimbursable_cents": 3433
       }
     },
-    "total_flagged_for_approval_cents": 306136,
+    "total_flagged_for_approval_cents": 320136,
     "total_per_diem_cents": 68400,
-    "total_reimbursable_cents": 433514
+    "total_reimbursable_cents": 447514
   }
 }

@@ -11,7 +11,7 @@ totals.
 
 `task/environment/input/` (baked into `/app/input/` in the container)
 contains a 10-day, 3-city (NYC/London/Paris), 2-currency (GBP/EUR against a
-USD home currency) itinerary with 25 expense lines (23 MEALS/AIRFARE plus 2
+USD home currency) itinerary with 29 expense lines (26 MEALS/AIRFARE plus 3
 MILEAGE), a multi-hop dated FX-rate table, a directional distance matrix, a
 mileage-rate table with an effective-date crossover, a per-country
 VAT-reclaim table, a city-tier per-diem rate table, a single counterfactual
@@ -54,12 +54,14 @@ field exactly matches the reference solver's output
 
 The reference solver's values were independently cross-checked at authoring
 time by a from-scratch script (not importing or calling `solve.py`) that
-hand-recomputes seven curated lines spanning every rule family -- a GBP and
-a EUR meal through the full VAT/FX/cap/fee chain, the flat-vs-per-head meal
-cap distinction, the airfare counterfactual comparison, both sides of the
-mileage rate-effective-date boundary, and the full day-by-day per-diem sum
--- all of which matched exactly before trusting the solver on the full
-25-line dataset.
+hand-recomputes a curated subset of lines spanning every rule family -- a GBP
+and a EUR meal through the full VAT/FX/cap/fee chain, the flat-vs-per-head
+meal cap distinction, a client meal billed by a non-executive payer, a
+same-vendor/same-date/same-amount cross-category pair that proves category
+stays in the duplicate key, the airfare counterfactual comparison, both sides
+of the mileage rate-effective-date boundary, and the full day-by-day
+per-diem sum -- all of which matched exactly before trusting the solver on
+the full 29-line dataset.
 
 ## Personal Use for clean up
 # 1. Build the image directly from the Dockerfile (same one Harbor uses)
