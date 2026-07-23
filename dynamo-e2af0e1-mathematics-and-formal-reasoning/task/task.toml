@@ -26,7 +26,7 @@ timeout_sec = 120.0                # increase based on your test suite's runtime
 # Harbor overlays tests/ at verify time; leave environment_mode unset for this shared model.
 
 [agent]
-timeout_sec = 1800.0                # raise for hard tasks — agents may run for many minutes or hours
+timeout_sec = 3600.0                # raise for hard tasks — agents may run for many minutes or hours
 
 [environment]
 build_timeout_sec = 600.0          # max seconds for the Docker build
