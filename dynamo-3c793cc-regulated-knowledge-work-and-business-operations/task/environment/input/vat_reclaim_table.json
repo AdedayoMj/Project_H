@@ -1,0 +1,4 @@
+{
+  "GB": {"rate": 0.20, "eligible_categories": ["MEALS"]},
+  "FR": {"rate": 0.20, "eligible_categories": ["MEALS", "AIRFARE"]}
+}

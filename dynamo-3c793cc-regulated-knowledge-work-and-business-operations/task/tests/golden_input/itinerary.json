@@ -1,0 +1,15 @@
+{
+  "home_currency": "USD",
+  "days": [
+    {"date": "2026-04-06", "sleeping_city": "NYC", "is_personal_day": false},
+    {"date": "2026-04-07", "sleeping_city": "LON", "is_personal_day": false},
+    {"date": "2026-04-08", "sleeping_city": "LON", "is_personal_day": false},
+    {"date": "2026-04-09", "sleeping_city": "LON", "is_personal_day": false},
+    {"date": "2026-04-10", "sleeping_city": "PAR", "is_personal_day": false},
+    {"date": "2026-04-11", "sleeping_city": "PAR", "is_personal_day": true},
+    {"date": "2026-04-12", "sleeping_city": "PAR", "is_personal_day": true},
+    {"date": "2026-04-13", "sleeping_city": "PAR", "is_personal_day": false},
+    {"date": "2026-04-14", "sleeping_city": "PAR", "is_personal_day": false},
+    {"date": "2026-04-15", "sleeping_city": "NYC", "is_personal_day": false}
+  ]
+}

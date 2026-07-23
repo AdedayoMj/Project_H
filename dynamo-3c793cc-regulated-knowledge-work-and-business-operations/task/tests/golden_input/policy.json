@@ -1,0 +1,15 @@
+{
+  "home_currency": "USD",
+  "rounding_mode": "half_up",
+  "per_diem_proration_fraction": 0.75,
+  "solo_meal_cap_cents": 6000,
+  "client_meal_cap_cents_per_head": 12000,
+  "max_foreign_fee_reimbursement_cents": 1500,
+  "per_line_approval_threshold_cents": 100000,
+  "category_aggregate_approval_threshold_cents": {
+    "MEALS": 80000,
+    "AIRFARE": 500000,
+    "MILEAGE": 3000
+  },
+  "normal_commute_deduction_cents": 1200
+}
