@@ -8,7 +8,7 @@
   "per_line_approval_threshold_cents": 100000,
   "category_aggregate_approval_threshold_cents": {
     "MEALS": 80000,
-    "AIRFARE": 500000,
+    "AIRFARE": 180000,
     "MILEAGE": 3000
   },
   "normal_commute_deduction_cents": 1200
