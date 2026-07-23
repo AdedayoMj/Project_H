@@ -17,6 +17,14 @@ g's cycles (never anything more complex) -- so |Fix(g)| reduces to one
 generic content-constrained path/cycle coloring DP, with per-color budget
 state and (only when the quotient graph is itself a cycle) a closing-edge
 check against the first node visited.
+
+A forbidden pair may name the same substituent twice ([X, X]: no two X on
+adjacent positions). Such a self-pair is the one case where an edge INTERNAL
+to a single g-cycle carries a real constraint: a coloring fixed by g is
+constant on each cycle, so both endpoints of an internal edge get that cycle's
+color, and if that color self-clashes the whole assignment is void. Each
+g-cycle therefore also records whether it owns any internal physical edge
+(a "self-loop"), and the DP rejects a self-clashing color on such a cycle.
 """
 
 from __future__ import annotations
@@ -45,26 +53,29 @@ def cycles_of_permutation(perm: list[int]) -> list[list[int]]:
     return cycles
 
 
-def quotient_graph(perm: list[int], n: int) -> tuple[list[int], dict[int, set[int]]]:
+def quotient_graph(perm: list[int], n: int) -> tuple[list[int], dict[int, set[int]], set[int]]:
     """Cycles of perm become nodes; physical ring edges crossing cycle
-    boundaries become quotient edges (deduped, undirected). Edges internal
-    to a single cycle impose no constraint (a coloring fixed by perm is
-    already constant on each cycle, so same-cycle neighbors always share a
-    color, and the clash table only ever forbids pairs of *distinct*
-    substituents)."""
+    boundaries become quotient edges (deduped, undirected). An edge internal
+    to a single cycle (both endpoints in the same cycle) marks that cycle as
+    having a self-loop -- relevant only for self-clash pairs [X, X], since a
+    coloring fixed by perm is constant on each cycle and two same-cycle
+    neighbors therefore always share a color."""
     cycles = cycles_of_permutation(perm)
     cycle_of_pos = {pos: cid for cid, cycle in enumerate(cycles) for pos in cycle}
 
     adjacency: dict[int, set[int]] = {cid: set() for cid in range(len(cycles))}
+    self_loops: set[int] = set()
     for i in range(n):
         j = (i + 1) % n
         ci, cj = cycle_of_pos[i], cycle_of_pos[j]
         if ci != cj:
             adjacency[ci].add(cj)
             adjacency[cj].add(ci)
+        else:
+            self_loops.add(ci)
 
     lengths = [len(cycle) for cycle in cycles]
-    return lengths, adjacency
+    return lengths, adjacency, self_loops
 
 
 def order_path_or_cycle(adjacency: dict[int, set[int]]) -> tuple[list[int], bool]:
@@ -103,7 +114,7 @@ def fix_count(
     and clash_indices are recipe-wide constants (independent of which group
     element perm is) -- callers compute them once per recipe and reuse them
     across all 2n calls, rather than rebuilding them per element."""
-    lengths, adjacency = quotient_graph(perm, n)
+    lengths, adjacency, self_loops = quotient_graph(perm, n)
     order, is_cycle = order_path_or_cycle(adjacency)
     k = len(order)
     m = len(target_vector)
@@ -122,10 +133,15 @@ def fix_count(
         node = order[i]
         length = lengths[node]
         needs_prev_check = i > 0 and edge_exists(order[i - 1], node)
+        node_self_loops = node in self_loops
 
         total = 0
         for c in range(m):
             if remaining[c] < length:
+                continue
+            # Self-clash: a cycle that owns an internal edge cannot take a color
+            # that is forbidden adjacent to itself ([c, c] in the clash table).
+            if node_self_loops and frozenset((c, c)) in clash_indices:
                 continue
             if needs_prev_check and frozenset((prev_color, c)) in clash_indices:
                 continue
