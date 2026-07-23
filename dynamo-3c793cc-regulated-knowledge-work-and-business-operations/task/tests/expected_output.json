@@ -129,6 +129,11 @@
       "line_id": "M02",
       "reimbursable_cents": 1866,
       "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "M03",
+      "reimbursable_cents": 0,
+      "status": "APPROVED"
     }
   ],
   "trip_summary": {
