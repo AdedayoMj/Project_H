@@ -10,7 +10,7 @@ mixes rotation-only and rotation-plus-reflection symmetry in one input file.
 ## Overview
 
 `task/environment/input/ring_recipes.json` (baked into `/app/input/` in the
-container) lists 12 ring "recipes", each with `recipe_id`, `n_positions`,
+container) lists 19 ring "recipes", each with `recipe_id`, `n_positions`,
 `symmetry_group`, a `composition` (exact per-substituent counts summing to
 `n_positions`), and `forbidden_adjacent_pairs` (a steric-clash table over the
 ring's real physical edges, wraparound included). Several recipes remain small
@@ -41,7 +41,7 @@ finishes quickly.
 `/app/output.json` has the exact required schema, that every file under
 `/app/input/` is byte-identical to a golden copy kept in `tests/` (never
 visible to the agent), and that `isomer_counts` exactly matches the
-reference solver's output (`tests/expected_output.json`) for all 7 recipes,
+reference solver's output (`tests/expected_output.json`) for all 19 recipes,
 with no tolerance.
 
 ## Authoring validation (not part of the shipped task)
