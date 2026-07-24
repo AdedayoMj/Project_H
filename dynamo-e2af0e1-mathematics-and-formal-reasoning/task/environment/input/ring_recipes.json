@@ -125,6 +125,13 @@
       "symmetry_group": "cyclic",
       "composition": {"F": 7, "Cl": 7, "Me": 7, "OMe": 7, "CN": 7, "Br": 7},
       "forbidden_adjacent_pairs": [["F", "Cl"], ["Me", "OMe"], ["CN", "CN"], ["Br", "Br"], ["Cl", "Cl"], ["F", "F"]]
+    },
+    {
+      "recipe_id": "R19",
+      "n_positions": 32,
+      "symmetry_group": "dihedral",
+      "composition": {"A": 4, "B": 4, "C": 4, "D": 4, "E": 4, "F": 4, "G": 4, "H": 4},
+      "forbidden_adjacent_pairs": [["A", "A"], ["D", "D"], ["G", "G"], ["A", "E"], ["B", "F"], ["C", "G"], ["D", "H"], ["E", "H"], ["F", "G"], ["B", "D"]]
     }
   ]
 }
