@@ -2,6 +2,4 @@ A combinatorial chemistry group is scoping a substitution library built on macro
 
 Two substitution patterns are the same physical molecule, not two different ones, if one can be obtained from the other by rotating the ring to a different starting position, or by flipping the ring over — a macrocycle has no marked position 0 and no distinguished face. For each recipe, compute the exact number of physically distinct substitution patterns that use every unit of `composition` and contain no forbidden adjacent pair anywhere around the ring, counting each such physically-distinct pattern once regardless of how many of its rotations/reflections would otherwise look like separate raw assignments.
 
-If you solve this by collapsing positions into symmetry orbits, process the resulting quotient graph in graph order: for a reflection, that quotient is a path, and its orbits must be walked from one degree-1 endpoint to the other rather than in the raw discovery order of ring positions. This preserves the actual adjacency constraints between neighboring quotient nodes.
-
 Do not modify anything under `/app/input/`. Write `/app/output.json`, a single JSON object with exactly one key, `isomer_counts`, mapping every `recipe_id` from the input to its exact count, given as a JSON integer (not a string, not an approximation).
