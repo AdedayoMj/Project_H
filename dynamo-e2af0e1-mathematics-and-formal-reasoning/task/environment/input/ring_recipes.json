@@ -83,6 +83,48 @@
       "symmetry_group": "dihedral",
       "composition": {"Br": 1, "Ph": 1, "F": 3, "Cl": 3, "Me": 2, "OMe": 2},
       "forbidden_adjacent_pairs": [["Br", "Ph"], ["F", "Cl"], ["Cl", "Me"], ["OMe", "OMe"]]
+    },
+    {
+      "recipe_id": "R13",
+      "n_positions": 42,
+      "symmetry_group": "dihedral",
+      "composition": {"F": 7, "Cl": 7, "Me": 7, "OMe": 7, "CN": 7, "Br": 7},
+      "forbidden_adjacent_pairs": [["F", "Cl"], ["Me", "OMe"], ["CN", "Br"], ["F", "F"], ["OMe", "OMe"], ["Br", "Br"]]
+    },
+    {
+      "recipe_id": "R14",
+      "n_positions": 42,
+      "symmetry_group": "cyclic",
+      "composition": {"F": 7, "Cl": 7, "Me": 7, "OMe": 7, "CN": 7, "Br": 7},
+      "forbidden_adjacent_pairs": [["F", "Cl"], ["Cl", "Me"], ["Me", "OMe"], ["CN", "Br"], ["F", "F"], ["Br", "Br"]]
+    },
+    {
+      "recipe_id": "R15",
+      "n_positions": 42,
+      "symmetry_group": "dihedral",
+      "composition": {"F": 7, "Cl": 7, "Me": 7, "OMe": 7, "CN": 7, "Br": 7},
+      "forbidden_adjacent_pairs": [["F", "Cl"], ["F", "OMe"], ["Me", "CN"], ["Br", "Br"], ["Cl", "Cl"], ["OMe", "OMe"]]
+    },
+    {
+      "recipe_id": "R16",
+      "n_positions": 42,
+      "symmetry_group": "cyclic",
+      "composition": {"F": 7, "Cl": 7, "Me": 7, "OMe": 7, "CN": 7, "Br": 7},
+      "forbidden_adjacent_pairs": [["F", "Cl"], ["Me", "Br"], ["CN", "CN"], ["OMe", "OMe"], ["F", "F"], ["Cl", "Cl"]]
+    },
+    {
+      "recipe_id": "R17",
+      "n_positions": 42,
+      "symmetry_group": "dihedral",
+      "composition": {"F": 7, "Cl": 7, "Me": 7, "OMe": 7, "CN": 7, "Br": 7},
+      "forbidden_adjacent_pairs": [["F", "Cl"], ["Cl", "OMe"], ["Me", "Me"], ["CN", "Br"], ["F", "F"], ["Br", "Br"]]
+    },
+    {
+      "recipe_id": "R18",
+      "n_positions": 42,
+      "symmetry_group": "cyclic",
+      "composition": {"F": 7, "Cl": 7, "Me": 7, "OMe": 7, "CN": 7, "Br": 7},
+      "forbidden_adjacent_pairs": [["F", "Cl"], ["Me", "OMe"], ["CN", "CN"], ["Br", "Br"], ["Cl", "Cl"], ["F", "F"]]
     }
   ]
 }
