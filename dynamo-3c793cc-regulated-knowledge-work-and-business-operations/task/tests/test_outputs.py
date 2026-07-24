@@ -9,9 +9,24 @@ INPUT_PATH = Path("/app/input")
 GOLDEN_INPUT_PATH = Path(__file__).parent / "golden_input"
 EXPECTED_PATH = Path(__file__).parent / "expected_output.json"
 
-STATUSES = {"APPROVED", "NEEDS_MANAGER_APPROVAL", "DUPLICATE_EXCLUDED", "NON_REIMBURSABLE"}
+STATUSES = {
+    "APPROVED",
+    "NEEDS_MANAGER_APPROVAL",
+    "DUPLICATE_EXCLUDED",
+    "NON_REIMBURSABLE",
+    "DEFERRED_OVER_BUDGET",
+}
 LINE_ITEM_KEYS = {"line_id", "reimbursable_cents", "status"}
 CATEGORIES = {"MEALS", "AIRFARE", "MILEAGE"}
+TRIP_SUMMARY_KEYS = {
+    "total_per_diem_cents",
+    "gross_reimbursable_cents",
+    "trip_budget_cap_cents",
+    "final_reimbursable_cents",
+    "deferred_over_budget_line_ids",
+    "total_flagged_for_approval_cents",
+    "category_breakdown",
+}
 
 
 def _load_output() -> dict:
@@ -78,15 +93,18 @@ def test_trip_summary_well_formed():
     """trip_summary has exactly the required fields, correctly typed, with a full category breakdown."""
     data = _load_output()
     summary = data["trip_summary"]
-    assert set(summary) == {
-        "total_reimbursable_cents",
-        "total_flagged_for_approval_cents",
+    assert set(summary) == TRIP_SUMMARY_KEYS
+    for key in (
         "total_per_diem_cents",
-        "category_breakdown",
-    }
-    for key in ("total_reimbursable_cents", "total_flagged_for_approval_cents", "total_per_diem_cents"):
+        "gross_reimbursable_cents",
+        "trip_budget_cap_cents",
+        "final_reimbursable_cents",
+        "total_flagged_for_approval_cents",
+    ):
         assert isinstance(summary[key], int) and not isinstance(summary[key], bool)
         assert summary[key] >= 0
+    assert isinstance(summary["deferred_over_budget_line_ids"], list)
+    assert all(isinstance(x, str) for x in summary["deferred_over_budget_line_ids"])
     assert set(summary["category_breakdown"]) == CATEGORIES
     for entry in summary["category_breakdown"].values():
         assert set(entry) == {"reimbursable_cents", "flagged_for_approval_cents"}
@@ -94,13 +112,27 @@ def test_trip_summary_well_formed():
             assert isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
+def test_final_within_budget_cap():
+    """The final reimbursable total must never exceed the trip budget cap."""
+    summary = _load_output()["trip_summary"]
+    assert summary["final_reimbursable_cents"] <= summary["trip_budget_cap_cents"]
+
+
+def test_deferred_list_consistent_with_line_items():
+    """deferred_over_budget_line_ids must be exactly the DEFERRED_OVER_BUDGET lines, all with amount 0."""
+    data = _load_output()
+    deferred_lines = {i["line_id"] for i in data["line_items"] if i["status"] == "DEFERRED_OVER_BUDGET"}
+    assert set(data["trip_summary"]["deferred_over_budget_line_ids"]) == deferred_lines
+    for item in data["line_items"]:
+        if item["status"] == "DEFERRED_OVER_BUDGET":
+            assert item["reimbursable_cents"] == 0
+
+
 def test_line_items_match_reference():
     """Every line's reimbursable_cents and status must exactly match the reference solver's output."""
     data = _load_output()
     expected = _load_expected()
-    got = _by_line_id(data["line_items"])
-    want = _by_line_id(expected["line_items"])
-    assert got == want
+    assert _by_line_id(data["line_items"]) == _by_line_id(expected["line_items"])
 
 
 def test_trip_summary_matches_reference():

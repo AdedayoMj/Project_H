@@ -1,34 +1,20 @@
 #!/usr/bin/env python3
-"""Reference solver for the T&E expense reimbursement audit task.
+"""Reference solver — T&E reimbursement audit (complex version).
 
-Processes /app/input/expense_lines.csv against /app/input/policy.json and the
-supporting rate tables, and reconstructs per-diem day by day from
-/app/input/itinerary.json, to produce an exact, deterministic reimbursement
-figure and compliance disposition for every expense line, plus trip- and
-category-level totals. All money is carried as integer home-currency cents
-throughout -- never floating-point currency -- and rounded at each specified
-conversion/proration step using the policy's stated rounding mode, not once
-at the end.
-
-Per-line rule chain (MEALS / AIRFARE): VAT-reclaim subtraction (in the
-transaction currency) -> two-hop dated FX conversion (transaction-currency ->
-card-billing-currency using the transaction date, then card-billing-currency
--> home-currency using the statement-post date) -> category cap (blended
-per-attendee cap for qualifying client meals, solo cap otherwise; lesser of
-actual/counterfactual fare for airfare on any trip containing a personal day)
--> reimbursable foreign-transaction fee, converted through the same two hops
-and capped, added on top.
-
-MILEAGE lines skip FX/VAT entirely: reimbursable = distance (from the
-directional distance matrix) x the rate in effect on the travel date, minus
-the flat commute deduction, floored at zero.
-
-Disposition precedence per line: NON_REIMBURSABLE (marked personal expense)
-> DUPLICATE_EXCLUDED (exact vendor+amount+date+category match, first
-occurrence kept) > NEEDS_MANAGER_APPROVAL (per-line cap or category
-trip-aggregate cap tripped) > APPROVED.
+Pipeline per trip:
+  1. Per-line disposition + amount via the disclosed rule chain, including
+     (a) personal-expense exclusion, (b) the personal-day-meal rule (a meal
+     dated on a personal itinerary day is non-reimbursable UNLESS it is a
+     genuine client meal), (c) exact-duplicate exclusion.
+  2. Per-diem reconstructed day-by-day, then REDUCED per day by the reimbursed
+     meals dated that day (anti-double-dip), floored at zero.
+  3. Approval disposition (per-line threshold + running category-aggregate).
+  4. Trip-budget optimization: if per-diem + all reimbursable line amounts
+     exceeds the trip cap, defer a subset of lines (0/1 knapsack) maximizing,
+     lexicographically, retained priority-weight, then retained amount, then
+     the line-id-lexicographic retention vector (a total order -> unique).
+All money is integer home-currency cents.
 """
-
 from __future__ import annotations
 
 import csv
@@ -36,16 +22,14 @@ import json
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
+from ortools.sat.python import cp_model
+
 INPUT = Path("/app/input")
 OUTPUT = Path("/app/output.json")
-
 CENT = Decimal("0.01")
 
 
 def round_cents(amount: Decimal) -> int:
-    """Round a Decimal currency amount to the nearest cent, half rounds up
-    (the policy's stated rounding mode), returned as an integer count of
-    cents."""
     return int((amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
@@ -53,213 +37,247 @@ def load_json(name: str) -> dict:
     return json.loads((INPUT / name).read_text())
 
 
-def load_fx_rates() -> dict[tuple[str, str, str], Decimal]:
+def load_fx_rates():
     rates = {}
-    with (INPUT / "fx_rates.csv").open(newline="") as handle:
-        for row in csv.DictReader(handle):
-            key = (row["date"], row["from_currency"], row["to_currency"])
-            rates[key] = Decimal(row["rate"])
+    with (INPUT / "fx_rates.csv").open(newline="") as h:
+        for row in csv.DictReader(h):
+            rates[(row["date"], row["from_currency"], row["to_currency"])] = Decimal(row["rate"])
     return rates
 
 
-def fx_rate(rates: dict, date: str, from_ccy: str, to_ccy: str) -> Decimal:
-    if from_ccy == to_ccy:
-        return Decimal("1")
-    return rates[(date, from_ccy, to_ccy)]
+def fx_rate(rates, date, a, b):
+    return Decimal("1") if a == b else rates[(date, a, b)]
 
 
-def load_distance_matrix() -> dict[tuple[str, str], Decimal]:
-    matrix = {}
-    with (INPUT / "distance_matrix.csv").open(newline="") as handle:
-        for row in csv.DictReader(handle):
-            matrix[(row["origin_city"], row["destination_city"])] = Decimal(row["miles"])
-    return matrix
+def load_distance_matrix():
+    m = {}
+    with (INPUT / "distance_matrix.csv").open(newline="") as h:
+        for row in csv.DictReader(h):
+            m[(row["origin_city"], row["destination_city"])] = Decimal(row["miles"])
+    return m
 
 
-def mileage_rate_cents(rate_table: list[dict], date: str) -> int:
-    for entry in rate_table:
-        if entry["effective_start"] <= date <= entry["effective_end"]:
-            return entry["rate_cents_per_mile"]
+def mileage_rate_cents(table, date):
+    for e in table:
+        if e["effective_start"] <= date <= e["effective_end"]:
+            return e["rate_cents_per_mile"]
     raise ValueError(f"no mileage rate covers {date}")
 
 
-def two_hop_convert(rates: dict, amount_txn_ccy: Decimal, txn_date: str, post_date: str, txn_ccy: str, card_ccy: str, home_ccy: str) -> int:
-    """Convert an amount from transaction currency to home currency via the
-    card-billing currency, rounding to cents after each hop."""
-    hop1_rate = fx_rate(rates, txn_date, txn_ccy, card_ccy)
-    after_hop1 = round_cents(amount_txn_ccy * hop1_rate) if txn_ccy != card_ccy else round_cents(amount_txn_ccy)
-    hop2_rate = fx_rate(rates, post_date, card_ccy, home_ccy)
-    after_hop2 = round_cents((Decimal(after_hop1) / 100) * hop2_rate) if card_ccy != home_ccy else after_hop1
-    return after_hop2
+def two_hop(rates, amt, txn_date, post_date, txn_ccy, card_ccy, home_ccy) -> int:
+    r1 = fx_rate(rates, txn_date, txn_ccy, card_ccy)
+    h1 = round_cents(amt * r1) if txn_ccy != card_ccy else round_cents(amt)
+    r2 = fx_rate(rates, post_date, card_ccy, home_ccy)
+    return round_cents((Decimal(h1) / 100) * r2) if card_ccy != home_ccy else h1
 
 
-def vat_reclaim_net(amount_txn_ccy: Decimal, country: str, category: str, vat_table: dict) -> Decimal:
-    entry = vat_table.get(country)
-    if entry and category in entry["eligible_categories"]:
-        vat = (amount_txn_ccy * Decimal(str(entry["rate"]))).quantize(CENT, rounding=ROUND_HALF_UP)
-        return amount_txn_ccy - vat
-    return amount_txn_ccy
+def vat_net(amt, country, category, vat):
+    e = vat.get(country)
+    if e and category in e["eligible_categories"]:
+        v = (amt * Decimal(str(e["rate"]))).quantize(CENT, rounding=ROUND_HALF_UP)
+        return amt - v
+    return amt
 
 
-def compute_per_diem(itinerary: dict, per_diem_rates: dict, proration_fraction: Decimal) -> int:
-    days = itinerary["days"]
-    first_date = min(d["date"] for d in days)
-    last_date = max(d["date"] for d in days)
-    total = Decimal(0)
-    for day in days:
-        if day["is_personal_day"]:
-            continue
-        rate = Decimal(per_diem_rates[day["sleeping_city"]])
-        if day["date"] in (first_date, last_date):
-            rate = rate * proration_fraction
-        total += rate
-    return round_cents(total / 100)
-
-
-def process_meal_or_airfare(
-    line: dict,
-    policy: dict,
-    rates: dict,
-    vat_table: dict,
-    trip_has_personal_day: bool,
-    counterfactual_fare_cents: int,
-) -> tuple[int, int]:
-    """Returns (capped_amount_cents, fee_reimbursement_cents), before
-    duplicate/approval disposition."""
-    home_ccy = policy["home_currency"]
-    txn_ccy = line["transaction_currency"]
-    card_ccy = line["card_billing_currency"]
-    amount = Decimal(line["amount"])
-
-    net_txn_ccy = vat_reclaim_net(amount, line["country"], line["category"], vat_table)
-    home_cents = two_hop_convert(rates, net_txn_ccy, line["date"], line["statement_post_date"], txn_ccy, card_ccy, home_ccy)
-
+def meal_or_air(line, policy, rates, vat, personal_day, cf):
+    home = policy["home_currency"]
+    txn, card = line["transaction_currency"], line["card_billing_currency"]
+    amt = Decimal(line["amount"])
+    net = vat_net(amt, line["country"], line["category"], vat)
+    home_cents = two_hop(rates, net, line["date"], line["statement_post_date"], txn, card, home)
     if line["category"] == "MEALS":
-        attendees = [a for a in line["attendees"].split(";") if a]
-        headcount = max(1, len(attendees))
-        is_client_meal = line["payer"] == "EXECUTIVE" and any(a.split(":")[1] == "CLIENT" for a in attendees)
-        # The per-attendee blended cap only rewards headcount when a client is present and the
-        # executive is the payer of record; any other meal (solo or an internal group) is capped
-        # at the flat solo amount regardless of how many people attended.
-        cap = policy["client_meal_cap_cents_per_head"] * headcount if is_client_meal else policy["solo_meal_cap_cents"]
+        att = [a for a in line["attendees"].split(";") if a]
+        headcount = max(1, len(att))
+        is_client = line["payer"] == "EXECUTIVE" and any(a.split(":")[1] == "CLIENT" for a in att)
+        cap = policy["client_meal_cap_cents_per_head"] * headcount if is_client else policy["solo_meal_cap_cents"]
         capped = min(home_cents, cap)
-    else:  # AIRFARE
-        capped = min(home_cents, counterfactual_fare_cents) if trip_has_personal_day else home_cents
-
-    fee_reimb = 0
-    if txn_ccy != card_ccy and line["fee_free_alternative_existed"] != "TRUE":
-        fee_amount = Decimal(line["foreign_fee_amount"])
-        fee_home_cents = two_hop_convert(rates, fee_amount, line["date"], line["statement_post_date"], txn_ccy, card_ccy, home_ccy)
-        fee_reimb = min(fee_home_cents, policy["max_foreign_fee_reimbursement_cents"])
-
-    return capped, fee_reimb
+    else:
+        capped = min(home_cents, cf) if personal_day else home_cents
+    fee = 0
+    if txn != card and line["fee_free_alternative_existed"] != "TRUE":
+        fa = Decimal(line["foreign_fee_amount"])
+        fee_home = two_hop(rates, fa, line["date"], line["statement_post_date"], txn, card, home)
+        fee = min(fee_home, policy["max_foreign_fee_reimbursement_cents"])
+    return capped + fee
 
 
-def process_mileage(line: dict, policy: dict, distance_matrix: dict, mileage_rates: list[dict]) -> int:
-    miles = distance_matrix[(line["origin_city"], line["destination_city"])]
-    rate = mileage_rate_cents(mileage_rates, line["date"])
+def process_mileage(line, policy, dist, mrates):
+    miles = dist[(line["origin_city"], line["destination_city"])]
+    rate = mileage_rate_cents(mrates, line["date"])
     gross = round_cents(miles * Decimal(rate) / 100)
     return max(0, gross - policy["normal_commute_deduction_cents"])
 
 
-def main() -> None:
+def is_client_meal(line):
+    att = [a for a in line["attendees"].split(";") if a]
+    return line["payer"] == "EXECUTIVE" and any(a.split(":")[1] == "CLIENT" for a in att)
+
+
+def compute_per_diem_by_day(itinerary, rates_by_city, fraction: Decimal):
+    days = itinerary["days"]
+    first, last = min(d["date"] for d in days), max(d["date"] for d in days)
+    out = {}
+    for d in days:
+        if d["is_personal_day"]:
+            out[d["date"]] = 0
+            continue
+        r = Decimal(rates_by_city[d["sleeping_city"]])
+        if d["date"] in (first, last):
+            r = r * fraction
+        out[d["date"]] = round_cents(r / 100)
+    return out
+
+
+def solve_budget_knapsack(reimb_lines, per_diem_total, cap):
+    """reimb_lines: list of dicts {line_id, date, amount, weight}. Choose a
+    RETAINED subset maximizing (sum weight, then sum amount, then line-id
+    lexicographic retention) s.t. per_diem_total + sum retained amount <= cap.
+    Returns set of DEFERRED line_ids (empty if everything fits)."""
+    budget = cap - per_diem_total
+    if sum(l["amount"] for l in reimb_lines) <= budget:
+        return set()
+    # order by (date, line_id) so the lexicographic tie-break is well-defined
+    order = sorted(reimb_lines, key=lambda l: (l["date"], l["line_id"]))
+
+    def solve(fix_weight=None, fix_amount=None, forced=None):
+        m = cp_model.CpModel()
+        x = {l["line_id"]: m.NewBoolVar(l["line_id"]) for l in order}  # 1 = retained
+        m.Add(sum(x[l["line_id"]] * l["amount"] for l in order) <= budget)
+        W = sum(x[l["line_id"]] * l["weight"] for l in order)
+        A = sum(x[l["line_id"]] * l["amount"] for l in order)
+        if fix_weight is not None:
+            m.Add(W == fix_weight)
+        if fix_amount is not None:
+            m.Add(A == fix_amount)
+        for lid, val in (forced or {}).items():
+            m.Add(x[lid] == val)
+        return m, x, W, A
+
+    s = cp_model.CpSolver()
+    s.parameters.num_search_workers = 8
+
+    m, x, W, A = solve()
+    m.Maximize(W)
+    assert s.Solve(m) in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+    best_w = int(s.ObjectiveValue())
+
+    m, x, W, A = solve(fix_weight=best_w)
+    m.Maximize(A)
+    assert s.Solve(m) in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+    best_a = int(s.ObjectiveValue())
+
+    # Iterative lexicographic tie-break: retain earlier line_ids preferentially.
+    forced = {}
+    for l in order:
+        trial = dict(forced); trial[l["line_id"]] = 1
+        m, x, W, A = solve(fix_weight=best_w, fix_amount=best_a, forced=trial)
+        forced[l["line_id"]] = 1 if s.Solve(m) in (cp_model.OPTIMAL, cp_model.FEASIBLE) else 0
+    return {lid for lid, v in forced.items() if v == 0}
+
+
+def main():
     policy = load_json("policy.json")
     itinerary = load_json("itinerary.json")
     per_diem_rates = load_json("per_diem_rates.json")
-    vat_table = load_json("vat_reclaim_table.json")
-    mileage_rates = load_json("mileage_rates.json")
-    counterfactual = load_json("counterfactual_fares.json")
+    vat = load_json("vat_reclaim_table.json")
+    mrates = load_json("mileage_rates.json")
+    cf = load_json("counterfactual_fares.json")["fare_cents"]
     rates = load_fx_rates()
-    distance_matrix = load_distance_matrix()
+    dist = load_distance_matrix()
 
-    trip_has_personal_day = any(d["is_personal_day"] for d in itinerary["days"])
+    personal_days = {d["date"] for d in itinerary["days"] if d["is_personal_day"]}
+    trip_has_personal = bool(personal_days)
 
-    with (INPUT / "expense_lines.csv").open(newline="") as handle:
-        lines = list(csv.DictReader(handle))
+    with (INPUT / "expense_lines.csv").open(newline="") as h:
+        lines = list(csv.DictReader(h))
 
-    computed = {}  # line_id -> reimbursable_cents (pre-disposition)
-    for line in lines:
-        if line["is_personal_expense"] == "TRUE":
-            computed[line["line_id"]] = 0
-            continue
-        if line["category"] == "MILEAGE":
-            computed[line["line_id"]] = process_mileage(line, policy, distance_matrix, mileage_rates)
-        else:
-            capped, fee = process_meal_or_airfare(
-                line, policy, rates, vat_table, trip_has_personal_day, counterfactual["fare_cents"]
-            )
-            computed[line["line_id"]] = capped + fee
-
-    # Duplicate detection: exact match on (vendor, amount, date, category) among
-    # non-personal-expense lines; first occurrence is kept.
-    seen_keys = set()
-    duplicate_ids = set()
-    for line in lines:
-        if line["is_personal_expense"] == "TRUE":
-            continue
-        key = (line["vendor"], line["amount"], line["date"], line["category"])
-        if key in seen_keys:
-            duplicate_ids.add(line["line_id"])
-        else:
-            seen_keys.add(key)
-
-    # Category trip-aggregate threshold: a running cumulative total per category,
-    # walked in date order (line_id ascending breaks ties on the same date) over
-    # non-personal, non-duplicate lines. A line is aggregate-tripped once the
-    # running total *through that line* exceeds the category's threshold --
-    # earlier lines that kept the running total under the threshold are not
-    # retroactively flagged.
-    ordered = sorted(
-        (line for line in lines if line["is_personal_expense"] != "TRUE" and line["line_id"] not in duplicate_ids),
-        key=lambda line: (line["date"], line["line_id"]),
-    )
-    running_totals: dict[str, int] = {}
-    aggregate_tripped_ids: set[str] = set()
-    for line in ordered:
-        cat = line["category"]
-        running_totals[cat] = running_totals.get(cat, 0) + computed[line["line_id"]]
-        if running_totals[cat] > policy["category_aggregate_approval_threshold_cents"][cat]:
-            aggregate_tripped_ids.add(line["line_id"])
-
-    line_items = []
-    category_breakdown: dict[str, dict[str, int]] = {
-        cat: {"reimbursable_cents": 0, "flagged_for_approval_cents": 0} for cat in ("MEALS", "AIRFARE", "MILEAGE")
-    }
-    total_flagged = 0
-
+    # ---- phase 1: per-line computed amount + base disposition ----
+    computed, base_status = {}, {}
+    seen = set()
     for line in lines:
         lid = line["line_id"]
-        amount_cents = computed[lid]
         if line["is_personal_expense"] == "TRUE":
-            status = "NON_REIMBURSABLE"
-            reimbursable = 0
-        elif lid in duplicate_ids:
-            status = "DUPLICATE_EXCLUDED"
-            reimbursable = 0
+            computed[lid], base_status[lid] = 0, "NON_REIMBURSABLE"
+            continue
+        # personal-day-meal narrow rule
+        if line["category"] == "MEALS" and line["date"] in personal_days and not is_client_meal(line):
+            computed[lid], base_status[lid] = 0, "NON_REIMBURSABLE"
+            continue
+        key = (line["vendor"], line["amount"], line["date"], line["category"])
+        if key in seen:
+            computed[lid], base_status[lid] = 0, "DUPLICATE_EXCLUDED"
+            continue
+        seen.add(key)
+        if line["category"] == "MILEAGE":
+            computed[lid] = process_mileage(line, policy, dist, mrates)
         else:
-            needs_approval = amount_cents > policy["per_line_approval_threshold_cents"] or lid in aggregate_tripped_ids
-            status = "NEEDS_MANAGER_APPROVAL" if needs_approval else "APPROVED"
-            reimbursable = amount_cents
-            category_breakdown[line["category"]]["reimbursable_cents"] += reimbursable
-            if needs_approval:
-                category_breakdown[line["category"]]["flagged_for_approval_cents"] += reimbursable
-                total_flagged += reimbursable
+            computed[lid] = meal_or_air(line, policy, rates, vat, trip_has_personal, cf)
+        base_status[lid] = "REIMBURSABLE"
 
-        line_items.append({"line_id": lid, "reimbursable_cents": reimbursable, "status": status})
+    # ---- phase 2: per-diem with anti-double-dip ----
+    per_diem_by_day = compute_per_diem_by_day(itinerary, per_diem_rates, Decimal(str(policy["per_diem_proration_fraction"])))
+    meal_by_day = {}
+    for line in lines:
+        lid = line["line_id"]
+        if line["category"] == "MEALS" and base_status[lid] == "REIMBURSABLE":
+            meal_by_day[line["date"]] = meal_by_day.get(line["date"], 0) + computed[lid]
+    total_per_diem = 0
+    for date, pd in per_diem_by_day.items():
+        total_per_diem += max(0, pd - meal_by_day.get(date, 0))
 
-    total_per_diem_cents = compute_per_diem(itinerary, per_diem_rates, Decimal(str(policy["per_diem_proration_fraction"])))
-    total_reimbursable = sum(item["reimbursable_cents"] for item in line_items) + total_per_diem_cents
+    # ---- phase 3: approval disposition (pre-deferral) ----
+    reimb = [l for l in lines if base_status[l["line_id"]] == "REIMBURSABLE"]
+    ordered = sorted(reimb, key=lambda l: (l["date"], l["line_id"]))
+    running, needs_appr = {}, set()
+    for line in ordered:
+        cat = line["category"]; lid = line["line_id"]
+        running[cat] = running.get(cat, 0) + computed[lid]
+        if computed[lid] > policy["per_line_approval_threshold_cents"] or running[cat] > policy["category_aggregate_approval_threshold_cents"][cat]:
+            needs_appr.add(lid)
+
+    # ---- phase 4: trip-budget knapsack ----
+    knap_lines = [{"line_id": l["line_id"], "date": l["date"], "amount": computed[l["line_id"]],
+                   "weight": 6 - int(l["priority"])} for l in reimb]
+    deferred = solve_budget_knapsack(knap_lines, total_per_diem, policy["trip_reimbursement_cap_cents"])
+
+    # ---- assemble output ----
+    cats = ("MEALS", "AIRFARE", "MILEAGE")
+    cat_break = {c: {"reimbursable_cents": 0, "flagged_for_approval_cents": 0} for c in cats}
+    line_items = []
+    total_flagged = 0
+    for line in lines:
+        lid = line["line_id"]
+        if base_status[lid] in ("NON_REIMBURSABLE", "DUPLICATE_EXCLUDED"):
+            line_items.append({"line_id": lid, "reimbursable_cents": 0, "status": base_status[lid]})
+            continue
+        if lid in deferred:
+            line_items.append({"line_id": lid, "reimbursable_cents": 0, "status": "DEFERRED_OVER_BUDGET"})
+            continue
+        amt = computed[lid]
+        flagged = lid in needs_appr
+        status = "NEEDS_MANAGER_APPROVAL" if flagged else "APPROVED"
+        line_items.append({"line_id": lid, "reimbursable_cents": amt, "status": status})
+        cat_break[line["category"]]["reimbursable_cents"] += amt
+        if flagged:
+            cat_break[line["category"]]["flagged_for_approval_cents"] += amt
+            total_flagged += amt
+
+    line_total = sum(i["reimbursable_cents"] for i in line_items)
+    gross = total_per_diem + sum(computed[l["line_id"]] for l in reimb)
+    final = total_per_diem + line_total
 
     output = {
         "line_items": sorted(line_items, key=lambda x: x["line_id"]),
         "trip_summary": {
-            "total_reimbursable_cents": total_reimbursable,
+            "total_per_diem_cents": total_per_diem,
+            "gross_reimbursable_cents": gross,
+            "trip_budget_cap_cents": policy["trip_reimbursement_cap_cents"],
+            "final_reimbursable_cents": final,
+            "deferred_over_budget_line_ids": sorted(deferred),
             "total_flagged_for_approval_cents": total_flagged,
-            "total_per_diem_cents": total_per_diem_cents,
-            "category_breakdown": category_breakdown,
+            "category_breakdown": cat_break,
         },
     }
-
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_text(json.dumps(output, indent=2, sort_keys=True) + "\n")
 

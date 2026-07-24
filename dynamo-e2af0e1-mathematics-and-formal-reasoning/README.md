@@ -4,37 +4,36 @@ A Harbor task (see [`task/`](task/)) that asks an agent to act as a combinatoria
 chemist scoping a substitution library: for each of several macrocyclic ring
 scaffolds, compute the exact number of physically distinct substitution
 patterns consistent with a fixed feedstock composition and a steric-clash
-table, counting rotations and reflections of the same pattern only once.
+table. Some recipes are cyclic-only and others are dihedral, so the task now
+mixes rotation-only and rotation-plus-reflection symmetry in one input file.
 
 ## Overview
 
 `task/environment/input/ring_recipes.json` (baked into `/app/input/` in the
-container) lists 7 ring "recipes", each with `recipe_id`, `n_positions`, a
-`composition` (exact per-substituent counts summing to `n_positions`), and
-`forbidden_adjacent_pairs` (a steric-clash table over the ring's real
-physical edges, wraparound included). Six recipes (`R1`-`R6`, `n_positions`
-5-10) are small enough to brute-force; the seventh (`R7`, `n_positions=30`)
-has roughly 2x10^17 raw linear arrangements before symmetry and clash
-filtering are even applied, which forecloses brute force entirely.
+container) lists 12 ring "recipes", each with `recipe_id`, `n_positions`,
+`symmetry_group`, a `composition` (exact per-substituent counts summing to
+`n_positions`), and `forbidden_adjacent_pairs` (a steric-clash table over the
+ring's real physical edges, wraparound included). Several recipes remain small
+enough to cross-check by brute force, but the larger mixed-symmetry cases
+foreclose a naive generate-and-canonicalize approach.
 
 The agent must, for every recipe, count physically distinct substitution
-patterns up to the ring's dihedral symmetry group D_n (rotations + flips)
-that use every unit of the composition and contain no forbidden adjacent
-pair, and write a single `/app/output.json`.
+patterns up to that recipe's symmetry group, use every unit of the composition
+and contain no forbidden adjacent pair, and write a single `/app/output.json`.
 
 ## Approach
 
 The reference solution ([`task/solution/solve.py`](task/solution/solve.py))
-applies Burnside's lemma over the 2n elements of D_n. For each element, its
-cycles on the ring positions are contracted to nodes of a "quotient graph"
-(edges induced by real physical ring-adjacency crossing cycle boundaries).
-This quotient graph is always exactly a path or a simple cycle -- a
-structural fact about dihedral actions on a ring -- so `|Fix(g)|` reduces to
-one generic content-constrained path/cycle coloring DP (per-substituent
-remaining budget, previous node's color, and a closing-edge check against
-the first node when the quotient graph is itself a cycle). Summing
-`|Fix(g)|` over all 2n elements and dividing by 2n gives each recipe's exact
-count. The whole 7-recipe run takes well under a second.
+applies Burnside's lemma over the symmetry group named by each recipe. For
+every group element, its cycles on the ring positions are contracted to nodes
+of a "quotient graph" (edges induced by real physical ring-adjacency crossing
+cycle boundaries). This quotient graph is always exactly a path or a simple
+cycle, so `|Fix(g)|` reduces to one generic content-constrained path/cycle
+coloring DP (per-substituent remaining budget, previous node's color, and a
+closing-edge check against the first node when the quotient graph is itself a
+cycle). Summing `|Fix(g)|` over a recipe's symmetry group and dividing by the
+group size gives each recipe's exact count. The whole mixed-symmetry run still
+finishes quickly.
 
 ## Verification
 

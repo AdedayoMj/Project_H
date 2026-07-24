@@ -5,7 +5,8 @@ For each ring recipe, counts the exact number of substitution patterns
 (assignments of substituents to the n ring positions) that use every unit
 of the given composition, contain no forbidden adjacent pair on any
 physical ring edge (including the wraparound edge), and are counted once
-per orbit of the ring's dihedral symmetry group D_n (rotations + reflections).
+per orbit of the recipe's symmetry group (rotation-only cyclic recipes or
+rotation-plus-reflection dihedral recipes).
 
 Method: Burnside's lemma over the 2n elements of D_n. For a single group
 element g, |Fix(g)| is computed via a "quotient graph" reduction: contract
@@ -164,7 +165,9 @@ def reflection_perm(n: int, c: int) -> list[int]:
     return [(c - i) % n for i in range(n)]
 
 
-def isomer_count(n: int, composition: dict[str, int], forbidden_pairs: list[list[str]]) -> int:
+def isomer_count(
+    n: int, symmetry_group: str, composition: dict[str, int], forbidden_pairs: list[list[str]]
+) -> int:
     assert sum(composition.values()) == n
     colors = sorted(composition)
     color_index = {c: i for i, c in enumerate(colors)}
@@ -175,11 +178,19 @@ def isomer_count(n: int, composition: dict[str, int], forbidden_pairs: list[list
         if a in color_index and b in color_index
     }
 
-    group_elements = [rotation_perm(n, d) for d in range(n)] + [reflection_perm(n, c) for c in range(n)]
+    if symmetry_group == "cyclic":
+        group_elements = [rotation_perm(n, d) for d in range(n)]
+        group_size = n
+    elif symmetry_group == "dihedral":
+        group_elements = [rotation_perm(n, d) for d in range(n)] + [reflection_perm(n, c) for c in range(n)]
+        group_size = 2 * n
+    else:
+        raise ValueError(f"unknown symmetry group: {symmetry_group!r}")
+
     total = sum(fix_count(perm, n, target_vector, clash_indices) for perm in group_elements)
 
-    assert total % (2 * n) == 0, f"Burnside sum {total} is not divisible by {2 * n}"
-    return total // (2 * n)
+    assert total % group_size == 0, f"Burnside sum {total} is not divisible by {group_size}"
+    return total // group_size
 
 
 def main() -> None:
@@ -188,7 +199,10 @@ def main() -> None:
     isomer_counts = {}
     for recipe in data["recipes"]:
         isomer_counts[recipe["recipe_id"]] = isomer_count(
-            recipe["n_positions"], recipe["composition"], recipe["forbidden_adjacent_pairs"]
+            recipe["n_positions"],
+            recipe.get("symmetry_group", "dihedral"),
+            recipe["composition"],
+            recipe["forbidden_adjacent_pairs"],
         )
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)

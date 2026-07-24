@@ -11,5 +11,6 @@
     "AIRFARE": 180000,
     "MILEAGE": 3000
   },
-  "normal_commute_deduction_cents": 1200
+  "normal_commute_deduction_cents": 1200,
+  "trip_reimbursement_cap_cents": 300000
 }

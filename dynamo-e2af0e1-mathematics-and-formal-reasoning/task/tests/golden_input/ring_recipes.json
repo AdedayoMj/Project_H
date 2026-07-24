@@ -3,62 +3,86 @@
     {
       "recipe_id": "R1",
       "n_positions": 5,
+      "symmetry_group": "dihedral",
       "composition": {"F": 2, "Cl": 2, "Me": 1},
       "forbidden_adjacent_pairs": []
     },
     {
       "recipe_id": "R2",
       "n_positions": 6,
+      "symmetry_group": "cyclic",
       "composition": {"F": 2, "Cl": 2, "Me": 2},
       "forbidden_adjacent_pairs": []
     },
     {
       "recipe_id": "R3",
       "n_positions": 7,
+      "symmetry_group": "dihedral",
       "composition": {"F": 3, "Cl": 2, "Me": 2},
       "forbidden_adjacent_pairs": [["F", "Cl"]]
     },
     {
       "recipe_id": "R4",
       "n_positions": 8,
+      "symmetry_group": "cyclic",
       "composition": {"F": 2, "Cl": 2, "Me": 2, "OMe": 2},
       "forbidden_adjacent_pairs": [["F", "Cl"], ["Me", "OMe"]]
     },
     {
       "recipe_id": "R5",
       "n_positions": 9,
+      "symmetry_group": "dihedral",
       "composition": {"F": 3, "Cl": 3, "Me": 3},
       "forbidden_adjacent_pairs": [["F", "Cl"], ["Cl", "Me"], ["F", "Me"]]
     },
     {
       "recipe_id": "R6",
       "n_positions": 10,
+      "symmetry_group": "dihedral",
       "composition": {"Br": 2, "Ph": 2, "Me": 4, "OMe": 2},
       "forbidden_adjacent_pairs": [["Br", "Ph"]]
     },
     {
       "recipe_id": "R7",
       "n_positions": 30,
+      "symmetry_group": "cyclic",
       "composition": {"F": 8, "Cl": 7, "Me": 8, "OMe": 4, "CN": 3},
       "forbidden_adjacent_pairs": [["F", "Cl"], ["Cl", "OMe"], ["Me", "OMe"], ["F", "CN"]]
     },
     {
       "recipe_id": "R8",
       "n_positions": 8,
+      "symmetry_group": "dihedral",
       "composition": {"F": 2, "Cl": 2, "Me": 2, "OMe": 2},
       "forbidden_adjacent_pairs": [["F", "Cl"], ["Me", "Me"]]
     },
     {
       "recipe_id": "R9",
       "n_positions": 10,
+      "symmetry_group": "cyclic",
       "composition": {"tBu": 4, "F": 2, "Cl": 2, "Me": 2},
       "forbidden_adjacent_pairs": [["tBu", "tBu"], ["F", "Cl"]]
     },
     {
       "recipe_id": "R10",
       "n_positions": 28,
+      "symmetry_group": "cyclic",
       "composition": {"tBu": 10, "F": 6, "Cl": 6, "Me": 6},
       "forbidden_adjacent_pairs": [["tBu", "tBu"], ["F", "Cl"]]
+    },
+    {
+      "recipe_id": "R11",
+      "n_positions": 11,
+      "symmetry_group": "cyclic",
+      "composition": {"F": 3, "Cl": 2, "Me": 3, "OMe": 2, "CN": 1},
+      "forbidden_adjacent_pairs": [["F", "Cl"], ["Me", "OMe"], ["CN", "CN"]]
+    },
+    {
+      "recipe_id": "R12",
+      "n_positions": 12,
+      "symmetry_group": "dihedral",
+      "composition": {"Br": 1, "Ph": 1, "F": 3, "Cl": 3, "Me": 2, "OMe": 2},
+      "forbidden_adjacent_pairs": [["Br", "Ph"], ["F", "Cl"], ["Cl", "Me"], ["OMe", "OMe"]]
     }
   ]
 }
