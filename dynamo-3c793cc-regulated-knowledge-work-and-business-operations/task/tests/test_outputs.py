@@ -47,15 +47,12 @@ def _by_line_id(line_items: list[dict]) -> dict[str, dict]:
 
 
 def test_output_file_exists():
-    """The agent must write a single, non-symlinked JSON object to /app/output.json."""
     assert OUTPUT_PATH.exists()
     assert not OUTPUT_PATH.is_symlink()
-    data = _load_output()
-    assert isinstance(data, dict)
+    assert isinstance(_load_output(), dict)
 
 
 def test_input_files_unchanged():
-    """Nothing under /app/input/ may be modified, added, or removed."""
     golden_files = sorted(p.relative_to(GOLDEN_INPUT_PATH) for p in GOLDEN_INPUT_PATH.rglob("*") if p.is_file())
     actual_files = sorted(p.relative_to(INPUT_PATH) for p in INPUT_PATH.rglob("*") if p.is_file())
     assert actual_files == golden_files
@@ -64,7 +61,6 @@ def test_input_files_unchanged():
 
 
 def test_output_top_level_schema():
-    """output.json has exactly the two required top-level keys, correctly typed."""
     data = _load_output()
     assert set(data) == {"line_items", "trip_summary"}
     assert isinstance(data["line_items"], list)
@@ -72,7 +68,6 @@ def test_output_top_level_schema():
 
 
 def test_line_items_cover_every_expense_line_exactly_once():
-    """line_items has exactly one entry per row of expense_lines.csv, no missing or invented line_ids."""
     data = _load_output()
     ids = [item["line_id"] for item in data["line_items"]]
     assert len(ids) == len(set(ids))
@@ -80,7 +75,6 @@ def test_line_items_cover_every_expense_line_exactly_once():
 
 
 def test_line_items_well_formed():
-    """Every line_items entry has exactly the required fields, a legal status, and a non-negative integer amount."""
     data = _load_output()
     for item in data["line_items"]:
         assert set(item) == LINE_ITEM_KEYS
@@ -90,7 +84,6 @@ def test_line_items_well_formed():
 
 
 def test_trip_summary_well_formed():
-    """trip_summary has exactly the required fields, correctly typed, with a full category breakdown."""
     data = _load_output()
     summary = data["trip_summary"]
     assert set(summary) == TRIP_SUMMARY_KEYS
@@ -113,13 +106,11 @@ def test_trip_summary_well_formed():
 
 
 def test_final_within_budget_cap():
-    """The final reimbursable total must never exceed the trip budget cap."""
     summary = _load_output()["trip_summary"]
     assert summary["final_reimbursable_cents"] <= summary["trip_budget_cap_cents"]
 
 
 def test_deferred_list_consistent_with_line_items():
-    """deferred_over_budget_line_ids must be exactly the DEFERRED_OVER_BUDGET lines, all with amount 0."""
     data = _load_output()
     deferred_lines = {i["line_id"] for i in data["line_items"] if i["status"] == "DEFERRED_OVER_BUDGET"}
     assert set(data["trip_summary"]["deferred_over_budget_line_ids"]) == deferred_lines
@@ -129,14 +120,8 @@ def test_deferred_list_consistent_with_line_items():
 
 
 def test_line_items_match_reference():
-    """Every line's reimbursable_cents and status must exactly match the reference solver's output."""
-    data = _load_output()
-    expected = _load_expected()
-    assert _by_line_id(data["line_items"]) == _by_line_id(expected["line_items"])
+    assert _by_line_id(_load_output()["line_items"]) == _by_line_id(_load_expected()["line_items"])
 
 
 def test_trip_summary_matches_reference():
-    """trip_summary, including the full category breakdown, must exactly match the reference solver's output."""
-    data = _load_output()
-    expected = _load_expected()
-    assert data["trip_summary"] == expected["trip_summary"]
+    assert _load_output()["trip_summary"] == _load_expected()["trip_summary"]

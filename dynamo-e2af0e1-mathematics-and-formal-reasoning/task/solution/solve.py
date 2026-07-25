@@ -31,36 +31,11 @@ g-cycle therefore also records whether it owns any internal physical edge
 from __future__ import annotations
 
 import json
-from functools import lru_cache
+from math import gcd
 from pathlib import Path
 
 INPUT = Path("/app/input/ring_recipes.json")
 OUTPUT = Path("/app/output.json")
-
-# The published input for this task is fixed, so the reference oracle can emit
-# the canonical counts directly instead of recomputing the expensive Burnside DP
-# on every validation run.
-PRECOMPUTED_ISOMER_COUNTS = {
-    "R1": 4,
-    "R2": 16,
-    "R3": 1,
-    "R4": 24,
-    "R5": 0,
-    "R6": 318,
-    "R7": 20224155250,
-    "R8": 30,
-    "R9": 119,
-    "R10": 4075878444,
-    "R11": 1526,
-    "R12": 1940,
-    "R13": 5888862420104878589920,
-    "R14": 1617504729349909914208,
-    "R15": 3731509534047104242490,
-    "R16": 48981900066870326059872,
-    "R17": 4710767873642631645228,
-    "R18": 48981900066870326059872,
-    "R19": 1736825824936955113,
-}
 
 
 def cycles_of_permutation(perm: list[int]) -> list[list[int]]:
@@ -133,53 +108,82 @@ def order_path_or_cycle(adjacency: dict[int, set[int]]) -> tuple[list[int], bool
 
 
 def fix_count(
-    perm: list[int], n: int, target_vector: tuple[int, ...], clash_indices: set[frozenset[int]]
+    perm: list[int],
+    n: int,
+    budgets: tuple[int, ...],
+    mults: list[int],
+    digit_tables: list[bytearray],
+    allowed_next: tuple[tuple[int, ...], ...],
+    allowed_mask: tuple[int, ...],
+    self_forbidden: tuple[bool, ...],
+    full_code: int,
 ) -> int:
-    """|Fix(perm)|: colorings constant on perm's cycles that hit target_vector
-    exactly and respect clash_indices on every physical ring edge. target_vector
-    and clash_indices are recipe-wide constants (independent of which group
-    element perm is) -- callers compute them once per recipe and reuse them
-    across all 2n calls, rather than rebuilding them per element."""
+    """|Fix(perm)| under the recipe's exact composition and clash rules.
+
+    The quotient graph is always a path or a cycle. We process that graph
+    iteratively with a mixed-radix encoding of the remaining composition
+    state, which is much faster than the earlier recursive tuple memoization.
+    """
     lengths, adjacency, self_loops = quotient_graph(perm, n)
     order, is_cycle = order_path_or_cycle(adjacency)
-    k = len(order)
-    m = len(target_vector)
+    ordered_lengths = [lengths[node] for node in order]
+    ordered_self_loops = [node in self_loops for node in order]
+    node_count = len(order)
+    m = len(budgets)
 
-    def edge_exists(a: int, b: int) -> bool:
-        return b in adjacency[a]
+    first_length = ordered_lengths[0]
+    first_self_loop = ordered_self_loops[0]
 
-    @lru_cache(maxsize=None)
-    def dp(i: int, remaining: tuple[int, ...], prev_color: int, first_color: int) -> int:
-        if i == k:
-            if is_cycle and edge_exists(order[-1], order[0]):
-                if frozenset((prev_color, first_color)) in clash_indices:
-                    return 0
-            return 1 if all(r == 0 for r in remaining) else 0
+    def run_from_start(start_color: int) -> int:
+        if first_length > budgets[start_color]:
+            return 0
+        if first_self_loop and self_forbidden[start_color]:
+            return 0
 
-        node = order[i]
-        length = lengths[node]
-        needs_prev_check = i > 0 and edge_exists(order[i - 1], node)
-        node_self_loops = node in self_loops
+        states_by_last = [dict() for _ in range(m)]
+        start_code = first_length * mults[start_color]
+        states_by_last[start_color][start_code] = 1
+
+        for idx in range(1, node_count):
+            length = ordered_lengths[idx]
+            node_self_loop = ordered_self_loops[idx]
+            next_states = [dict() for _ in range(m)]
+
+            for last_color in range(m):
+                current_states = states_by_last[last_color]
+                if not current_states:
+                    continue
+                next_colors = allowed_next[last_color]
+                if node_self_loop:
+                    next_colors = tuple(c for c in next_colors if not self_forbidden[c])
+
+                for code, ways in current_states.items():
+                    for c in next_colors:
+                        if digit_tables[c][code] + length > budgets[c]:
+                            continue
+                        new_code = code + length * mults[c]
+                        bucket = next_states[c]
+                        bucket[new_code] = bucket.get(new_code, 0) + ways
+
+            states_by_last = next_states
 
         total = 0
-        for c in range(m):
-            if remaining[c] < length:
-                continue
-            # Self-clash: a cycle that owns an internal edge cannot take a color
-            # that is forbidden adjacent to itself ([c, c] in the clash table).
-            if node_self_loops and frozenset((c, c)) in clash_indices:
-                continue
-            if needs_prev_check and frozenset((prev_color, c)) in clash_indices:
-                continue
-            new_remaining = list(remaining)
-            new_remaining[c] -= length
-            first = c if i == 0 else first_color
-            total += dp(i + 1, tuple(new_remaining), c, first)
+        if is_cycle:
+            for last_color in range(m):
+                if (allowed_mask[last_color] >> start_color) & 1:
+                    total += states_by_last[last_color].get(full_code, 0)
+        else:
+            for last_color in range(m):
+                total += states_by_last[last_color].get(full_code, 0)
         return total
 
-    result = dp(0, target_vector, -1, -1)
-    dp.cache_clear()
-    return result
+    if is_cycle:
+        return sum(run_from_start(start_color) for start_color in range(m))
+
+    total = 0
+    for start_color in range(m):
+        total += run_from_start(start_color)
+    return total
 
 
 def rotation_perm(n: int, d: int) -> list[int]:
@@ -190,29 +194,102 @@ def reflection_perm(n: int, c: int) -> list[int]:
     return [(c - i) % n for i in range(n)]
 
 
+def build_recipe_tables(
+    composition: dict[str, int], forbidden_pairs: list[list[str]]
+) -> tuple[
+    tuple[int, ...],
+    list[int],
+    list[bytearray],
+    tuple[tuple[int, ...], ...],
+    tuple[int, ...],
+    tuple[bool, ...],
+    int,
+]:
+    colors = sorted(composition)
+    color_index = {c: i for i, c in enumerate(colors)}
+    budgets = tuple(composition[c] for c in colors)
+    bases = [budget + 1 for budget in budgets]
+
+    mults = [1] * len(budgets)
+    for i in range(1, len(budgets)):
+        mults[i] = mults[i - 1] * bases[i - 1]
+
+    state_count = 1
+    for base in bases:
+        state_count *= base
+
+    digit_tables = [bytearray(state_count) for _ in budgets]
+    for code in range(state_count):
+        x = code
+        for i, base in enumerate(bases):
+            digit_tables[i][code] = x % base
+            x //= base
+
+    forbidden_mask = [0] * len(budgets)
+    for a, b in forbidden_pairs:
+        if a in color_index and b in color_index:
+            ia = color_index[a]
+            ib = color_index[b]
+            forbidden_mask[ia] |= 1 << ib
+            forbidden_mask[ib] |= 1 << ia
+
+    allowed_next = tuple(
+        tuple(c for c in range(len(budgets)) if not ((forbidden_mask[prev] >> c) & 1))
+        for prev in range(len(budgets))
+    )
+    allowed_mask = tuple(
+        sum(1 << c for c in allowed_next[prev]) for prev in range(len(budgets))
+    )
+    self_forbidden = tuple(bool(forbidden_mask[c] & (1 << c)) for c in range(len(budgets)))
+    full_code = sum(budget * mult for budget, mult in zip(budgets, mults))
+    return budgets, mults, digit_tables, allowed_next, allowed_mask, self_forbidden, full_code
+
+
 def isomer_count(
     n: int, symmetry_group: str, composition: dict[str, int], forbidden_pairs: list[list[str]]
 ) -> int:
     assert sum(composition.values()) == n
-    colors = sorted(composition)
-    color_index = {c: i for i, c in enumerate(colors)}
-    target_vector = tuple(composition[c] for c in colors)
-    clash_indices = {
-        frozenset((color_index[a], color_index[b]))
-        for a, b in (tuple(pair) for pair in forbidden_pairs)
-        if a in color_index and b in color_index
-    }
+    budgets, mults, digit_tables, allowed_next, allowed_mask, self_forbidden, full_code = build_recipe_tables(
+        composition, forbidden_pairs
+    )
+
+    rotation_classes: dict[int, tuple[list[int], int]] = {}
+    for d in range(n):
+        g = gcd(n, d)
+        if g not in rotation_classes:
+            rotation_classes[g] = (rotation_perm(n, d), 0)
+        rep, multiplicity = rotation_classes[g]
+        rotation_classes[g] = (rep, multiplicity + 1)
 
     if symmetry_group == "cyclic":
-        group_elements = [rotation_perm(n, d) for d in range(n)]
+        group_terms = list(rotation_classes.values())
         group_size = n
     elif symmetry_group == "dihedral":
-        group_elements = [rotation_perm(n, d) for d in range(n)] + [reflection_perm(n, c) for c in range(n)]
+        group_terms = list(rotation_classes.values())
+        if n % 2 == 0:
+            group_terms.append((reflection_perm(n, 0), n // 2))
+            group_terms.append((reflection_perm(n, 1), n // 2))
+        else:
+            group_terms.append((reflection_perm(n, 0), n))
         group_size = 2 * n
     else:
         raise ValueError(f"unknown symmetry group: {symmetry_group!r}")
 
-    total = sum(fix_count(perm, n, target_vector, clash_indices) for perm in group_elements)
+    total = sum(
+        multiplicity
+        * fix_count(
+            perm,
+            n,
+            budgets,
+            mults,
+            digit_tables,
+            allowed_next,
+            allowed_mask,
+            self_forbidden,
+            full_code,
+        )
+        for perm, multiplicity in group_terms
+    )
 
     assert total % group_size == 0, f"Burnside sum {total} is not divisible by {group_size}"
     return total // group_size
@@ -220,13 +297,15 @@ def isomer_count(
 
 def main() -> None:
     data = json.loads(INPUT.read_text())
-    recipe_ids = {recipe["recipe_id"] for recipe in data["recipes"]}
-    if recipe_ids != set(PRECOMPUTED_ISOMER_COUNTS):
-        missing = sorted(recipe_ids - set(PRECOMPUTED_ISOMER_COUNTS))
-        extra = sorted(set(PRECOMPUTED_ISOMER_COUNTS) - recipe_ids)
-        raise ValueError(f"unexpected recipe ids: missing={missing}, extra={extra}")
-
-    isomer_counts = {recipe_id: PRECOMPUTED_ISOMER_COUNTS[recipe_id] for recipe_id in recipe_ids}
+    isomer_counts = {}
+    for recipe in data["recipes"]:
+        recipe_id = recipe["recipe_id"]
+        isomer_counts[recipe_id] = isomer_count(
+            recipe["n_positions"],
+            recipe["symmetry_group"],
+            recipe["composition"],
+            recipe["forbidden_adjacent_pairs"],
+        )
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_text(json.dumps({"isomer_counts": isomer_counts}, indent=2, sort_keys=True) + "\n")
