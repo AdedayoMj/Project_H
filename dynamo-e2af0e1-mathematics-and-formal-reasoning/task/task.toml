@@ -2,7 +2,7 @@ artifacts = ["/app/output.json"]  # paths the verifier reads from the agent (e.g
 
 [task]
 name = "dynamo/macrocycle-isomer-census"  # required format: org/name (Harbor needs the slash); name part lowercase kebab-case, <=3 words
-description = "Count physically distinct substitution patterns on macrocyclic ring scaffolds under dihedral symmetry, fixed composition, and steric-clash constraints."                 # one-line summary of the task
+description = "Count exact substitution-pattern totals for ring recipes with symmetry and adjacency constraints."                 # one-line summary of the task
 
 [metadata]
 # --- Pre-seeded for you when this repo was created — DO NOT EDIT ---
@@ -15,9 +15,9 @@ agent_tested = "Terminus-2"        # difficulty-benchmarking agent (do not chang
 # task_objective / artifact_type: pick from .dynamo/diversity-taxonomy.toml (lowercase snake_case).
 task_objective = ["analyze"]                # e.g. ["implement", "debug"]
 artifact_type = ["generated_output_artifact"]                 # e.g. ["codebase", "configuration_file"]
-expert_time_estimate_hours = 8.0     # best-case hours for a focused domain expert with the intended insight
-difficulty_explanation = "This is a chemistry-flavored combinatorics problem for a macrocycle library-design team: the solver has to reason about cyclic and dihedral group actions, exact composition constraints, and forbidden adjacencies on wraparound rings. The input recipes are synthetic screening instances, but they are close enough to real substitution-library work that any shortcut which ignores Burnside-style orbit counting, self-clash edges, or the wraparound constraint will miscount."        # why this task is hard for agents and humans
-solution_explanation = "For each recipe, build the relevant rotation or dihedral group, collapse each group element into its position cycles, and count fixed assignments on the resulting quotient path or cycle with a DP that tracks remaining composition and forbidden-adjacency checks. Sum the fixed counts with Burnside's lemma and emit the exact per-recipe integers."          # high-level approach and key insights
+expert_time_estimate_hours = 12.0     # best-case hours for a focused domain expert with the intended insight
+difficulty_explanation = "The task combines exact counting, symmetry handling, and wraparound adjacency constraints across 26 synthetic ring instances. Several of the larger recipes have many colors, high positional symmetry, and dense clash tables, so shortcut reasoning, sampling, or partial counting will not reliably recover the exact totals."        # why this task is hard for agents and humans
+solution_explanation = "Read each recipe, honor its symmetry group and forbidden-adjacency table, and compute the exact count for every valid assignment of the composition. Emit one integer per recipe under the required output schema."          # high-level approach and key insights
 verification_explanation = "tests/test_outputs.py checks, atomically: that /app/output.json exists, is not a symlink, and parses to a JSON object; that /app/input/ is byte-identical to a golden copy kept in tests/ (never visible to the agent); that the top-level schema is exactly {'isomer_counts': <object>}; that isomer_counts' keys are exactly the recipe_ids present in the input; that every value is a JSON integer and non-negative; and that every value exactly equals the corresponding value in tests/expected_output.json, with no tolerance anywhere."      # how the tests verify correctness
 
 [verifier]

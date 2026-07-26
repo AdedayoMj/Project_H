@@ -132,6 +132,55 @@
       "symmetry_group": "dihedral",
       "composition": {"A": 4, "B": 4, "C": 4, "D": 4, "E": 4, "F": 4, "G": 4, "H": 4},
       "forbidden_adjacent_pairs": [["A", "A"], ["D", "D"], ["G", "G"], ["A", "E"], ["B", "F"], ["C", "G"], ["D", "H"], ["E", "H"], ["F", "G"], ["B", "D"]]
+    },
+    {
+      "recipe_id": "R20",
+      "n_positions": 35,
+      "symmetry_group": "cyclic",
+      "composition": {"A": 5, "B": 5, "C": 5, "D": 5, "E": 5, "F": 5, "G": 5},
+      "forbidden_adjacent_pairs": [["A", "A"], ["B", "C"], ["D", "E"], ["F", "G"], ["A", "D"], ["B", "F"]]
+    },
+    {
+      "recipe_id": "R21",
+      "n_positions": 36,
+      "symmetry_group": "dihedral",
+      "composition": {"A": 6, "B": 5, "C": 5, "D": 5, "E": 5, "F": 5, "G": 5},
+      "forbidden_adjacent_pairs": [["A", "A"], ["B", "C"], ["D", "E"], ["F", "G"], ["A", "D"], ["B", "F"], ["C", "G"]]
+    },
+    {
+      "recipe_id": "R22",
+      "n_positions": 36,
+      "symmetry_group": "cyclic",
+      "composition": {"A": 5, "B": 6, "C": 5, "D": 5, "E": 5, "F": 5, "G": 5},
+      "forbidden_adjacent_pairs": [["A", "A"], ["B", "D"], ["C", "E"], ["F", "G"], ["A", "C"], ["D", "F"]]
+    },
+    {
+      "recipe_id": "R23",
+      "n_positions": 42,
+      "symmetry_group": "cyclic",
+      "composition": {"A": 6, "B": 6, "C": 6, "D": 6, "E": 6, "F": 6, "G": 6},
+      "forbidden_adjacent_pairs": [["A", "A"], ["B", "D"], ["C", "F"], ["E", "G"], ["A", "C"], ["B", "E"]]
+    },
+    {
+      "recipe_id": "R24",
+      "n_positions": 42,
+      "symmetry_group": "dihedral",
+      "composition": {"A": 6, "B": 6, "C": 6, "D": 6, "E": 6, "F": 6, "G": 6},
+      "forbidden_adjacent_pairs": [["A", "B"], ["C", "D"], ["E", "F"], ["G", "G"], ["A", "D"], ["B", "F"]]
+    },
+    {
+      "recipe_id": "R25",
+      "n_positions": 42,
+      "symmetry_group": "cyclic",
+      "composition": {"A": 6, "B": 6, "C": 6, "D": 6, "E": 6, "F": 6, "G": 6},
+      "forbidden_adjacent_pairs": [["A", "C"], ["B", "E"], ["D", "G"], ["A", "A"], ["C", "F"], ["D", "F"]]
+    },
+    {
+      "recipe_id": "R26",
+      "n_positions": 42,
+      "symmetry_group": "dihedral",
+      "composition": {"A": 6, "B": 6, "C": 6, "D": 6, "E": 6, "F": 6, "G": 6},
+      "forbidden_adjacent_pairs": [["A", "D"], ["B", "F"], ["C", "G"], ["E", "E"], ["A", "B"], ["D", "E"]]
     }
   ]
 }
