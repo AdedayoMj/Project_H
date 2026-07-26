@@ -177,6 +177,23 @@ def fix_count(
                 total += states_by_last[last_color].get(full_code, 0)
         return total
 
+    if is_cycle and len(set(ordered_lengths)) == 1 and len(set(ordered_self_loops)) == 1:
+        # Rotating the quotient cycle shows that the number of colorings
+        # anchored at color c is total * occurrences(c) / node_count. Compute
+        # one anchor instead of repeating the same DP once per color.
+        node_weight = first_length
+        anchor_colors = [
+            c for c, budget in enumerate(budgets) if budget and budget % node_weight == 0
+        ]
+        if not anchor_colors:
+            return 0
+        anchor = min(anchor_colors, key=lambda c: len(allowed_next[c]))
+        anchor_occurrences = budgets[anchor] // node_weight
+        anchored_total = run_from_start(anchor)
+        numerator = anchored_total * node_count
+        assert numerator % anchor_occurrences == 0
+        return numerator // anchor_occurrences
+
     if is_cycle:
         return sum(run_from_start(start_color) for start_color in range(m))
 
