@@ -88,6 +88,18 @@ def test_every_occurrence_appears_exactly_once():
     assert set(scheduled_ids) | set(deferred_ids) == expected_universe
 
 
+def test_weighted_selection_portfolios_satisfied():
+    """Every disclosed cross-date weighted portfolio meets its unit floor and cap."""
+    data = _load_output()
+    policy = json.loads((INPUT_PATH / "policy_notes.json").read_text())
+    for rule in policy["weighted_selection_portfolios"]:
+        units = sum(
+            rule["event_units"].get(entry["event_id"], 0)
+            for entry in data["final_schedule"]
+        )
+        assert rule["minimum_units"] <= units <= rule["maximum_units"]
+
+
 def test_reply_categories_values_are_legal():
     """Every reply_categories value is one of the five fixed category labels."""
     data = _load_output()
