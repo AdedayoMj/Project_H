@@ -47,12 +47,14 @@ def _by_line_id(line_items: list[dict]) -> dict[str, dict]:
 
 
 def test_output_file_exists():
+    """The required artifact exists, is a regular JSON file, and parses to an object."""
     assert OUTPUT_PATH.exists()
     assert not OUTPUT_PATH.is_symlink()
     assert isinstance(_load_output(), dict)
 
 
 def test_input_files_unchanged():
+    """The agent leaves every provided input file byte-identical and adds no input files."""
     golden_files = sorted(p.relative_to(GOLDEN_INPUT_PATH) for p in GOLDEN_INPUT_PATH.rglob("*") if p.is_file())
     actual_files = sorted(p.relative_to(INPUT_PATH) for p in INPUT_PATH.rglob("*") if p.is_file())
     assert actual_files == golden_files
@@ -61,6 +63,7 @@ def test_input_files_unchanged():
 
 
 def test_output_top_level_schema():
+    """The artifact has exactly the disclosed line_items and trip_summary containers."""
     data = _load_output()
     assert set(data) == {"line_items", "trip_summary"}
     assert isinstance(data["line_items"], list)
@@ -68,6 +71,7 @@ def test_output_top_level_schema():
 
 
 def test_line_items_cover_every_expense_line_exactly_once():
+    """Every input line_id appears exactly once, with no missing or invented line items."""
     data = _load_output()
     ids = [item["line_id"] for item in data["line_items"]]
     assert len(ids) == len(set(ids))
@@ -75,6 +79,7 @@ def test_line_items_cover_every_expense_line_exactly_once():
 
 
 def test_line_items_well_formed():
+    """Each line item has the exact fields, legal status, and non-negative integer amount."""
     data = _load_output()
     for item in data["line_items"]:
         assert set(item) == LINE_ITEM_KEYS
@@ -84,6 +89,7 @@ def test_line_items_well_formed():
 
 
 def test_trip_summary_well_formed():
+    """The summary has all seven disclosed fields with valid category and value types."""
     data = _load_output()
     summary = data["trip_summary"]
     assert set(summary) == TRIP_SUMMARY_KEYS
@@ -106,11 +112,13 @@ def test_trip_summary_well_formed():
 
 
 def test_final_within_budget_cap():
+    """The final reimbursement never exceeds the disclosed whole-trip budget cap."""
     summary = _load_output()["trip_summary"]
     assert summary["final_reimbursable_cents"] <= summary["trip_budget_cap_cents"]
 
 
 def test_deferred_list_consistent_with_line_items():
+    """The deferred summary list exactly identifies zeroed DEFERRED_OVER_BUDGET lines."""
     data = _load_output()
     deferred_lines = {i["line_id"] for i in data["line_items"] if i["status"] == "DEFERRED_OVER_BUDGET"}
     assert set(data["trip_summary"]["deferred_over_budget_line_ids"]) == deferred_lines
@@ -120,8 +128,10 @@ def test_deferred_list_consistent_with_line_items():
 
 
 def test_line_items_match_reference():
+    """Every line's exact reimbursable amount and final status match the reference audit."""
     assert _by_line_id(_load_output()["line_items"]) == _by_line_id(_load_expected()["line_items"])
 
 
 def test_trip_summary_matches_reference():
+    """Every trip-level and category-level total exactly matches the reference audit."""
     assert _load_output()["trip_summary"] == _load_expected()["trip_summary"]
