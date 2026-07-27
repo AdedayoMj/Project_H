@@ -17,6 +17,58 @@
     "end_utc": "2026-04-03T23:59:59Z",
     "start_utc": "2026-03-02T00:00:00Z"
   },
+  "selection_portfolios": [
+    {
+      "portfolio_id": "summit-emerging-voices",
+      "event_ids": ["mov-summit-01", "mov-summit-02", "mov-summit-04", "mov-summit-05", "mov-summit-06", "mov-summit-08", "mov-summit-10", "mov-summit-13", "mov-summit-14", "mov-summit-16", "mov-summit-17", "mov-summit-19", "mov-summit-20", "mov-summit-21", "mov-summit-22", "mov-summit-23", "mov-summit-24", "mov-summit-25", "mov-summit-26", "mov-summit-27"],
+      "minimum_scheduled": 4,
+      "maximum_scheduled": 6
+    },
+    {
+      "portfolio_id": "summit-incumbent-cap",
+      "event_ids": ["mov-summit-03", "mov-summit-07", "mov-summit-11", "mov-summit-12", "mov-summit-15", "mov-summit-18", "mov-summit-28"],
+      "minimum_scheduled": 2,
+      "maximum_scheduled": 4
+    },
+    {
+      "portfolio_id": "summit-cross-track-balance",
+      "event_ids": ["mov-summit-02", "mov-summit-05", "mov-summit-07", "mov-summit-10", "mov-summit-12", "mov-summit-14", "mov-summit-18", "mov-summit-23", "mov-summit-26", "mov-summit-28"],
+      "minimum_scheduled": 3,
+      "maximum_scheduled": 5
+    },
+    {
+      "portfolio_id": "war-room-challenger-set",
+      "event_ids": ["mov-war-02", "mov-war-03", "mov-war-04", "mov-war-06", "mov-war-08", "mov-war-11", "mov-war-13", "mov-war-15", "mov-war-16", "mov-war-19", "mov-war-20", "mov-war-22", "mov-war-23", "mov-war-24", "mov-war-25"],
+      "minimum_scheduled": 4,
+      "maximum_scheduled": 6
+    },
+    {
+      "portfolio_id": "war-room-incumbent-cap",
+      "event_ids": ["mov-war-01", "mov-war-05", "mov-war-07", "mov-war-09", "mov-war-10", "mov-war-12", "mov-war-14", "mov-war-17", "mov-war-18", "mov-war-21", "mov-war-26"],
+      "minimum_scheduled": 3,
+      "maximum_scheduled": 7
+    },
+    {
+      "portfolio_id": "war-room-cross-track-balance",
+      "event_ids": ["mov-war-02", "mov-war-03", "mov-war-05", "mov-war-08", "mov-war-10", "mov-war-13", "mov-war-17", "mov-war-20", "mov-war-22", "mov-war-25"],
+      "minimum_scheduled": 3,
+      "maximum_scheduled": 5
+    }
+  ],
+  "conditional_commitments": [
+    {
+      "commitment_id": "summit-innovation-follow-through",
+      "if_event_id": "mov-summit-23",
+      "then_event_ids": ["mov-summit-01", "mov-summit-06", "mov-summit-21", "mov-summit-26"],
+      "minimum_then_scheduled": 3
+    },
+    {
+      "commitment_id": "war-room-risk-follow-through",
+      "if_event_id": "mov-war-22",
+      "then_event_ids": ["mov-war-02", "mov-war-11", "mov-war-24", "mov-war-25"],
+      "minimum_then_scheduled": 3
+    }
+  ],
   "reply_categories": [
     "ACK",
     "DECLINE",
@@ -41,8 +93,10 @@
   "scheduling_rules": {
     "after_hours_rule": "An occurrence whose start_local time-of-day (in its own timezone) is at or after after_hours_cutoff_local is only allowed in final_schedule if after_hours_ok=true or vip_override=true; otherwise that start_local/venue combination is not a legal placement for the occurrence.",
     "conflict_rule": "Two scheduled occurrences may never overlap in time. Two scheduled occurrences at different venues that do not overlap still conflict if the gap between them is smaller than the travel_matrix.csv minutes required between their venues; occurrences at the same venue never require a travel gap.",
+    "conditional_commitment_rule": "For each entry in conditional_commitments, if at least one occurrence whose event_id equals if_event_id is scheduled, then at least minimum_then_scheduled occurrences whose event_id is listed in then_event_ids must also be scheduled. If no if_event_id occurrence is scheduled, that entry imposes no minimum.",
     "dependency_rule": "If occurrence B lists occurrence A's event_id in its dependencies, and both A and B appear in final_schedule, B's scheduled start must be no earlier than A's scheduled end. If A is not in final_schedule, B has no ordering constraint from this rule.",
     "movable_rule": "An occurrence with movable=false has exactly one legal placement (its original start_local/venue) and can only be included as-is or left out of final_schedule entirely. An occurrence with movable=true may instead be placed at its original start_local/venue or at any of its candidate_slots, subject to the after-hours rule above.",
+    "portfolio_selection_rule": "For each entry in selection_portfolios, count scheduled occurrences whose event_id appears in that entry's event_ids. The count must be at least minimum_scheduled and at most maximum_scheduled, inclusive. Portfolio rules apply simultaneously and may overlap.",
     "protected_rule": "An occurrence with protected=true can never be moved and can only be left out of final_schedule if it directly conflicts with another scheduled occurrence whose vip_override=true; in every other situation a protected occurrence must appear in final_schedule at its original start_local/venue.",
     "tie_break_rule": "After the four objective_order metrics above are optimized, any remaining tie is broken by comparing, in ascending order of occurrence_id, the rank of each occurrence's chosen placement: rank 0 is its original start_local/venue, and ranks 1, 2, ... are its remaining candidate_slots entries in listed order, skipping any candidate_slots entry that exactly duplicates the original placement or an earlier candidate_slots entry (such a duplicate is not a distinct placement and receives no rank of its own). An occurrence left out of final_schedule entirely ranks after all of its distinct placements. The valid final_schedule is the one whose sequence of ranks, read in occurrence_id order, is lexicographically smallest.",
     "vip_override_rule": "An occurrence with vip_override=true is exempt from the after-hours cutoff. It is also the only thing that can unlock leaving a protected occurrence out of final_schedule (see protected_rule): if a scheduled vip_override occurrence directly conflicts with a protected occurrence, deferring that protected occurrence becomes a legal choice, and objective_order then decides -- like any other choice -- whether deferring it actually is optimal. Being vip_override=true does not by itself guarantee an occurrence beats a protected occurrence; it only makes that outcome reachable."

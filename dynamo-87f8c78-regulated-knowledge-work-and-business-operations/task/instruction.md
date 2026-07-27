@@ -4,7 +4,7 @@ You are the executive assistant responsible for finalizing next week's operating
 
 `/app/input/travel_matrix.csv` gives one-way transit minutes between every pair of venues.
 
-`/app/input/policy_notes.json` gives the planning window, the after-hours cutoff, the exact objective to optimize (`objective_order`, spelled out precisely in `objective_definitions`), the exact scheduling constraints (`scheduling_rules`, covering conflicts/travel gaps, protected blocks, VIP overrides, after-hours eligibility, movable-vs-fixed placement, dependency ordering, and the tie-break rule), and the exact deterministic message-classification procedure (`reply_rule_order` and `reply_rule_definitions`).
+`/app/input/policy_notes.json` gives the planning window, the after-hours cutoff, the exact objective to optimize (`objective_order`, spelled out precisely in `objective_definitions`), the exact scheduling constraints (`scheduling_rules`, covering conflicts/travel gaps, protected blocks, VIP overrides, after-hours eligibility, movable-vs-fixed placement, dependency ordering, overlapping `selection_portfolios`, `conditional_commitments`, and the tie-break rule), and the exact deterministic message-classification procedure (`reply_rule_order` and `reply_rule_definitions`).
 
 `/app/input/inbox/messages.json` lists inbox messages, each carrying the boolean fields (`missing_required_details`, `requires_escalation`, `no_legal_alternative`, `conflict`, `alternate_available`) that `reply_rule_definitions` is written against.
 
