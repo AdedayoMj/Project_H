@@ -12,5 +12,112 @@
     "MILEAGE": 3000
   },
   "normal_commute_deduction_cents": 1200,
-  "trip_reimbursement_cap_cents": 300000
+  "trip_reimbursement_cap_cents": 1040200,
+  "retention_portfolios": [
+    {
+      "portfolio_id": "strategic-travel-capacity",
+      "line_units": {
+        "E03": 5,
+        "E06": 8,
+        "E12": 9,
+        "E17": 4,
+        "E24": 7,
+        "E32": 6,
+        "E39": 7,
+        "E45": 6,
+        "E51": 8,
+        "E57": 9,
+        "E65": 5,
+        "E68": 7,
+        "E70": 6,
+        "E72": 8,
+        "E74": 9,
+        "E75": 7,
+        "E76": 9
+      },
+      "minimum_retained_units": 45,
+      "maximum_retained_units": 57
+    },
+    {
+      "portfolio_id": "stakeholder-coverage",
+      "line_units": {
+        "E29": 3,
+        "E30": 5,
+        "E31": 7,
+        "E33": 6,
+        "E36": 4,
+        "E38": 8,
+        "E42": 5,
+        "E44": 7,
+        "E48": 4,
+        "E50": 8,
+        "E53": 3,
+        "E56": 7,
+        "E59": 5,
+        "E62": 8,
+        "E66": 6,
+        "E69": 7,
+        "E71": 8,
+        "E73": 9
+      },
+      "minimum_retained_units": 81,
+      "maximum_retained_units": 81
+    },
+    {
+      "portfolio_id": "audit-review-capacity",
+      "line_units": {
+        "E01": 4,
+        "E03": 6,
+        "E06": 9,
+        "E11": 3,
+        "E20": 5,
+        "E25": 4,
+        "E28": 7,
+        "E32": 6,
+        "E37": 5,
+        "E39": 8,
+        "E43": 4,
+        "E45": 7,
+        "E51": 9,
+        "E54": 5,
+        "E57": 8,
+        "E60": 4,
+        "E63": 7,
+        "E65": 6,
+        "E70": 8,
+        "E75": 9
+      },
+      "minimum_retained_units": 90,
+      "maximum_retained_units": 101
+    },
+    {
+      "portfolio_id": "homebound-fare-alternative",
+      "line_units": {
+        "E74": 1,
+        "E76": 1
+      },
+      "minimum_retained_units": 1,
+      "maximum_retained_units": 1
+    }
+  ],
+  "retention_commitments": [
+    {
+      "commitment_id": "atlantic-ticket-bundle",
+      "if_retained_line_id": "E65",
+      "then_line_ids": ["E68", "E71", "E72", "E73"],
+      "minimum_then_retained": 2
+    },
+    {
+      "commitment_id": "homebound-ticket-bundle",
+      "if_retained_line_id": "E75",
+      "then_line_ids": ["E66", "E69", "E74", "E76"],
+      "minimum_then_retained": 2
+    },
+    {
+      "commitment_id": "client-program-follow-through",
+      "if_retained_line_id": "E36",
+      "then_line_ids": ["E31", "E38", "E55", "E63"],
+      "minimum_then_retained": 3
+    }
+  ]
 }

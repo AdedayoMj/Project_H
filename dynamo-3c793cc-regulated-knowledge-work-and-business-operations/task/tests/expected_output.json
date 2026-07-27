@@ -3,7 +3,7 @@
     {
       "line_id": "E01",
       "reimbursable_cents": 7500,
-      "status": "APPROVED"
+      "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
       "line_id": "E02",
@@ -13,17 +13,17 @@
     {
       "line_id": "E03",
       "reimbursable_cents": 22418,
-      "status": "APPROVED"
+      "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
       "line_id": "E04",
       "reimbursable_cents": 1354,
-      "status": "APPROVED"
+      "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
       "line_id": "E05",
       "reimbursable_cents": 3960,
-      "status": "APPROVED"
+      "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
       "line_id": "E06",
@@ -53,17 +53,17 @@
     {
       "line_id": "E11",
       "reimbursable_cents": 6000,
-      "status": "APPROVED"
+      "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
       "line_id": "E12",
-      "reimbursable_cents": 145000,
-      "status": "NEEDS_MANAGER_APPROVAL"
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
     },
     {
       "line_id": "E13",
       "reimbursable_cents": 3867,
-      "status": "APPROVED"
+      "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
       "line_id": "E14",
@@ -78,7 +78,7 @@
     {
       "line_id": "E16",
       "reimbursable_cents": 1061,
-      "status": "APPROVED"
+      "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
       "line_id": "E17",
@@ -97,18 +97,18 @@
     },
     {
       "line_id": "E20",
-      "reimbursable_cents": 0,
-      "status": "DEFERRED_OVER_BUDGET"
+      "reimbursable_cents": 6000,
+      "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
       "line_id": "E21",
       "reimbursable_cents": 226,
-      "status": "APPROVED"
+      "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
       "line_id": "E22",
       "reimbursable_cents": 6000,
-      "status": "APPROVED"
+      "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
       "line_id": "E23",
@@ -122,23 +122,13 @@
     },
     {
       "line_id": "E25",
-      "reimbursable_cents": 0,
-      "status": "DEFERRED_OVER_BUDGET"
+      "reimbursable_cents": 6000,
+      "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
       "line_id": "E26",
       "reimbursable_cents": 8000,
       "status": "NEEDS_MANAGER_APPROVAL"
-    },
-    {
-      "line_id": "E27",
-      "reimbursable_cents": 0,
-      "status": "NON_REIMBURSABLE"
-    },
-    {
-      "line_id": "E28",
-      "reimbursable_cents": 12000,
-      "status": "APPROVED"
     },
     {
       "line_id": "M01",
@@ -154,17 +144,267 @@
       "line_id": "M03",
       "reimbursable_cents": 0,
       "status": "APPROVED"
+    },
+    {
+      "line_id": "E27",
+      "reimbursable_cents": 0,
+      "status": "NON_REIMBURSABLE"
+    },
+    {
+      "line_id": "E28",
+      "reimbursable_cents": 12000,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E29",
+      "reimbursable_cents": 6000,
+      "status": "APPROVED"
+    },
+    {
+      "line_id": "E30",
+      "reimbursable_cents": 9617,
+      "status": "APPROVED"
+    },
+    {
+      "line_id": "E31",
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
+    },
+    {
+      "line_id": "E32",
+      "reimbursable_cents": 18763,
+      "status": "APPROVED"
+    },
+    {
+      "line_id": "E33",
+      "reimbursable_cents": 21947,
+      "status": "APPROVED"
+    },
+    {
+      "line_id": "E34",
+      "reimbursable_cents": 6000,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E35",
+      "reimbursable_cents": 6000,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E36",
+      "reimbursable_cents": 11119,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E37",
+      "reimbursable_cents": 12000,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E38",
+      "reimbursable_cents": 17291,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E39",
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
+    },
+    {
+      "line_id": "E40",
+      "reimbursable_cents": 5867,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E41",
+      "reimbursable_cents": 6000,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E42",
+      "reimbursable_cents": 9941,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E43",
+      "reimbursable_cents": 12000,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E44",
+      "reimbursable_cents": 16687,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E45",
+      "reimbursable_cents": 19431,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E46",
+      "reimbursable_cents": 5279,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E47",
+      "reimbursable_cents": 6000,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E48",
+      "reimbursable_cents": 10463,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E49",
+      "reimbursable_cents": 12000,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E50",
+      "reimbursable_cents": 17849,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E51",
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
+    },
+    {
+      "line_id": "E52",
+      "reimbursable_cents": 6000,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E53",
+      "reimbursable_cents": 8859,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E54",
+      "reimbursable_cents": 11783,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E55",
+      "reimbursable_cents": 15107,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E56",
+      "reimbursable_cents": 18943,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E57",
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
+    },
+    {
+      "line_id": "E58",
+      "reimbursable_cents": 5629,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E59",
+      "reimbursable_cents": 7997,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E60",
+      "reimbursable_cents": 10831,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E61",
+      "reimbursable_cents": 12000,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E62",
+      "reimbursable_cents": 18317,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E63",
+      "reimbursable_cents": 21461,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E64",
+      "reimbursable_cents": 6000,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E65",
+      "reimbursable_cents": 31543,
+      "status": "APPROVED"
+    },
+    {
+      "line_id": "E66",
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
+    },
+    {
+      "line_id": "E67",
+      "reimbursable_cents": 53729,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E68",
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
+    },
+    {
+      "line_id": "E69",
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
+    },
+    {
+      "line_id": "E70",
+      "reimbursable_cents": 86859,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E71",
+      "reimbursable_cents": 97773,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E72",
+      "reimbursable_cents": 108611,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E73",
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
+    },
+    {
+      "line_id": "E74",
+      "reimbursable_cents": 132353,
+      "status": "NEEDS_MANAGER_APPROVAL"
+    },
+    {
+      "line_id": "E75",
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
+    },
+    {
+      "line_id": "E76",
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
     }
   ],
   "trip_summary": {
     "category_breakdown": {
       "AIRFARE": {
-        "flagged_for_approval_cents": 153000,
-        "reimbursable_cents": 153000
+        "flagged_for_approval_cents": 487325,
+        "reimbursable_cents": 518868
       },
       "MEALS": {
-        "flagged_for_approval_cents": 63270,
-        "reimbursable_cents": 132681
+        "flagged_for_approval_cents": 456510,
+        "reimbursable_cents": 517862
       },
       "MILEAGE": {
         "flagged_for_approval_cents": 1866,
@@ -172,14 +412,23 @@
       }
     },
     "deferred_over_budget_line_ids": [
-      "E20",
+      "E12",
       "E24",
-      "E25"
+      "E31",
+      "E39",
+      "E51",
+      "E57",
+      "E66",
+      "E68",
+      "E69",
+      "E73",
+      "E75",
+      "E76"
     ],
-    "final_reimbursable_cents": 299774,
-    "gross_reimbursable_cents": 401774,
-    "total_flagged_for_approval_cents": 218136,
-    "total_per_diem_cents": 10660,
-    "trip_budget_cap_cents": 300000
+    "final_reimbursable_cents": 1040163,
+    "gross_reimbursable_cents": 1931318,
+    "total_flagged_for_approval_cents": 945701,
+    "total_per_diem_cents": 0,
+    "trip_budget_cap_cents": 1040200
   }
 }

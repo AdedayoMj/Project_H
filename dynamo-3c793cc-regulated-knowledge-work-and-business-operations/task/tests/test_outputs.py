@@ -127,6 +127,27 @@ def test_deferred_list_consistent_with_line_items():
             assert item["reimbursable_cents"] == 0
 
 
+def test_retention_rules_satisfied():
+    """The retained set satisfies every disclosed weighted portfolio and conditional bundle."""
+    data = _load_output()
+    policy = json.loads((INPUT_PATH / "policy.json").read_text())
+    retained = {
+        item["line_id"]
+        for item in data["line_items"]
+        if item["status"] not in {"DEFERRED_OVER_BUDGET", "DUPLICATE_EXCLUDED", "NON_REIMBURSABLE"}
+    }
+    for rule in policy["retention_portfolios"]:
+        units = sum(
+            unit for line_id, unit in rule["line_units"].items()
+            if line_id in retained
+        )
+        assert rule["minimum_retained_units"] <= units <= rule["maximum_retained_units"]
+    for rule in policy["retention_commitments"]:
+        if rule["if_retained_line_id"] in retained:
+            retained_then = len(retained.intersection(rule["then_line_ids"]))
+            assert retained_then >= rule["minimum_then_retained"]
+
+
 def test_line_items_match_reference():
     """Every line's exact reimbursable amount and final status match the reference audit."""
     assert _by_line_id(_load_output()["line_items"]) == _by_line_id(_load_expected()["line_items"])

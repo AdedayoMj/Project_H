@@ -10,9 +10,11 @@ Pipeline per trip:
      meals dated that day (anti-double-dip), floored at zero.
   3. Approval disposition (per-line threshold + running category-aggregate).
   4. Trip-budget optimization: if per-diem + all reimbursable line amounts
-     exceeds the trip cap, defer a subset of lines (0/1 knapsack) maximizing,
-     lexicographically, retained priority-weight, then retained amount, then
-     the line-id-lexicographic retention vector (a total order -> unique).
+     exceeds the trip cap, defer a subset of lines (constrained 0/1 knapsack)
+     satisfying overlapping weighted retention portfolios and conditional
+     claim bundles while maximizing, lexicographically, retained
+     priority-weight, then retained amount, then the line-id-lexicographic
+     retention vector (a total order -> unique).
 All money is integer home-currency cents.
 """
 from __future__ import annotations
@@ -128,16 +130,38 @@ def compute_per_diem_by_day(itinerary, rates_by_city, fraction: Decimal):
     return out
 
 
-def solve_budget_knapsack(reimb_lines, per_diem_total, cap):
+def solve_budget_knapsack(
+    reimb_lines,
+    per_diem_total,
+    cap,
+    retention_portfolios,
+    retention_commitments,
+):
     """reimb_lines: list of dicts {line_id, date, amount, weight}. Choose a
     RETAINED subset maximizing (sum weight, then sum amount, then line-id
     lexicographic retention) s.t. per_diem_total + sum retained amount <= cap.
-    Returns set of DEFERRED line_ids (empty if everything fits)."""
+    The retained subset must also satisfy every weighted portfolio and
+    conditional commitment. Returns DEFERRED line_ids (empty if everything
+    fits, in which case retention constraints do not activate)."""
     budget = cap - per_diem_total
     if sum(l["amount"] for l in reimb_lines) <= budget:
         return set()
     # order by (date, line_id) so the lexicographic tie-break is well-defined
     order = sorted(reimb_lines, key=lambda l: (l["date"], l["line_id"]))
+    known_line_ids = {line["line_id"] for line in order}
+    referenced_line_ids = {
+        line_id
+        for rule in retention_portfolios
+        for line_id in rule["line_units"]
+    }
+    referenced_line_ids.update(
+        line_id
+        for rule in retention_commitments
+        for line_id in [rule["if_retained_line_id"], *rule["then_line_ids"]]
+    )
+    assert referenced_line_ids <= known_line_ids, (
+        "retention rules may reference only surviving reimbursable lines"
+    )
 
     def solve(fix_weight=None, fix_amount=None, forced=None):
         m = cp_model.CpModel()
@@ -149,27 +173,40 @@ def solve_budget_knapsack(reimb_lines, per_diem_total, cap):
             m.Add(W == fix_weight)
         if fix_amount is not None:
             m.Add(A == fix_amount)
+        for rule in retention_portfolios:
+            units = sum(
+                unit * x[line_id]
+                for line_id, unit in rule["line_units"].items()
+            )
+            m.Add(units >= rule["minimum_retained_units"])
+            m.Add(units <= rule["maximum_retained_units"])
+        for rule in retention_commitments:
+            m.Add(
+                sum(x[line_id] for line_id in rule["then_line_ids"])
+                >= rule["minimum_then_retained"]
+            ).OnlyEnforceIf(x[rule["if_retained_line_id"]])
         for lid, val in (forced or {}).items():
             m.Add(x[lid] == val)
         return m, x, W, A
 
     s = cp_model.CpSolver()
-    s.parameters.num_search_workers = 8
+    s.parameters.num_search_workers = 4
 
     m, x, W, A = solve()
     m.Maximize(W)
-    assert s.Solve(m) in (cp_model.OPTIMAL, cp_model.FEASIBLE)
-    best_w = int(s.ObjectiveValue())
+    assert s.Solve(m) == cp_model.OPTIMAL
+    best_w = int(s.Value(W))
 
     m, x, W, A = solve(fix_weight=best_w)
     m.Maximize(A)
-    assert s.Solve(m) in (cp_model.OPTIMAL, cp_model.FEASIBLE)
-    best_a = int(s.ObjectiveValue())
+    assert s.Solve(m) == cp_model.OPTIMAL
+    best_a = int(s.Value(A))
 
     # Iterative lexicographic tie-break: retain earlier line_ids preferentially.
     forced = {}
     for l in order:
-        trial = dict(forced); trial[l["line_id"]] = 1
+        trial = dict(forced)
+        trial[l["line_id"]] = 1
         m, x, W, A = solve(fix_weight=best_w, fix_amount=best_a, forced=trial)
         forced[l["line_id"]] = 1 if s.Solve(m) in (cp_model.OPTIMAL, cp_model.FEASIBLE) else 0
     return {lid for lid, v in forced.items() if v == 0}
@@ -238,7 +275,13 @@ def main():
     # ---- phase 4: trip-budget knapsack ----
     knap_lines = [{"line_id": l["line_id"], "date": l["date"], "amount": computed[l["line_id"]],
                    "weight": 6 - int(l["priority"])} for l in reimb]
-    deferred = solve_budget_knapsack(knap_lines, total_per_diem, policy["trip_reimbursement_cap_cents"])
+    deferred = solve_budget_knapsack(
+        knap_lines,
+        total_per_diem,
+        policy["trip_reimbursement_cap_cents"],
+        policy.get("retention_portfolios", []),
+        policy.get("retention_commitments", []),
+    )
 
     # ---- assemble output ----
     cats = ("MEALS", "AIRFARE", "MILEAGE")
@@ -267,7 +310,7 @@ def main():
     final = total_per_diem + line_total
 
     output = {
-        "line_items": sorted(line_items, key=lambda x: x["line_id"]),
+        "line_items": line_items,
         "trip_summary": {
             "total_per_diem_cents": total_per_diem,
             "gross_reimbursable_cents": gross,
