@@ -20,11 +20,11 @@ Process rows in file order. Use only these statuses: `APPROVED`, `NEEDS_MANAGER_
 - If `(vendor, amount, date, category)` matches an earlier still-eligible line exactly, mark the later line `DUPLICATE_EXCLUDED`, amount `0`. Keep the first occurrence.
 
 2. Reimbursable amount for non-excluded lines
-- For `MEALS` and `AIRFARE`, if the country/category is VAT-eligible, subtract VAT from `amount` first and round half up to cents.
+- For VAT-eligible `MEALS` and `AIRFARE`, amounts are VAT-inclusive under this policy: `VAT = round_half_up(amount * rate)` to transaction-currency cents; net is `amount - VAT`. Do not use `amount / (1 + rate)`.
 - Convert the remainder to home currency in two hops: `transaction_currency -> card_billing_currency` using the `date` rate, then `card_billing_currency -> home` using the `statement_post_date` rate. Round half up after each hop; if a hop is same-currency, leave it unchanged.
 - `MEALS`: use the per-head cap only when `payer=EXECUTIVE` and at least one attendee is `CLIENT`; headcount is the number of listed attendees, excluding the executive. Otherwise cap at the solo amount.
 - `AIRFARE`: if the trip has any personal day, cap each airfare line at the counterfactual fare; otherwise use the full converted fare.
-- If `transaction_currency != card_billing_currency` and `fee_free_alternative_existed` is not `TRUE`, convert `foreign_fee_amount` the same way and add it, capped at the policy max fee.
+- If `transaction_currency != card_billing_currency` and `fee_free_alternative_existed` is not `TRUE`, convert `foreign_fee_amount` the same way. Cap the meal or airfare first, then add the fee, itself capped at the policy maximum.
 - `MILEAGE`: skip VAT and fx; look up directional mileage for `(origin_city,destination_city)`, multiply by the date's rate, subtract the commute deduction, and floor at `0`.
 
 3. Per diem
