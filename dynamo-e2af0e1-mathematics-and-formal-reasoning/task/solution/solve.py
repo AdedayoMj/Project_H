@@ -4,9 +4,10 @@
 For each ring recipe, counts the exact number of substitution patterns
 (assignments of substituents to the n ring positions) that use every unit
 of the given composition, contain no forbidden adjacent pair on any
-physical ring edge (including the wraparound edge), and are counted once
-per orbit of the recipe's symmetry group (rotation-only cyclic recipes or
-rotation-plus-reflection dihedral recipes).
+physical ring edge (including the wraparound edge), satisfy any prescribed
+exact adjacent-pair contact counts, and are counted once per orbit of the
+recipe's symmetry group (rotation-only cyclic recipes or rotation-plus-
+reflection dihedral recipes).
 
 Method: Burnside's lemma over the 2n elements of D_n. For a single group
 element g, |Fix(g)| is computed via a "quotient graph" reduction: contract
@@ -26,6 +27,11 @@ constant on each cycle, so both endpoints of an internal edge get that cycle's
 color, and if that color self-clashes the whole assignment is void. Each
 g-cycle therefore also records whether it owns any internal physical edge
 (a "self-loop"), and the DP rejects a self-clashing color on such a cycle.
+
+Recipes with exact contact counts use a second DP dimension for the tracked
+unordered color pairs. Unlike plain forbidden pairs, these constraints require
+preserving the multiplicity of every physical edge after quotient contraction:
+parallel quotient edges and self-loops can each contribute several contacts.
 """
 
 from __future__ import annotations
@@ -54,6 +60,28 @@ def cycles_of_permutation(perm: list[int]) -> list[list[int]]:
     return cycles
 
 
+def quotient_graph_with_edge_counts(
+    perm: list[int], n: int
+) -> tuple[list[int], dict[int, set[int]], dict[tuple[int, int], int]]:
+    """Return quotient-node weights, simple adjacency, and physical-edge multiplicities."""
+    cycles = cycles_of_permutation(perm)
+    cycle_of_pos = {pos: cid for cid, cycle in enumerate(cycles) for pos in cycle}
+
+    adjacency: dict[int, set[int]] = {cid: set() for cid in range(len(cycles))}
+    edge_counts: dict[tuple[int, int], int] = {}
+    for i in range(n):
+        j = (i + 1) % n
+        ci, cj = cycle_of_pos[i], cycle_of_pos[j]
+        edge = (ci, cj) if ci <= cj else (cj, ci)
+        edge_counts[edge] = edge_counts.get(edge, 0) + 1
+        if ci != cj:
+            adjacency[ci].add(cj)
+            adjacency[cj].add(ci)
+
+    lengths = [len(cycle) for cycle in cycles]
+    return lengths, adjacency, edge_counts
+
+
 def quotient_graph(perm: list[int], n: int) -> tuple[list[int], dict[int, set[int]], set[int]]:
     """Cycles of perm become nodes; physical ring edges crossing cycle
     boundaries become quotient edges (deduped, undirected). An edge internal
@@ -61,21 +89,8 @@ def quotient_graph(perm: list[int], n: int) -> tuple[list[int], dict[int, set[in
     having a self-loop -- relevant only for self-clash pairs [X, X], since a
     coloring fixed by perm is constant on each cycle and two same-cycle
     neighbors therefore always share a color."""
-    cycles = cycles_of_permutation(perm)
-    cycle_of_pos = {pos: cid for cid, cycle in enumerate(cycles) for pos in cycle}
-
-    adjacency: dict[int, set[int]] = {cid: set() for cid in range(len(cycles))}
-    self_loops: set[int] = set()
-    for i in range(n):
-        j = (i + 1) % n
-        ci, cj = cycle_of_pos[i], cycle_of_pos[j]
-        if ci != cj:
-            adjacency[ci].add(cj)
-            adjacency[cj].add(ci)
-        else:
-            self_loops.add(ci)
-
-    lengths = [len(cycle) for cycle in cycles]
+    lengths, adjacency, edge_counts = quotient_graph_with_edge_counts(perm, n)
+    self_loops = {a for (a, b), count in edge_counts.items() if a == b and count}
     return lengths, adjacency, self_loops
 
 
@@ -203,6 +218,154 @@ def fix_count(
     return total
 
 
+def fix_count_with_contacts(
+    perm: list[int],
+    n: int,
+    budgets: tuple[int, ...],
+    mults: list[int],
+    digit_tables: list[bytearray],
+    allowed_next: tuple[tuple[int, ...], ...],
+    allowed_mask: tuple[int, ...],
+    self_forbidden: tuple[bool, ...],
+    full_code: int,
+    contact_index: dict[tuple[int, int], int],
+    contact_targets: tuple[int, ...],
+) -> int:
+    """|Fix(perm)| while preserving exact physical-edge contact totals."""
+    lengths, adjacency, edge_counts = quotient_graph_with_edge_counts(perm, n)
+    order, is_cycle = order_path_or_cycle(adjacency)
+    ordered_lengths = [lengths[node] for node in order]
+    ordered_loop_counts = [edge_counts.get((node, node), 0) for node in order]
+    node_count = len(order)
+    color_count = len(budgets)
+    zero_contacts = (0,) * len(contact_targets)
+
+    def add_contacts(
+        counts: tuple[int, ...], a: int, b: int, multiplicity: int
+    ) -> tuple[int, ...] | None:
+        pair = (a, b) if a <= b else (b, a)
+        index = contact_index.get(pair)
+        if index is None or multiplicity == 0:
+            return counts
+        value = counts[index] + multiplicity
+        if value > contact_targets[index]:
+            return None
+        updated = list(counts)
+        updated[index] = value
+        return tuple(updated)
+
+    def run_from_start(start_color: int) -> int:
+        first_length = ordered_lengths[0]
+        first_loops = ordered_loop_counts[0]
+        if first_length > budgets[start_color]:
+            return 0
+        if first_loops and self_forbidden[start_color]:
+            return 0
+
+        contacts = add_contacts(zero_contacts, start_color, start_color, first_loops)
+        if contacts is None:
+            return 0
+
+        states_by_last: list[dict[tuple[int, tuple[int, ...]], int]] = [
+            {} for _ in range(color_count)
+        ]
+        start_code = first_length * mults[start_color]
+        states_by_last[start_color][(start_code, contacts)] = 1
+
+        for idx in range(1, node_count):
+            node = order[idx]
+            previous_node = order[idx - 1]
+            length = ordered_lengths[idx]
+            loop_count = ordered_loop_counts[idx]
+            edge = (
+                (previous_node, node)
+                if previous_node <= node
+                else (node, previous_node)
+            )
+            edge_count = edge_counts[edge]
+            next_states: list[dict[tuple[int, tuple[int, ...]], int]] = [
+                {} for _ in range(color_count)
+            ]
+
+            for last_color in range(color_count):
+                for (code, prior_contacts), ways in states_by_last[last_color].items():
+                    for color in allowed_next[last_color]:
+                        if loop_count and self_forbidden[color]:
+                            continue
+                        if digit_tables[color][code] + length > budgets[color]:
+                            continue
+                        contacts = add_contacts(
+                            prior_contacts, last_color, color, edge_count
+                        )
+                        if contacts is None:
+                            continue
+                        contacts = add_contacts(contacts, color, color, loop_count)
+                        if contacts is None:
+                            continue
+                        key = (code + length * mults[color], contacts)
+                        bucket = next_states[color]
+                        bucket[key] = bucket.get(key, 0) + ways
+
+            states_by_last = next_states
+
+        total = 0
+        if is_cycle:
+            first_node = order[0]
+            last_node = order[-1]
+            closing_edge = (
+                (first_node, last_node)
+                if first_node <= last_node
+                else (last_node, first_node)
+            )
+            closing_count = edge_counts[closing_edge]
+            for last_color in range(color_count):
+                if not ((allowed_mask[last_color] >> start_color) & 1):
+                    continue
+                for (code, contacts), ways in states_by_last[last_color].items():
+                    if code != full_code:
+                        continue
+                    closed = add_contacts(
+                        contacts, last_color, start_color, closing_count
+                    )
+                    if closed == contact_targets:
+                        total += ways
+        else:
+            for last_color in range(color_count):
+                total += states_by_last[last_color].get(
+                    (full_code, contact_targets), 0
+                )
+        return total
+
+    cycle_edge_counts = []
+    if is_cycle:
+        for idx, node in enumerate(order):
+            next_node = order[(idx + 1) % node_count]
+            edge = (node, next_node) if node <= next_node else (next_node, node)
+            cycle_edge_counts.append(edge_counts[edge])
+
+    if (
+        is_cycle
+        and len(set(ordered_lengths)) == 1
+        and len(set(ordered_loop_counts)) == 1
+        and len(set(cycle_edge_counts)) == 1
+    ):
+        node_weight = ordered_lengths[0]
+        anchor_colors = [
+            color
+            for color, budget in enumerate(budgets)
+            if budget and budget % node_weight == 0
+        ]
+        if not anchor_colors:
+            return 0
+        anchor = min(anchor_colors, key=lambda color: len(allowed_next[color]))
+        anchor_occurrences = budgets[anchor] // node_weight
+        numerator = run_from_start(anchor) * node_count
+        assert numerator % anchor_occurrences == 0
+        return numerator // anchor_occurrences
+
+    return sum(run_from_start(start_color) for start_color in range(color_count))
+
+
 def rotation_perm(n: int, d: int) -> list[int]:
     return [(i + d) % n for i in range(n)]
 
@@ -263,12 +426,32 @@ def build_recipe_tables(
 
 
 def isomer_count(
-    n: int, symmetry_group: str, composition: dict[str, int], forbidden_pairs: list[list[str]]
+    n: int,
+    symmetry_group: str,
+    composition: dict[str, int],
+    forbidden_pairs: list[list[str]],
+    required_contacts: list[dict[str, object]] | None = None,
 ) -> int:
     assert sum(composition.values()) == n
     budgets, mults, digit_tables, allowed_next, allowed_mask, self_forbidden, full_code = build_recipe_tables(
         composition, forbidden_pairs
     )
+    colors = sorted(composition)
+    color_index = {color: index for index, color in enumerate(colors)}
+    contact_index: dict[tuple[int, int], int] = {}
+    contact_targets: list[int] = []
+    for requirement in required_contacts or []:
+        pair = requirement["pair"]
+        assert isinstance(pair, list) and len(pair) == 2
+        a = color_index[pair[0]]
+        b = color_index[pair[1]]
+        normalized = (a, b) if a <= b else (b, a)
+        assert normalized not in contact_index
+        target = requirement["count"]
+        assert isinstance(target, int) and not isinstance(target, bool) and target >= 0
+        contact_index[normalized] = len(contact_targets)
+        contact_targets.append(target)
+    contact_targets_tuple = tuple(contact_targets)
 
     rotation_classes: dict[int, tuple[list[int], int]] = {}
     for d in range(n):
@@ -292,21 +475,35 @@ def isomer_count(
     else:
         raise ValueError(f"unknown symmetry group: {symmetry_group!r}")
 
-    total = sum(
-        multiplicity
-        * fix_count(
-            perm,
-            n,
-            budgets,
-            mults,
-            digit_tables,
-            allowed_next,
-            allowed_mask,
-            self_forbidden,
-            full_code,
-        )
-        for perm, multiplicity in group_terms
-    )
+    total = 0
+    for perm, multiplicity in group_terms:
+        if contact_index:
+            fixed = fix_count_with_contacts(
+                perm,
+                n,
+                budgets,
+                mults,
+                digit_tables,
+                allowed_next,
+                allowed_mask,
+                self_forbidden,
+                full_code,
+                contact_index,
+                contact_targets_tuple,
+            )
+        else:
+            fixed = fix_count(
+                perm,
+                n,
+                budgets,
+                mults,
+                digit_tables,
+                allowed_next,
+                allowed_mask,
+                self_forbidden,
+                full_code,
+            )
+        total += multiplicity * fixed
 
     assert total % group_size == 0, f"Burnside sum {total} is not divisible by {group_size}"
     return total // group_size
@@ -322,6 +519,7 @@ def main() -> None:
             recipe["symmetry_group"],
             recipe["composition"],
             recipe["forbidden_adjacent_pairs"],
+            recipe.get("required_adjacent_pair_counts"),
         )
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
