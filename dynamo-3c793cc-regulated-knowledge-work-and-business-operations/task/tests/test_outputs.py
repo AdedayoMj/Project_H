@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 OUTPUT_PATH = Path("/app/output.json")
@@ -37,9 +38,13 @@ def _load_expected() -> dict:
     return json.loads(EXPECTED_PATH.read_text())
 
 
-def _golden_line_ids() -> set[str]:
+def _golden_expense_rows() -> list[dict]:
     with (GOLDEN_INPUT_PATH / "expense_lines.csv").open(newline="") as handle:
-        return {row["line_id"] for row in csv.DictReader(handle)}
+        return list(csv.DictReader(handle))
+
+
+def _golden_line_ids() -> list[str]:
+    return [row["line_id"] for row in _golden_expense_rows()]
 
 
 def _by_line_id(line_items: list[dict]) -> dict[str, dict]:
@@ -71,11 +76,11 @@ def test_output_top_level_schema():
 
 
 def test_line_items_cover_every_expense_line_exactly_once():
-    """Every input line_id appears exactly once, with no missing or invented line items."""
+    """Every input line_id appears exactly once and in the original CSV order."""
     data = _load_output()
     ids = [item["line_id"] for item in data["line_items"]]
     assert len(ids) == len(set(ids))
-    assert set(ids) == _golden_line_ids()
+    assert ids == _golden_line_ids()
 
 
 def test_line_items_well_formed():
@@ -125,6 +130,68 @@ def test_deferred_list_consistent_with_line_items():
     for item in data["line_items"]:
         if item["status"] == "DEFERRED_OVER_BUDGET":
             assert item["reimbursable_cents"] == 0
+
+
+def test_boundary_per_diem_proration_is_exercised():
+    """Expense-free boundary days make the disclosed first/last-day proration observable."""
+    data = _load_output()
+    itinerary = json.loads((INPUT_PATH / "itinerary.json").read_text())
+    policy = json.loads((INPUT_PATH / "policy.json").read_text())
+    rates = json.loads((INPUT_PATH / "per_diem_rates.json").read_text())
+    dates = [day["date"] for day in itinerary["days"]]
+    boundaries = {min(dates), max(dates)}
+    assert boundaries.isdisjoint(row["date"] for row in _golden_expense_rows())
+
+    fraction = Decimal(str(policy["per_diem_proration_fraction"]))
+    boundary_total = sum(
+        int(
+            (Decimal(rates[day["sleeping_city"]]) * fraction).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+        )
+        for day in itinerary["days"]
+        if day["date"] in boundaries
+    )
+    assert boundary_total > 0
+    assert data["trip_summary"]["total_per_diem_cents"] == boundary_total
+
+
+def test_summary_is_consistent_with_line_items():
+    """Final, flagged, deferred, and category totals are recomputed from submitted lines."""
+    data = _load_output()
+    summary = data["trip_summary"]
+    policy = json.loads((INPUT_PATH / "policy.json").read_text())
+    category_by_line = {
+        row["line_id"]: row["category"] for row in _golden_expense_rows()
+    }
+
+    expected_breakdown = {
+        category: {
+            "reimbursable_cents": 0,
+            "flagged_for_approval_cents": 0,
+        }
+        for category in CATEGORIES
+    }
+    total_flagged = 0
+    for item in data["line_items"]:
+        category = category_by_line[item["line_id"]]
+        amount = item["reimbursable_cents"]
+        expected_breakdown[category]["reimbursable_cents"] += amount
+        if item["status"] == "NEEDS_MANAGER_APPROVAL":
+            expected_breakdown[category]["flagged_for_approval_cents"] += amount
+            total_flagged += amount
+
+    line_total = sum(item["reimbursable_cents"] for item in data["line_items"])
+    assert summary["category_breakdown"] == expected_breakdown
+    assert summary["total_flagged_for_approval_cents"] == total_flagged
+    assert summary["final_reimbursable_cents"] == (
+        summary["total_per_diem_cents"] + line_total
+    )
+    assert summary["trip_budget_cap_cents"] == policy["trip_reimbursement_cap_cents"]
+    assert summary["gross_reimbursable_cents"] >= summary["final_reimbursable_cents"]
+    assert summary["deferred_over_budget_line_ids"] == sorted(
+        summary["deferred_over_budget_line_ids"]
+    )
 
 
 def test_retention_rules_satisfied():
