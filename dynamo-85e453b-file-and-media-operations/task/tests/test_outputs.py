@@ -18,7 +18,7 @@ EXPECTED_CORPUS_SHA256 = "dabe819b514f92f96b64dd07fa416dcb753d02f7a4da0800224c22
 EXPECTED_INPUT_SHA256 = {
     "custodians.json": "4a3e52bc97c76c334021c37ca52e99d72971cff6ed7f618fabafd88ac3080468",
     "families.json": "ca423b604d3a0743615ff911ccd8abf5c00b5a63c31b04ee4dd700fda7decc8e",
-    "protocol.json": "c9b3d6c2c7895e0aa9a8ee4846cfff2530c5e8cbba8077d70483754fce810f58",
+    "protocol.json": "11b2e7b4ba134d878a6bcae875c497d14c38c763f6fac94b75b5c3ab9a12ba77",
 }
 DISPOSITIONS = {
     "SYMLINK", "HARDLINK_ALIAS", "DEPTH_LIMIT", "UNSUPPORTED_TYPE", "CONTAINER",
@@ -106,6 +106,8 @@ def test_top_level_and_record_schemas_are_exact():
 def test_manifest_types_partition_and_canonical_fields():
     """Production and exclusion paths form a unique complete partition with canonical identifiers and values."""
     data = load()
+    protocol = json.loads((INPUT / "protocol.json").read_text())
+    technical_media = protocol["technical_exclusion_media_types"]
     produced_paths = [row["path"] for row in data["production"]]
     excluded_paths = [row["path"] for row in data["exclusions"]]
     assert len(set(produced_paths)) == len(produced_paths)
@@ -121,6 +123,8 @@ def test_manifest_types_partition_and_canonical_fields():
         assert re.fullmatch(r"VOL-\d{3}", row["volume"])
     for row in data["exclusions"]:
         assert row["reason"] in DISPOSITIONS - {"PRODUCED"}
+        if row["reason"] in technical_media:
+            assert row["media_type"] == technical_media[row["reason"]]
         if row["reason"] == "DUPLICATE":
             assert row["duplicate_of"] in produced_paths
         else:

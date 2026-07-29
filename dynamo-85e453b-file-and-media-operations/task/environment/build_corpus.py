@@ -96,6 +96,13 @@ PROTOCOL = {
         "DUPLICATE",
         "PRODUCED",
     ],
+    "technical_exclusion_media_types": {
+        "SYMLINK": "symlink",
+        "HARDLINK_ALIAS": "hardlink",
+        "DEPTH_LIMIT": "unexamined",
+        "UNSUPPORTED_TYPE": "unsupported",
+        "CONTAINER": "zip",
+    },
     "deduplication": {
         "scope": "all remaining responsive items",
         "key": "normalized_hash",

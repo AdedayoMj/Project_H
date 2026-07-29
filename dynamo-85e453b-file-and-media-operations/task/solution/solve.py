@@ -313,6 +313,7 @@ def main() -> None:
     protocol = json.loads((INPUT / "protocol.json").read_text())
     roster = json.loads((INPUT / "custodians.json").read_text())["custodians"]
     family_map = json.loads((INPUT / "families.json").read_text())["path_to_family"]
+    technical_media = protocol["technical_exclusion_media_types"]
     cust_by_prefix = {entry["path_prefix"]: (entry["custodian"], entry["rank"]) for entry in roster}
 
     def attributes(path: str) -> tuple[str, int, str]:
@@ -332,7 +333,17 @@ def main() -> None:
 
     for rel, _, info in links:
         custodian, rank, family = attributes(rel)
-        items.append(Item(rel, info.st_size, custodian, rank, family, media="symlink", disposition="SYMLINK"))
+        items.append(
+            Item(
+                rel,
+                info.st_size,
+                custodian,
+                rank,
+                family,
+                media=technical_media["SYMLINK"],
+                disposition="SYMLINK",
+            )
+        )
 
     max_depth = protocol["archive"]["maximum_depth"]
     entry_limit = protocol["archive"]["entry_uncompressed_limit_bytes"]
@@ -349,19 +360,21 @@ def main() -> None:
         custodian, rank, family = attributes(path)
         item = Item(path, len(data), custodian, rank, family, data=data, physical=physical, inherited_date=inherited)
         if archive_depth > max_depth:
-            item.media = "unexamined"
+            item.media = technical_media["DEPTH_LIMIT"]
             item.disposition = "DEPTH_LIMIT"
             item.data = None
             items.append(item)
             return item
         item.media = classify(data)
         if item.media == "unsupported":
+            item.media = technical_media["UNSUPPORTED_TYPE"]
             item.disposition = "UNSUPPORTED_TYPE"
             item.data = None
             items.append(item)
             return item
         item.effective = effective_date(item)
         if item.media == "zip":
+            item.media = technical_media["CONTAINER"]
             item.disposition = "CONTAINER"
             items.append(item)
             expand(item, data, archive_depth)
@@ -392,7 +405,7 @@ def main() -> None:
                             custodian,
                             rank,
                             family,
-                            media="unexamined",
+                            media=technical_media["DEPTH_LIMIT"],
                             disposition="DEPTH_LIMIT",
                         )
                     )
@@ -411,14 +424,30 @@ def main() -> None:
         custodian, rank, family = attributes(rel)
         if canonical[identity] != rel:
             items.append(
-                Item(rel, info.st_size, custodian, rank, family, media="hardlink", disposition="HARDLINK_ALIAS")
+                Item(
+                    rel,
+                    info.st_size,
+                    custodian,
+                    rank,
+                    family,
+                    media=technical_media["HARDLINK_ALIAS"],
+                    disposition="HARDLINK_ALIAS",
+                )
             )
             continue
         with full.open("rb") as fh:
             prefix = fh.read(8)
             if prefix.startswith(b"\x00\x01\x02\x03"):
                 items.append(
-                    Item(rel, info.st_size, custodian, rank, family, media="unsupported", disposition="UNSUPPORTED_TYPE")
+                    Item(
+                        rel,
+                        info.st_size,
+                        custodian,
+                        rank,
+                        family,
+                        media=technical_media["UNSUPPORTED_TYPE"],
+                        disposition="UNSUPPORTED_TYPE",
+                    )
                 )
                 continue
             fh.seek(0)
