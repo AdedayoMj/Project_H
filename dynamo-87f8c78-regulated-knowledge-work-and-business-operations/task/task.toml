@@ -30,7 +30,7 @@ timeout_sec = 3600.0                # ensure failures reflect scheduling logic r
 
 [environment]
 build_timeout_sec = 600.0          # max seconds for the Docker build
-cpus = 8                           # parallel exact search for the cross-date coupled component
+cpus = 4                           # parallel exact search within common local/CI capacity
 memory_mb = 2048                   # increase for large datasets or in-memory processing
 storage_mb = 10240                 # increase for tasks with large files or build artifacts
 gpus = 0                           # max 1, expect H100

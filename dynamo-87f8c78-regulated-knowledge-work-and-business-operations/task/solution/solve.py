@@ -435,7 +435,7 @@ def solve_group_cpsat(
                 moved_terms.append(var)
 
     solver = cp_model.CpSolver()
-    solver.parameters.num_search_workers = 8
+    solver.parameters.num_search_workers = 4
 
     for terms, sense in ((priority_terms, "max"), (lateness_terms, "min"), (moved_terms, "min")):
         if sense == "max":
