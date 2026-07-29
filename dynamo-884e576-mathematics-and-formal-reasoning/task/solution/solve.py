@@ -214,37 +214,50 @@ def main() -> None:
         (row["from"], row["to"]): row["cost"]
         for row in data["transitions"]
     }
-    # state value: (cost, handoffs, compressed_sequence, slab_assignments)
-    states: dict[str, tuple[int, int, tuple[str, ...], tuple[str, ...]]] = {
-        observer_id: (0, 0, (observer_id,), (observer_id,))
+    # State value is the four-level objective followed by slab assignments.
+    states: dict[
+        str,
+        tuple[int, int, tuple[str, ...], tuple[Fraction, ...], tuple[str, ...]],
+    ] = {
+        observer_id: (0, 0, (observer_id,), (), (observer_id,))
         for observer_id in availability[0]
     }
-    for choices in availability[1:]:
-        next_states: dict[str, tuple[int, int, tuple[str, ...], tuple[str, ...]]] = {}
+    for slab_index, choices in enumerate(availability[1:], start=1):
+        next_states: dict[
+            str,
+            tuple[int, int, tuple[str, ...], tuple[Fraction, ...], tuple[str, ...]],
+        ] = {}
         for current in choices:
             best = None
             for previous, state in states.items():
-                cost, handoffs, sequence, assignments = state
+                cost, handoffs, sequence, handoff_times, assignments = state
                 if previous == current:
-                    candidate = (cost, handoffs, sequence, assignments + (current,))
+                    candidate = (
+                        cost,
+                        handoffs,
+                        sequence,
+                        handoff_times,
+                        assignments + (current,),
+                    )
                 elif (previous, current) in transition_cost:
                     candidate = (
                         cost + transition_cost[(previous, current)],
                         handoffs + 1,
                         sequence + (current,),
+                        handoff_times + (critical[slab_index],),
                         assignments + (current,),
                     )
                 else:
                     continue
-                if best is None or candidate[:3] < best[:3]:
+                if best is None or candidate[:4] < best[:4]:
                     best = candidate
             if best is not None:
                 next_states[current] = best
         if not next_states:
             raise RuntimeError("generated instance lacks transition-compatible coverage")
         states = next_states
-    optimum = min(states.values(), key=lambda state: state[:3])
-    total_cost, handoffs, sequence, assignments = optimum
+    optimum = min(states.values(), key=lambda state: state[:4])
+    total_cost, handoffs, sequence, handoff_times, assignments = optimum
 
     schedule = []
     start_slab = 0
@@ -274,6 +287,7 @@ def main() -> None:
             "transition_cost": total_cost,
             "handoffs": handoffs,
             "observer_sequence": list(sequence),
+            "handoff_times": [rational(time) for time in handoff_times],
         },
     }
     OUTPUT.write_text(json.dumps(output, indent=2) + "\n")

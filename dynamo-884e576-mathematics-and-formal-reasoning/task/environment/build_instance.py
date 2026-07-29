@@ -187,10 +187,12 @@ def build(root: Path) -> None:
             "visibility": "the assigned observer must be visible at every point of its closed range",
             "handoff": "adjacent ranges meet at one time; both observers must be visible there; a changed observer requires the directed transition",
             "same_observer": "adjacent equal assignments must be merged and incur no transition",
+            "handoff_time_vector": "the handoff times in chronological schedule order; compare equal-length vectors lexicographically by exact rational value",
             "objective": [
                 "minimum total directed transition cost",
                 "minimum number of handoffs",
                 "lexicographically smallest compressed observer_id sequence",
+                "lexicographically smallest handoff-time vector",
             ],
         },
         "outer_boundary": outer,

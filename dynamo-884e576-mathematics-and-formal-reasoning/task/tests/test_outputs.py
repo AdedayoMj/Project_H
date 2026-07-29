@@ -11,8 +11,8 @@ from pathlib import Path
 APP_ROOT = Path(os.environ.get("GEOM_APP_ROOT", "/app"))
 OUTPUT = APP_ROOT / "output.json"
 INPUT = APP_ROOT / "input" / "facility.json"
-EXPECTED_INPUT_SHA256 = "4ca2e6e12b6245cfb2780690e2d7111e294e5b6ba03c5c9a33f2f1405a2ecb07"
-EXPECTED_OUTPUT_SHA256 = "9f055b06bdd27dc73dba955b30a22e8a25b1ad1b561015d9ef7c7be3c1f8dabc"
+EXPECTED_INPUT_SHA256 = "701dbdcf64a5e2fe5c789cd788e69798b28bf44e4cb5f35f5fcaf77716a1a878"
+EXPECTED_OUTPUT_SHA256 = "e433b0634a34ff213ecbc19b0e9b1e9ff2bcb65a14a8e7fe2359c44eaa7c6072"
 
 
 def load_output() -> dict:
@@ -55,7 +55,12 @@ def test_exact_documented_schema():
     assert all(set(row) == {"start", "end", "visible"} for row in data["open_intervals"])
     assert all(set(row) == {"time", "visible"} for row in data["event_visibility"])
     assert all(set(row) == {"observer", "start", "end"} for row in data["schedule"])
-    assert set(data["objective"]) == {"transition_cost", "handoffs", "observer_sequence"}
+    assert set(data["objective"]) == {
+        "transition_cost",
+        "handoffs",
+        "observer_sequence",
+        "handoff_times",
+    }
 
 
 def test_exact_rational_partition_and_observer_sets():
@@ -118,15 +123,20 @@ def test_schedule_is_continuous_visible_and_transition_legal():
 
 
 def test_objective_fields_reconcile_with_schedule():
-    """Reported handoff count and compressed observer sequence exactly match the normalized schedule."""
+    """All four reported objective components exactly match the normalized schedule."""
     data = load_output()
     sequence = [row["observer"] for row in data["schedule"]]
+    handoff_times = [row["start"] for row in data["schedule"][1:]]
     objective = data["objective"]
     assert isinstance(objective["transition_cost"], int) and not isinstance(objective["transition_cost"], bool)
     assert isinstance(objective["handoffs"], int) and not isinstance(objective["handoffs"], bool)
     assert objective["transition_cost"] >= 0
     assert objective["handoffs"] == len(sequence) - 1
     assert objective["observer_sequence"] == sequence
+    assert objective["handoff_times"] == handoff_times
+    assert [parse_rational(value) for value in objective["handoff_times"]] == sorted(
+        parse_rational(value) for value in objective["handoff_times"]
+    )
 
 
 def test_exact_visibility_decomposition_and_global_optimum():
