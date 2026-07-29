@@ -1,0 +1,32 @@
+artifacts = ["/app/output.json"]
+
+[task]
+name = "dynamo/fault-tolerant-pooling"
+description = "Enumerate robust diagnostic pooling matrices exactly up to plate and cohort symmetries."
+
+[metadata]
+category = "Mathematics and Formal Reasoning"
+subcategory = "Combinatorics and enumeration"
+model_tested = "Opus-4.8"
+agent_tested = "Terminus-2"
+task_objective = ["analyze"]
+artifact_type = ["generated_output_artifact"]
+expert_time_estimate_hours = 36.0
+difficulty_explanation = "A combinatorial-design researcher or mathematical bioinformatician must enumerate constrained 12-by-8 incidence matrices while quotienting a full action of order 8,192. The synthetic instance models six blinded clinical cohorts across two square plates, exact pool capacities, balanced per-plate replication, failure of any one pool, and orientation-invariant co-assay restrictions. There are 27,426,816 valid labelled matrices but only 3,510 equivalence classes. Stabilizers are nonuniform, so dividing by the group order is wrong; sample swaps, independent dihedral plate actions, plate exchange, canonical encoding, and residual conjugacy classes must all use the disclosed action convention. Plausible programs commonly count labelled designs, omit reflections, compare the wrong bit orientation, prune noncanonically, or enforce separation only before a pool loss."
+solution_explanation = "Generate the 18 balanced unordered complementary cohort-signature classes, then backtrack over the six ordered cohorts while enforcing distinctness and the five quotient-distance rules. Check single-pool-loss separation and retain the exact normalized design set. Close the five pool generators to the 128-element wreath-product action and precompute its action on the 18 cohort classes. Partition the valid designs into orbits, select the least normalized incidence encoding, and compute each representative's stabilizer. Derive the labelled total through the 64 within-cohort orientations, form pool-group conjugacy classes by exact permutation composition, count fixed normalized designs, and reconcile Burnside and orbit–stabilizer before serialization."
+verification_explanation = "The verifier fingerprints `/app/input/pooling.json`, validates the exact output schema and integer types, derives the generated groups from the disclosed mappings, and decodes every submitted representative. It independently checks replication, plate balance, pool capacity, cohort complementarity, all eight single-column deletions, quotient-distance constraints, canonicality, sorting, and uniqueness. A separate exhaustive backtracking enumeration reconstructs the complete canonical representative set, stabilizers, conjugacy classes, and fixed-design counts. It then verifies both orbit–stabilizer identities, Burnside's lemma, all reported totals, and the canonical digest of the complete artifact."
+
+[verifier]
+timeout_sec = 300.0
+
+[agent]
+timeout_sec = 3600.0
+
+[environment]
+build_timeout_sec = 600.0
+cpus = 2
+memory_mb = 4096
+storage_mb = 10240
+gpus = 0
+allow_internet = true
+mcp_servers = []
