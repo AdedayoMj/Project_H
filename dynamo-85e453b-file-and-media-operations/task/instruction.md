@@ -1,0 +1,10 @@
+Cull the synthetic ESI collection under `/app/corpus/` according to the normative rules in `/app/input/protocol.json`, using the custodian roster in `/app/input/custodians.json` and attachment-family assignments in `/app/input/families.json`. The protocol defines the complete item universe, signature precedence, metadata dates, content matching, archive traversal, disposition precedence, global deduplication, ordering, and volume packing. Do not modify anything under `/app/corpus/` or `/app/input/`.
+
+Write `/app/output.json` as one JSON object with exactly these keys:
+
+- `production`: an ordered array. Each record has exactly `sequence`, `path`, `media_type`, `custodian`, `family_id`, `normalized_hash`, `effective_utc_date`, `size_bytes`, and `volume`. Use the protocol's canonical formats; `size_bytes` is a non-negative JSON integer.
+- `privilege_log`: ordered by exact path UTF-8 bytes. Each record has exactly `path`, `family_id`, `reason`, and `trigger_paths`. `reason` is `PRIVILEGED` or `FAMILY_PRIVILEGE`; `trigger_paths` is the UTF-8-byte-sorted array of all directly privileged paths that caused that family's withholding.
+- `exclusions`: every inventoried non-produced item, ordered by exact path UTF-8 bytes. Each record has exactly `path`, `reason`, `media_type`, `family_id`, and `duplicate_of`. Use the protocol disposition token. `duplicate_of` is the elected production path only for `DUPLICATE`, and JSON null otherwise.
+- `summary`: exactly `inventoried`, `produced`, `privileged`, `excluded`, `by_disposition`, and `volumes`. The first four values are JSON integers. `by_disposition` maps every token in `disposition_precedence` to its count, including zero counts. `volumes` is an ordered array of records with exactly `volume`, `bytes`, and `items`.
+
+Every inventoried item must appear exactly once in either `production` or `exclusions`. Every privileged exclusion must appear exactly once in `privilege_log`. JSON object key order and whitespace are immaterial; all array ordering is normative.

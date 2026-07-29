@@ -136,6 +136,7 @@ def solve_budget_knapsack(
     cap,
     retention_portfolios,
     retention_commitments,
+    tie_break,
 ):
     """reimb_lines: list of dicts {line_id, date, amount, weight}. Choose a
     RETAINED subset maximizing (sum weight, then sum amount, then line-id
@@ -146,8 +147,13 @@ def solve_budget_knapsack(
     budget = cap - per_diem_total
     if sum(l["amount"] for l in reimb_lines) <= budget:
         return set()
-    # order by (date, line_id) so the lexicographic tie-break is well-defined
-    order = sorted(reimb_lines, key=lambda l: (l["date"], l["line_id"]))
+    # policy fixes the tie-break walk order, so the lexicographic step is well-defined
+    sort_keys = tuple(tie_break["sort_keys"])
+    order = sorted(
+        reimb_lines,
+        key=lambda l: tuple(l[k] for k in sort_keys),
+        reverse=tie_break["direction"] == "descending",
+    )
     known_line_ids = {line["line_id"] for line in order}
     referenced_line_ids = {
         line_id
@@ -281,6 +287,7 @@ def main():
         policy["trip_reimbursement_cap_cents"],
         policy.get("retention_portfolios", []),
         policy.get("retention_commitments", []),
+        policy["retention_tie_break"],
     )
 
     # ---- assemble output ----

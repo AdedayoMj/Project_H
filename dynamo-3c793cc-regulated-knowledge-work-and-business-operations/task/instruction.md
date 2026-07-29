@@ -2,7 +2,7 @@ Compute one executive T&E reimbursement audit from `/app/input/` and write `/app
 
 Inputs:
 - `itinerary.json`: trip days with `sleeping_city` and personal-day flags.
-- `policy.json`: rounding, caps, approval thresholds, commute deduction, trip budget, and the retention rules below.
+- `policy.json`: rounding, caps, approval thresholds, commute deduction, trip budget, and the retention rules, retention commitments, and `retention_tie_break` described below.
 - `per_diem_rates.json`: daily rates by city.
 - `expense_lines.csv`: rows with `line_id,date,statement_post_date,category (MEALS/AIRFARE/MILEAGE),vendor,country,amount,transaction_currency,card_billing_currency,foreign_fee_amount,fee_free_alternative_existed,attendees,payer,origin_city,destination_city,is_personal_expense,priority`.
   `attendees` is a `;`-separated list of `Name:TYPE` entries (`TYPE` is `CLIENT` or `INTERNAL`); empty means solo.
@@ -37,9 +37,9 @@ Process rows in file order. Use only these statuses: `APPROVED`, `NEEDS_MANAGER_
 5. Trip budget
 - `gross_reimbursable_cents = total_per_diem_cents +` all surviving line amounts before budget deferral.
 - If gross exceeds `trip_reimbursement_cap_cents`, defer whole surviving lines until the total fits; never defer per diem or a partial line.
-- Every `retention_portfolios` entry then applies simultaneously: sum its `line_units` for retained line IDs and keep the total within `minimum_retained_units` and `maximum_retained_units`; unlisted lines contribute `0`.
-- For each `retention_commitments` entry, retaining `if_retained_line_id` requires retaining at least `minimum_then_retained` of its `then_line_ids`.
-- Keep the set of lines that maximizes, in order: 1) total retained priority weight (`priority p` contributes `6-p`), 2) total retained line amount, 3) tie-break by walking surviving lines in `(date, line_id)` order and keeping a line whenever that is still consistent with 1, 2, and the cap.
+- Call a set of retained lines *admissible* when all three hold at once: `total_per_diem_cents` plus its retained amounts is at most `trip_reimbursement_cap_cents`; every `retention_portfolios` entry is satisfied — sum its `line_units` over retained line IDs and keep that total within `minimum_retained_units` and `maximum_retained_units`, with unlisted lines contributing `0`; and every `retention_commitments` entry is satisfied — retaining `if_retained_line_id` requires retaining at least `minimum_then_retained` of its `then_line_ids`.
+- Among admissible sets, keep the one that maximizes, in order: 1) total retained priority weight (`priority p` contributes `6-p`), 2) total retained line amount, 3) earlier lines.
+- Resolve 3) as follows. Let `W` and `A` be the winning values from 1) and 2). Walk the surviving lines in ascending `(date, line_id)` order — the order `retention_tie_break` states. Retain the current line if some admissible set still reaches `W` and `A` while honouring every retain/defer decision already made in this walk; otherwise defer it. Earlier lines therefore win: when two lines are interchangeable under 1) and 2), the one earlier in `(date, line_id)` is retained and the later one is deferred.
 - Deferred lines become `DEFERRED_OVER_BUDGET` with amount `0`. Kept lines keep their earlier status, except flagged lines become `NEEDS_MANAGER_APPROVAL`.
 
 6. Output

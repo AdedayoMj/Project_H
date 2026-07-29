@@ -1,0 +1,32 @@
+artifacts = ["/app/output.json"]
+
+[task]
+name = "dynamo/kinetic-visibility-handoffs"
+description = "Derive exact continuous route visibility and the globally optimal legal observer schedule."
+
+[metadata]
+category = "Mathematics and Formal Reasoning"
+subcategory = "Computational Geometry"
+model_tested = "Opus-4.8"
+agent_tested = "Terminus-2"
+task_objective = ["optimize"]
+artifact_type = ["generated_output_artifact"]
+expert_time_estimate_hours = 28.0
+difficulty_explanation = "A computational-geometry or robotics engineer must reduce continuous visibility along a 23-segment route amid 168 closed boundary edges and 32 restricted observers to an exact minimal arrangement. Collinear walls, vertex grazing, included FOV boundaries, simultaneous events, and singleton visibility make floating-point sampling or interval-only representations wrong. The 76 resulting critical cells then couple to 219 directed, weighted compatibility transitions: an observer must cover each closed cell, both sides must see every handoff instant, and the schedule is optimized by cost, then handoffs, then a variable-length lexicographic sequence. Geometry and optimization errors both yield plausible schedules, so neither half can be approximated independently."
+solution_explanation = "For each observer, intersect every route segment exactly with its FOV boundary lines and with lines through the observer and every polygon vertex. Evaluate visibility using rational orientation predicates at each candidate and one interior point per adjacent open cell, retaining only actual point/side changes. Union observer changes and remove globally irrelevant simultaneous events to obtain the exact minimal decomposition. For each closed cell, intersect its open-interval set with both endpoint sets. Run dynamic programming over these cell layers using allowed directed transitions, carrying total cost, handoff count, and compressed observer sequence as the ordered objective. Backtrack assignments, merge equal neighbors, and serialize all rational values canonically."
+verification_explanation = "The verifier confirms /app/input/facility.json is byte-identical, checks /app/output.json and every nested record against the documented schema, parses every rational into reduced canonical form, validates the complete ordered point/open partition and critical-time minimality, checks sorted observer sets, proves the submitted closed ranges cover the domain using only reported visibility, validates each directed handoff and recomputes its cost, reconciles the normalized sequence and handoff count, and finally compares the canonical complete structure with the deterministic exact reference result."
+
+[verifier]
+timeout_sec = 180.0
+
+[agent]
+timeout_sec = 3600.0
+
+[environment]
+build_timeout_sec = 600.0
+cpus = 2
+memory_mb = 4096
+storage_mb = 10240
+gpus = 0
+allow_internet = true
+mcp_servers = []

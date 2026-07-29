@@ -119,5 +119,11 @@
       "then_line_ids": ["E31", "E38", "E55", "E63"],
       "minimum_then_retained": 3
     }
-  ]
+  ],
+  "retention_tie_break": {
+    "applies_after": ["retained_priority_weight", "retained_amount"],
+    "sort_keys": ["date", "line_id"],
+    "direction": "ascending",
+    "preference": "retain_earlier"
+  }
 }
