@@ -7,8 +7,8 @@ under the scheduling_rules in policy_notes.json, search the (small) space of
 placement choices for the occurrence set that optimizes objective_order, and
 classify every inbox message with the deterministic reply_rule_order. Dense
 components also enforce overlapping selection portfolios, weighted attendance
-budgets, placement-sensitive resource budgets, and conditional commitments from
-policy_notes.json.
+budgets, placement-sensitive resource budgets, bounded commitments, and
+placement-threshold coverage bonuses from policy_notes.json.
 """
 
 from __future__ import annotations
@@ -182,16 +182,35 @@ def _original_utc(occ: dict) -> datetime:
     return datetime.fromisoformat(occ["original_local"]).replace(tzinfo=ZoneInfo(occ["timezone"])).astimezone(UTC)
 
 
-def score_schedule(schedule: list[dict], matrix: dict) -> dict:
-    """priority/lateness/moved/travel for one list of chosen schedule entries -- the single
+def score_schedule(
+    schedule: list[dict],
+    matrix: dict,
+    placement_coverage_bonuses: list[dict],
+) -> dict:
+    """priority/coverage/lateness/moved/travel for chosen schedule entries -- the single
     formula for objective_definitions in policy_notes.json, used both to rank candidates
     during search and to report the final objective_score."""
     priority = sum(e["occ"]["priority"] for e in schedule)
+    coverage = sum(
+        rule["bonus_points"]
+        for rule in placement_coverage_bonuses
+        if sum(
+            entry["rank"] in rule["event_ranks"].get(entry["occ"]["event_id"], [])
+            for entry in schedule
+        )
+        >= rule["minimum_scheduled"]
+    )
     moved = sum(1 for e in schedule if e["rank"] != 0)
     lateness = sum(max(0.0, (e["start_utc"] - _original_utc(e["occ"])).total_seconds() / 60) for e in schedule)
     ordered = sorted(schedule, key=lambda e: e["start_utc"])
     travel = sum(travel_between(matrix, a["venue"], b["venue"]) for a, b in zip(ordered, ordered[1:]))
-    return {"priority": priority, "lateness": lateness, "moved": moved, "travel": travel}
+    return {
+        "priority": priority,
+        "coverage": coverage,
+        "lateness": lateness,
+        "moved": moved,
+        "travel": travel,
+    }
 
 
 def find_components(
@@ -202,6 +221,7 @@ def find_components(
     placement_resource_portfolios: list[dict],
     conditional_commitments: list[dict],
     placement_commitments: list[dict],
+    placement_coverage_bonuses: list[dict],
 ) -> list[list[dict]]:
     """Group occurrences that could ever conflict, or are dependency-linked."""
     parent = {occ["occurrence_id"]: occ["occurrence_id"] for occ in occurrences}
@@ -248,6 +268,9 @@ def find_components(
         [rule["if_event_id"], *rule["then_event_ranks"]]
         for rule in placement_commitments
     )
+    coupled_event_sets.extend(
+        list(rule["event_ranks"]) for rule in placement_coverage_bonuses
+    )
     for event_ids in coupled_event_sets:
         members = [
             occ
@@ -271,6 +294,7 @@ def solve_group(
     placement_resource_portfolios: list[dict],
     conditional_commitments: list[dict],
     placement_commitments: list[dict],
+    placement_coverage_bonuses: list[dict],
 ) -> list[tuple[list[dict], dict[str, int]]]:
     """Dispatch to the exhaustive search for small components, or CP-SAT for components
     whose choice space is too large to brute force."""
@@ -286,6 +310,7 @@ def solve_group(
                 placement_resource_portfolios,
                 conditional_commitments,
                 placement_commitments,
+                placement_coverage_bonuses,
             )
     return solve_group_bruteforce(
         group,
@@ -295,6 +320,7 @@ def solve_group(
         placement_resource_portfolios,
         conditional_commitments,
         placement_commitments,
+        placement_coverage_bonuses,
     )
 
 
@@ -306,6 +332,7 @@ def solve_group_cpsat(
     placement_resource_portfolios: list[dict],
     conditional_commitments: list[dict],
     placement_commitments: list[dict],
+    placement_coverage_bonuses: list[dict],
 ) -> list[tuple[list[dict], dict[str, int]]]:
     """CP-SAT search for a component too large to brute force. Only handles components
     with no protected/vip_override occurrences. Different-venue placements are
@@ -388,9 +415,13 @@ def solve_group_cpsat(
         triggered = model.NewBoolVar(f'{rule["commitment_id"]}__triggered')
         model.Add(sum(triggers) >= 1).OnlyEnforceIf(triggered)
         model.Add(sum(triggers) == 0).OnlyEnforceIf(triggered.Not())
-        model.Add(sum(required) >= rule["minimum_then_scheduled"]).OnlyEnforceIf(
-            triggered
-        )
+        required_count = sum(required)
+        model.Add(
+            required_count >= rule["minimum_then_scheduled"]
+        ).OnlyEnforceIf(triggered)
+        model.Add(
+            required_count <= rule["maximum_then_scheduled"]
+        ).OnlyEnforceIf(triggered)
 
     for rule in placement_commitments:
         triggers = [
@@ -408,9 +439,31 @@ def solve_group_cpsat(
         triggered = model.NewBoolVar(f'{rule["commitment_id"]}__triggered')
         model.Add(sum(triggers) >= 1).OnlyEnforceIf(triggered)
         model.Add(sum(triggers) == 0).OnlyEnforceIf(triggered.Not())
-        model.Add(sum(required) >= rule["minimum_then_scheduled"]).OnlyEnforceIf(
-            triggered
-        )
+        required_count = sum(required)
+        model.Add(
+            required_count >= rule["minimum_then_scheduled"]
+        ).OnlyEnforceIf(triggered)
+        model.Add(
+            required_count <= rule["maximum_then_scheduled"]
+        ).OnlyEnforceIf(triggered)
+
+    coverage_vars = []
+    for rule in placement_coverage_bonuses:
+        qualifying = [
+            choice_vars[(occ["occurrence_id"], rank)]
+            for occ in group
+            if occ["event_id"] in rule["event_ranks"]
+            for rank in rule["event_ranks"][occ["event_id"]]
+        ]
+        qualifying_count = sum(qualifying)
+        met = model.NewBoolVar(f'{rule["bonus_id"]}__met')
+        model.Add(
+            qualifying_count >= rule["minimum_scheduled"]
+        ).OnlyEnforceIf(met)
+        model.Add(
+            qualifying_count < rule["minimum_scheduled"]
+        ).OnlyEnforceIf(met.Not())
+        coverage_vars.append(rule["bonus_points"] * met)
 
     for occ in group:
         for dep_id in occ["dependencies"]:
@@ -437,7 +490,13 @@ def solve_group_cpsat(
     solver = cp_model.CpSolver()
     solver.parameters.num_search_workers = 4
 
-    for terms, sense in ((priority_terms, "max"), (lateness_terms, "min"), (moved_terms, "min")):
+    objective_stages = (
+        (coverage_vars, "max"),
+        (priority_terms, "max"),
+        (lateness_terms, "min"),
+        (moved_terms, "min"),
+    )
+    for terms, sense in objective_stages:
         if sense == "max":
             model.Maximize(sum(terms))
         else:
@@ -461,7 +520,7 @@ def solve_group_cpsat(
             chosen_vars.append(choice_vars[(occ["occurrence_id"], chosen["rank"])])
 
     # Uniqueness check: forbid this exact set of choices and confirm no other
-    # (priority, lateness, moved)-optimal assignment exists (this task's reference
+    # (priority, coverage, lateness, moved)-optimal assignment exists (this task's reference
     # data is designed to have a unique optimum; a full lexicographic tie-break
     # among CP-SAT solutions is not implemented, so this must hold).
     model.Add(sum(chosen_vars) <= len(chosen_vars) - 1)
@@ -513,7 +572,11 @@ def selection_rules_satisfied(
                 scheduled_by_event.get(event_id, 0)
                 for event_id in rule["then_event_ids"]
             )
-            if count < rule["minimum_then_scheduled"]:
+            if not (
+                rule["minimum_then_scheduled"]
+                <= count
+                <= rule["maximum_then_scheduled"]
+            ):
                 return False
 
     for rule in placement_commitments:
@@ -529,7 +592,11 @@ def selection_rules_satisfied(
                 )
                 for entry in schedule_entries
             )
-            if count < rule["minimum_then_scheduled"]:
+            if not (
+                rule["minimum_then_scheduled"]
+                <= count
+                <= rule["maximum_then_scheduled"]
+            ):
                 return False
 
     return True
@@ -543,8 +610,9 @@ def solve_group_bruteforce(
     placement_resource_portfolios: list[dict],
     conditional_commitments: list[dict],
     placement_commitments: list[dict],
+    placement_coverage_bonuses: list[dict],
 ) -> list[tuple[list[dict], dict[str, int]]]:
-    """Every (schedule_entries, ranks) tied for locally-optimal (priority, lateness, moved) in one component."""
+    """Every candidate tied on the local priority/coverage/lateness/moved objective."""
     choice_spaces = [
         [(p["rank"], p) for p in occ["placements"]] + [(None, DEFER)] if occ["placements"] else [(None, DEFER)]
         for occ in group
@@ -598,8 +666,17 @@ def solve_group_bruteforce(
         ):
             continue
 
-        score = score_schedule(schedule_entries, matrix)
-        key = (score["priority"], -score["lateness"], -score["moved"])
+        score = score_schedule(
+            schedule_entries,
+            matrix,
+            placement_coverage_bonuses,
+        )
+        key = (
+            score["coverage"],
+            score["priority"],
+            -score["lateness"],
+            -score["moved"],
+        )
         if best_key is None or key > best_key:
             best_key = key
             best_candidates = []
@@ -623,6 +700,7 @@ def solve_schedule(
     placement_resource_portfolios: list[dict],
     conditional_commitments: list[dict],
     placement_commitments: list[dict],
+    placement_coverage_bonuses: list[dict],
 ) -> dict:
     for occ in occurrences:
         occ["placements"] = build_placements(occ, cutoff_local)
@@ -635,6 +713,7 @@ def solve_schedule(
         placement_resource_portfolios,
         conditional_commitments,
         placement_commitments,
+        placement_coverage_bonuses,
     )
     group_candidates = []
     for group in groups:
@@ -666,6 +745,11 @@ def solve_schedule(
             for rule in placement_resource_portfolios
             if event_ids.intersection(rule["event_base_units"])
         ]
+        group_placement_coverage_bonuses = [
+            rule
+            for rule in placement_coverage_bonuses
+            if event_ids.intersection(rule["event_ranks"])
+        ]
         group_candidates.append(
             solve_group(
                 group,
@@ -675,6 +759,7 @@ def solve_schedule(
                 group_placement_resource_portfolios,
                 group_commitments,
                 group_placement_commitments,
+                group_placement_coverage_bonuses,
             )
         )
 
@@ -683,9 +768,16 @@ def solve_schedule(
         schedule = list(itertools.chain.from_iterable(entries for entries, _ in combo))
         ranks = {oid: rank for _, group_ranks in combo for oid, rank in group_ranks.items()}
 
-        score = score_schedule(schedule, matrix)
+        score = score_schedule(schedule, matrix, placement_coverage_bonuses)
         tie_key = tuple(-ranks[oid] for oid in sorted(ranks))
-        key = (score["priority"], -score["lateness"], -score["moved"], -score["travel"], tie_key)
+        key = (
+            score["coverage"],
+            score["priority"],
+            -score["lateness"],
+            -score["moved"],
+            -score["travel"],
+            tie_key,
+        )
         if best is None or key > best[0]:
             best = (key, schedule, score)
 
@@ -737,6 +829,7 @@ def main() -> None:
         policy.get("placement_resource_portfolios", []),
         policy.get("conditional_commitments", []),
         policy.get("placement_commitments", []),
+        policy.get("placement_coverage_bonuses", []),
     )
     scheduled_ids = {e["occ"]["occurrence_id"] for e in result["schedule"]}
 
@@ -769,6 +862,7 @@ def main() -> None:
         "reply_categories": reply_categories,
         "objective_score": {
             "priority_score": result["priority"],
+            "coverage_bonus_points": result["coverage"],
             "lateness_minutes": int(result["lateness"]),
             "moved_count": len(moved_items),
             "travel_minutes": int(result["travel"]),

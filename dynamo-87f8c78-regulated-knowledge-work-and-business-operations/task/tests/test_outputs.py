@@ -13,7 +13,13 @@ EXPECTED_PATH = Path(__file__).parent / "expected_output.json"
 REPLY_CATEGORIES = {"ACK", "DECLINE", "PROPOSE_ALTERNATE", "REQUEST_INFO", "ESCALATE"}
 SCHEDULE_KEYS = {"occurrence_id", "event_id", "calendar", "venue", "start_utc", "end_utc"}
 TOP_LEVEL_KEYS = {"final_schedule", "moved_items", "deferred_items", "reply_categories", "objective_score"}
-OBJECTIVE_KEYS = {"priority_score", "lateness_minutes", "moved_count", "travel_minutes"}
+OBJECTIVE_KEYS = {
+    "priority_score",
+    "coverage_bonus_points",
+    "lateness_minutes",
+    "moved_count",
+    "travel_minutes",
+}
 
 
 def _load_output() -> dict:
@@ -102,8 +108,38 @@ def test_weighted_selection_portfolios_satisfied():
         assert rule["minimum_units"] <= units <= rule["maximum_units"]
 
 
+def test_selection_and_bounded_commitments_satisfied():
+    """Cardinality portfolios and every active event-level commitment meet both bounds."""
+    data = _load_output()
+    policy = json.loads((INPUT_PATH / "policy_notes.json").read_text())
+    scheduled_counts = {}
+    for entry in data["final_schedule"]:
+        scheduled_counts[entry["event_id"]] = (
+            scheduled_counts.get(entry["event_id"], 0) + 1
+        )
+
+    for rule in policy["selection_portfolios"]:
+        count = sum(
+            scheduled_counts.get(event_id, 0)
+            for event_id in rule["event_ids"]
+        )
+        assert rule["minimum_scheduled"] <= count <= rule["maximum_scheduled"]
+
+    for rule in policy["conditional_commitments"]:
+        if scheduled_counts.get(rule["if_event_id"], 0):
+            count = sum(
+                scheduled_counts.get(event_id, 0)
+                for event_id in rule["then_event_ids"]
+            )
+            assert (
+                rule["minimum_then_scheduled"]
+                <= count
+                <= rule["maximum_then_scheduled"]
+            )
+
+
 def test_placement_sensitive_rules_satisfied():
-    """Placement portfolios and conditional slot commitments use each chosen distinct rank."""
+    """Placement budgets, bounded commitments, and bonus thresholds use distinct ranks."""
     data = _load_output()
     policy = json.loads((INPUT_PATH / "policy_notes.json").read_text())
     events = {}
@@ -151,7 +187,26 @@ def test_placement_sensitive_rules_satisfied():
                 scheduled_event_ranks.get(event_id) in set(ranks)
                 for event_id, ranks in rule["then_event_ranks"].items()
             )
-            assert count >= rule["minimum_then_scheduled"]
+            assert (
+                rule["minimum_then_scheduled"]
+                <= count
+                <= rule["maximum_then_scheduled"]
+            )
+
+    coverage_bonus_points = sum(
+        rule["bonus_points"]
+        for rule in policy["placement_coverage_bonuses"]
+        if sum(
+            chosen_ranks[entry["occurrence_id"]]
+            in rule["event_ranks"].get(entry["event_id"], [])
+            for entry in data["final_schedule"]
+        )
+        >= rule["minimum_scheduled"]
+    )
+    assert (
+        data["objective_score"]["coverage_bonus_points"]
+        == coverage_bonus_points
+    )
 
 
 def test_reply_categories_values_are_legal():

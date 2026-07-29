@@ -63,6 +63,7 @@ def path_key(value: str) -> bytes:
 
 
 def decode_text(data: bytes, media: str) -> str:
+    # The protocol treats either leading BOM as a media signature, not text.
     if media == "utf16le_text":
         return data[2:].decode("utf-16le")
     if media == "utf8_text":

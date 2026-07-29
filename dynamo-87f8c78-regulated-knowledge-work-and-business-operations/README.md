@@ -21,9 +21,10 @@ classification rule.
   genuinely NP-hard multiple-choice weighted interval scheduling instances, not just
   bigger versions of the small clusters.
 - `travel_matrix.csv` — one-way transit minutes between every venue.
-- `policy_notes.json` — the planning window, the after-hours cutoff, the exact objective to
-  optimize (`objective_order` / `objective_definitions`), the exact conflict/precedence rules
-  (`scheduling_rules`), and the exact deterministic inbox-classification procedure
+- `policy_notes.json` — the planning window, the after-hours cutoff, the exact six-level
+  objective (`objective_order` / `objective_definitions`), overlapping cardinality,
+  weighted, placement-resource, bounded commitment, and placement-threshold bonus rules,
+  the exact conflict/precedence rules (`scheduling_rules`), and the inbox procedure
   (`reply_rule_order` / `reply_rule_definitions`).
 - `inbox/messages.json` — 24 inbox messages carrying the boolean fields the classification
   rule is written against, covering every precedence-order interaction among the flags.
@@ -40,14 +41,15 @@ write a single `/app/output.json`.
 The reference solution ([`task/solution/solve.py`](task/solution/solve.py)) expands
 recurrences with `dateutil.rrule` plus `EXDATE` removal and `zoneinfo` for DST-correct
 timezone conversion, computes each occurrence's legal placements, and partitions occurrences
-into connected components by possible conflict or shared dependency. Each component is solved
-for the assignment maximizing scheduled priority, then minimizing lateness, then moved count:
+into connected components by possible conflict or any shared policy rule. Each component is
+solved for the assignment maximizing sixteen overlapping placement-threshold bonuses, then
+maximizing scheduled priority within that maximum-coverage face, then minimizing lateness and moved count:
 small components (the overwhelming majority) via exhaustive search, and the two large,
-densely-packed components via OR-Tools CP-SAT (sequential lexicographic optimization, plus a
-constraint-based check confirming each optimum is unique). It keeps every locally-tied-optimal
-assignment, combines components to minimize total travel minutes, and breaks any remaining tie
-by occurrence rank. Inbox replies are classified by applying `reply_rule_order` directly to
-each message's boolean fields.
+densely-packed components via OR-Tools CP-SAT (bounded reified commitments, threshold
+indicators, sequential lexicographic optimization, and a constraint-based uniqueness check).
+It keeps every locally tied optimum, combines components to minimize total travel minutes,
+and breaks any remaining tie by occurrence rank. Inbox replies are classified by applying
+`reply_rule_order` directly to each message's boolean fields.
 
 ## Verification
 
@@ -55,8 +57,9 @@ each message's boolean fields.
 the exact required schema, that every file under `/app/input/` is byte-identical to a golden
 copy kept in `tests/` (never visible to the agent), and that `final_schedule`, `moved_items`,
 `deferred_items`, `reply_categories`, and `objective_score` exactly match the reference
-solver's output (`tests/expected_output.json`), which the hidden grader recomputes
-independently against reference inputs.
+solver's output (`tests/expected_output.json`). It also independently checks cardinality and
+weighted portfolios, both sides of active commitment bounds, reconstructed placement ranks,
+placement-resource totals, and all overlapping coverage thresholds.
 
 
 

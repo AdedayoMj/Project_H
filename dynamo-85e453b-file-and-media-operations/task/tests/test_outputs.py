@@ -18,7 +18,7 @@ EXPECTED_CORPUS_SHA256 = "dabe819b514f92f96b64dd07fa416dcb753d02f7a4da0800224c22
 EXPECTED_INPUT_SHA256 = {
     "custodians.json": "4a3e52bc97c76c334021c37ca52e99d72971cff6ed7f618fabafd88ac3080468",
     "families.json": "ca423b604d3a0743615ff911ccd8abf5c00b5a63c31b04ee4dd700fda7decc8e",
-    "protocol.json": "11b2e7b4ba134d878a6bcae875c497d14c38c763f6fac94b75b5c3ab9a12ba77",
+    "protocol.json": "9e05ce086a227977bce2ef93caa41792fedbb938cc7dddf15ff81b1c93c2eb0f",
 }
 DISPOSITIONS = {
     "SYMLINK", "HARDLINK_ALIAS", "DEPTH_LIMIT", "UNSUPPORTED_TYPE", "CONTAINER",

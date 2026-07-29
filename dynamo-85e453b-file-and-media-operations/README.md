@@ -27,4 +27,4 @@ harbor run -p . --agent nop      # reward < 1.0
 
 ## Notes / open questions
 
-No unresolved interpretation remains. `/app/input/protocol.json` is normative for signature and disposition precedence, archive-depth semantics, date handling, normalized hashing, representative election, and volume packing. Exact path comparisons use the UTF-8 bytes of the preserved corpus or synthetic archive path; JSON object-key order and whitespace are immaterial.
+No unresolved interpretation remains. `/app/input/protocol.json` is normative for signature and disposition precedence, archive-depth semantics, date handling, normalized hashing, representative election, and volume packing. Physical corpus ZIPs are depth 0, their direct members are depth 1, and `maximum_depth` is inclusive. UTF-8 and UTF-16LE signature BOMs are excluded before text decoding. Exact path comparisons use the UTF-8 bytes of the preserved corpus or synthetic archive path; JSON object-key order and whitespace are immaterial.

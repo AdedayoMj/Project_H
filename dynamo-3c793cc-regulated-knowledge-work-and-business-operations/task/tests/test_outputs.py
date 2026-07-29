@@ -24,6 +24,7 @@ TRIP_SUMMARY_KEYS = {
     "gross_reimbursable_cents",
     "trip_budget_cap_cents",
     "final_reimbursable_cents",
+    "retained_coverage_bonus_points",
     "deferred_over_budget_line_ids",
     "total_flagged_for_approval_cents",
     "category_breakdown",
@@ -103,6 +104,7 @@ def test_trip_summary_well_formed():
         "gross_reimbursable_cents",
         "trip_budget_cap_cents",
         "final_reimbursable_cents",
+        "retained_coverage_bonus_points",
         "total_flagged_for_approval_cents",
     ):
         assert isinstance(summary[key], int) and not isinstance(summary[key], bool)
@@ -194,8 +196,8 @@ def test_summary_is_consistent_with_line_items():
     )
 
 
-def test_retention_rules_satisfied():
-    """The retained set satisfies every disclosed weighted portfolio and conditional bundle."""
+def test_retention_rules_and_coverage_score_satisfied():
+    """The retained set satisfies every portfolio/bounded commitment and reconciles its coverage score."""
     data = _load_output()
     policy = json.loads((INPUT_PATH / "policy.json").read_text())
     retained = {
@@ -212,7 +214,13 @@ def test_retention_rules_satisfied():
     for rule in policy["retention_commitments"]:
         if rule["if_retained_line_id"] in retained:
             retained_then = len(retained.intersection(rule["then_line_ids"]))
-            assert retained_then >= rule["minimum_then_retained"]
+            assert rule["minimum_then_retained"] <= retained_then <= rule["maximum_then_retained"]
+    coverage_score = sum(
+        rule["bonus_points"]
+        for rule in policy["retention_coverage_bonuses"]
+        if len(retained.intersection(rule["line_ids"])) >= rule["minimum_retained"]
+    )
+    assert data["trip_summary"]["retained_coverage_bonus_points"] == coverage_score
 
 
 def test_line_items_match_reference():

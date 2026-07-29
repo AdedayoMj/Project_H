@@ -29,9 +29,12 @@ PROTOCOL = {
     "archive": {
         "designated_media_type": "zip",
         "maximum_depth": 3,
+        "depth_definition": "a physical corpus ZIP is depth 0; each non-directory member has its containing ZIP's depth plus 1, so a physical ZIP's direct members are depth 1",
+        "depth_boundary": "examine members whose depth is at most maximum_depth; inventory a member above maximum_depth as DEPTH_LIMIT with media type unexamined and do not read or expand it",
         "ooxml_is_atomic": True,
         "entry_uncompressed_limit_bytes": 16777216,
         "total_uncompressed_limit_bytes_per_container": 67108864,
+        "size_limit_boundary": "use each ZIP member's declared uncompressed size and the running sum in exact entry-path UTF-8 byte order; a member that makes either limit exceed its value is DEPTH_LIMIT with media type unexamined and is not read or expanded",
     },
     "signature_precedence": [
         {"media_type": "jpeg", "hex_prefix": "ffd8ff"},
@@ -75,7 +78,7 @@ PROTOCOL = {
     "normalized_hash": {
         "algorithm": "sha256 lowercase hex",
         "text_media_types": ["text", "utf8_text", "utf16le_text"],
-        "text_rule": "decode, NFC-normalize, convert CRLF/CR to LF, strip trailing space and tab from every line, UTF-8 encode",
+        "text_rule": "decode according to media type after removing the UTF-8 or UTF-16LE signature BOM, NFC-normalize, convert CRLF/CR to LF, strip trailing space and tab from every line, UTF-8 encode",
         "binary_rule": "hash exact bytes",
     },
     "families": {

@@ -105,23 +105,74 @@
       "commitment_id": "atlantic-ticket-bundle",
       "if_retained_line_id": "E65",
       "then_line_ids": ["E68", "E71", "E72", "E73"],
-      "minimum_then_retained": 2
+      "minimum_then_retained": 2,
+      "maximum_then_retained": 2
     },
     {
       "commitment_id": "homebound-ticket-bundle",
       "if_retained_line_id": "E75",
       "then_line_ids": ["E66", "E69", "E74", "E76"],
-      "minimum_then_retained": 2
+      "minimum_then_retained": 2,
+      "maximum_then_retained": 2
     },
     {
       "commitment_id": "client-program-follow-through",
       "if_retained_line_id": "E36",
       "then_line_ids": ["E31", "E38", "E55", "E63"],
-      "minimum_then_retained": 3
+      "minimum_then_retained": 3,
+      "maximum_then_retained": 3
+    },
+    {
+      "commitment_id": "regional-route-band",
+      "if_retained_line_id": "E70",
+      "then_line_ids": ["E65", "E66", "E67", "E68"],
+      "minimum_then_retained": 2,
+      "maximum_then_retained": 3
+    },
+    {
+      "commitment_id": "delegation-continuity-band",
+      "if_retained_line_id": "E50",
+      "then_line_ids": ["E38", "E44", "E56", "E62"],
+      "minimum_then_retained": 3,
+      "maximum_then_retained": 3
+    },
+    {
+      "commitment_id": "audit-sampling-band",
+      "if_retained_line_id": "E42",
+      "then_line_ids": ["E29", "E31", "E39", "E45", "E57"],
+      "minimum_then_retained": 1,
+      "maximum_then_retained": 2
+    },
+    {
+      "commitment_id": "return-path-band",
+      "if_retained_line_id": "E74",
+      "then_line_ids": ["E69", "E71", "E72", "E73", "E75", "E76"],
+      "minimum_then_retained": 2,
+      "maximum_then_retained": 4
     }
   ],
+  "retention_coverage_bonuses": [
+    {"bonus_id": "atlantic-chain", "line_ids": ["E65", "E66", "E67", "E68"], "minimum_retained": 3, "bonus_points": 31},
+    {"bonus_id": "regional-chain", "line_ids": ["E69", "E70", "E71", "E72", "E73"], "minimum_retained": 4, "bonus_points": 29},
+    {"bonus_id": "homebound-chain", "line_ids": ["E72", "E73", "E74", "E75", "E76"], "minimum_retained": 4, "bonus_points": 37},
+    {"bonus_id": "client-program-alpha", "line_ids": ["E28", "E31", "E36", "E38", "E45", "E48"], "minimum_retained": 4, "bonus_points": 23},
+    {"bonus_id": "client-program-beta", "line_ids": ["E39", "E42", "E43", "E50", "E51", "E57"], "minimum_retained": 5, "bonus_points": 19},
+    {"bonus_id": "client-program-gamma", "line_ids": ["E17", "E20", "E53", "E56", "E58", "E63"], "minimum_retained": 4, "bonus_points": 17},
+    {"bonus_id": "executive-review", "line_ids": ["E03", "E06", "E11", "E17", "E20", "E28"], "minimum_retained": 4, "bonus_points": 13},
+    {"bonus_id": "solo-meal-coverage", "line_ids": ["E29", "E34", "E40", "E46", "E52", "E58", "E64"], "minimum_retained": 5, "bonus_points": 11},
+    {"bonus_id": "internal-meal-coverage", "line_ids": ["E30", "E35", "E41", "E47", "E54", "E60"], "minimum_retained": 4, "bonus_points": 7},
+    {"bonus_id": "partner-dinner-coverage", "line_ids": ["E31", "E37", "E43", "E49", "E55", "E61"], "minimum_retained": 5, "bonus_points": 43},
+    {"bonus_id": "delegation-dinner-coverage", "line_ids": ["E32", "E38", "E44", "E50", "E56", "E62"], "minimum_retained": 5, "bonus_points": 41},
+    {"bonus_id": "board-dinner-coverage", "line_ids": ["E33", "E39", "E45", "E51", "E57", "E63"], "minimum_retained": 4, "bonus_points": 47},
+    {"bonus_id": "fare-comparison-set", "line_ids": ["E01", "E12", "E24", "E65", "E75"], "minimum_retained": 3, "bonus_points": 53},
+    {"bonus_id": "connection-review", "line_ids": ["E04", "E13", "E22", "E67", "E68"], "minimum_retained": 4, "bonus_points": 59},
+    {"bonus_id": "france-client-coverage", "line_ids": ["E05", "E14", "E17", "E53", "E59"], "minimum_retained": 4, "bonus_points": 61},
+    {"bonus_id": "program-follow-through", "line_ids": ["E06", "E20", "E36", "E55", "E71"], "minimum_retained": 4, "bonus_points": 67},
+    {"bonus_id": "daily-meal-sampling", "line_ids": ["E07", "E15", "E19", "E41", "E58", "E64"], "minimum_retained": 5, "bonus_points": 71},
+    {"bonus_id": "working-meal-sampling", "line_ids": ["E08", "E16", "E25", "E35", "E47", "E60"], "minimum_retained": 5, "bonus_points": 73}
+  ],
   "retention_tie_break": {
-    "applies_after": ["retained_priority_weight", "retained_amount"],
+    "applies_after": ["retained_priority_weight", "retained_coverage_bonus_points", "retained_amount"],
     "sort_keys": ["date", "line_id"],
     "direction": "ascending",
     "preference": "retain_earlier"

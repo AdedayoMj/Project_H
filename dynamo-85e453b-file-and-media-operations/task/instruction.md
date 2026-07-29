@@ -1,5 +1,7 @@
 Cull the synthetic ESI collection under `/app/corpus/` according to the normative rules in `/app/input/protocol.json`, using the custodian roster in `/app/input/custodians.json` and attachment-family assignments in `/app/input/families.json`. The protocol defines the complete item universe, signature precedence, metadata dates, content matching, archive traversal, disposition precedence, global deduplication, ordering, and volume packing. Do not modify anything under `/app/corpus/` or `/app/input/`.
 
+For archive traversal, a physical corpus ZIP is depth 0 and its direct members are depth 1. Examine members through `maximum_depth` inclusively; inventory deeper members as `DEPTH_LIMIT` with media type `unexamined` without reading or expanding them. The same disposition and media type apply when a declared per-entry or ordered cumulative uncompressed-size limit is exceeded. For text extraction and normalized hashing, UTF-8 and UTF-16LE BOM bytes are classification signatures, not text, and must be removed before decoding.
+
 Write `/app/output.json` as one JSON object with exactly these keys:
 
 - `production`: an ordered array. Each record has exactly `sequence`, `path`, `media_type`, `custodian`, `family_id`, `normalized_hash`, `effective_utc_date`, `size_bytes`, and `volume`. Use the protocol's canonical formats; `size_bytes` is a non-negative JSON integer.

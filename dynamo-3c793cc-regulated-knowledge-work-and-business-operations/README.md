@@ -1,6 +1,6 @@
 # T&E Reimbursement Audit
 
-This task asks an agent to compute exact reimbursements and compliance dispositions for one executive's international trip against a written expense policy.
+This task asks an agent to compute exact reimbursements and compliance dispositions for one executive's international trip, then solve a four-level constrained retention problem with overlapping portfolios, bounded commitments, and threshold-coverage bonuses.
 
 ## Inputs
 
@@ -24,4 +24,4 @@ This task asks an agent to compute exact reimbursements and compliance dispositi
 - `/app/input/` matches the golden copy byte-for-byte
 - every output line matches the reference output exactly
 - the trip summary matches the reference output exactly
-
+- every retained portfolio, bounded commitment, and reported coverage-bonus score reconciles

@@ -11,17 +11,40 @@ from pathlib import Path
 APP_ROOT = Path(os.environ.get("GEOM_APP_ROOT", "/app"))
 OUTPUT = APP_ROOT / "output.json"
 INPUT = APP_ROOT / "input" / "facility.json"
+EXPECTED_OUTPUT = Path(__file__).with_name("expected_output.json")
 EXPECTED_INPUT_SHA256 = "701dbdcf64a5e2fe5c789cd788e69798b28bf44e4cb5f35f5fcaf77716a1a878"
-EXPECTED_OUTPUT_SHA256 = "e433b0634a34ff213ecbc19b0e9b1e9ff2bcb65a14a8e7fe2359c44eaa7c6072"
 
 
 def load_output() -> dict:
     return json.loads(OUTPUT.read_text())
 
 
-def canonical_digest(value: object) -> str:
-    payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(payload).hexdigest()
+def load_expected_output() -> dict:
+    return json.loads(EXPECTED_OUTPUT.read_text())
+
+
+def first_difference(actual: object, expected: object, path: str = "$") -> str | None:
+    if type(actual) is not type(expected):
+        return f"{path}: expected {type(expected).__name__}, got {type(actual).__name__}"
+    if isinstance(expected, dict):
+        if set(actual) != set(expected):
+            return f"{path}: expected keys {sorted(expected)}, got {sorted(actual)}"
+        for key in expected:
+            difference = first_difference(actual[key], expected[key], f"{path}.{key}")
+            if difference is not None:
+                return difference
+        return None
+    if isinstance(expected, list):
+        if len(actual) != len(expected):
+            return f"{path}: expected {len(expected)} entries, got {len(actual)}"
+        for index, (actual_item, expected_item) in enumerate(zip(actual, expected)):
+            difference = first_difference(actual_item, expected_item, f"{path}[{index}]")
+            if difference is not None:
+                return difference
+        return None
+    if actual != expected:
+        return f"{path}: expected {expected!r}, got {actual!r}"
+    return None
 
 
 def parse_rational(value: str) -> Fraction:
@@ -139,6 +162,18 @@ def test_objective_fields_reconcile_with_schedule():
     )
 
 
+def test_reported_objective_is_the_readable_four_level_optimum():
+    """Each objective component equals the verifier's readable exact global optimum."""
+    actual = load_output()["objective"]
+    expected = load_expected_output()["objective"]
+    for component in ("transition_cost", "handoffs", "observer_sequence", "handoff_times"):
+        assert actual[component] == expected[component], (
+            f"objective.{component}: expected {expected[component]!r}, "
+            f"got {actual[component]!r}"
+        )
+
+
 def test_exact_visibility_decomposition_and_global_optimum():
-    """The complete exact decomposition and lexicographically resolved optimum match the reference result."""
-    assert canonical_digest(load_output()) == EXPECTED_OUTPUT_SHA256
+    """The complete result equals the readable reference, reporting the first differing field or array index."""
+    difference = first_difference(load_output(), load_expected_output())
+    assert difference is None, difference

@@ -167,8 +167,8 @@
     },
     {
       "line_id": "E31",
-      "reimbursable_cents": 0,
-      "status": "DEFERRED_OVER_BUDGET"
+      "reimbursable_cents": 12000,
+      "status": "APPROVED"
     },
     {
       "line_id": "E32",
@@ -177,8 +177,8 @@
     },
     {
       "line_id": "E33",
-      "reimbursable_cents": 21947,
-      "status": "APPROVED"
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
     },
     {
       "line_id": "E34",
@@ -262,8 +262,8 @@
     },
     {
       "line_id": "E50",
-      "reimbursable_cents": 17849,
-      "status": "NEEDS_MANAGER_APPROVAL"
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
     },
     {
       "line_id": "E51",
@@ -287,8 +287,8 @@
     },
     {
       "line_id": "E55",
-      "reimbursable_cents": 15107,
-      "status": "NEEDS_MANAGER_APPROVAL"
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
     },
     {
       "line_id": "E56",
@@ -302,8 +302,8 @@
     },
     {
       "line_id": "E58",
-      "reimbursable_cents": 0,
-      "status": "DEFERRED_OVER_BUDGET"
+      "reimbursable_cents": 5629,
+      "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
       "line_id": "E59",
@@ -352,13 +352,13 @@
     },
     {
       "line_id": "E68",
-      "reimbursable_cents": 0,
-      "status": "DEFERRED_OVER_BUDGET"
+      "reimbursable_cents": 64683,
+      "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
       "line_id": "E69",
-      "reimbursable_cents": 0,
-      "status": "DEFERRED_OVER_BUDGET"
+      "reimbursable_cents": 75941,
+      "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
       "line_id": "E70",
@@ -372,8 +372,8 @@
     },
     {
       "line_id": "E72",
-      "reimbursable_cents": 108611,
-      "status": "NEEDS_MANAGER_APPROVAL"
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
     },
     {
       "line_id": "E73",
@@ -399,12 +399,12 @@
   "trip_summary": {
     "category_breakdown": {
       "AIRFARE": {
-        "flagged_for_approval_cents": 487325,
-        "reimbursable_cents": 518868
+        "flagged_for_approval_cents": 519338,
+        "reimbursable_cents": 550881
       },
       "MEALS": {
-        "flagged_for_approval_cents": 442141,
-        "reimbursable_cents": 503493
+        "flagged_for_approval_cents": 414814,
+        "reimbursable_cents": 466219
       },
       "MILEAGE": {
         "flagged_for_approval_cents": 1866,
@@ -415,21 +415,22 @@
       "E12",
       "E17",
       "E24",
-      "E31",
+      "E33",
       "E39",
       "E45",
+      "E50",
+      "E55",
       "E57",
-      "E58",
       "E66",
-      "E68",
-      "E69",
+      "E72",
       "E73",
       "E75",
       "E76"
     ],
-    "final_reimbursable_cents": 1040194,
+    "final_reimbursable_cents": 1034933,
     "gross_reimbursable_cents": 1945718,
-    "total_flagged_for_approval_cents": 931332,
+    "retained_coverage_bonus_points": 517,
+    "total_flagged_for_approval_cents": 936018,
     "total_per_diem_cents": 14400,
     "trip_budget_cap_cents": 1040200
   }

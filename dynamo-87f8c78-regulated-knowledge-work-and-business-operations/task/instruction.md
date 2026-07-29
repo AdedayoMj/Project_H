@@ -4,7 +4,7 @@ You are the executive assistant responsible for finalizing next week's operating
 
 `/app/input/travel_matrix.csv` gives one-way transit minutes between every pair of venues.
 
-`/app/input/policy_notes.json` gives the planning window, the after-hours cutoff, the exact objective to optimize (`objective_order`, spelled out precisely in `objective_definitions`), the exact scheduling constraints (`scheduling_rules`, covering conflicts/travel gaps, protected blocks, VIP overrides, after-hours eligibility, movable-vs-fixed placement, dependency ordering, overlapping `selection_portfolios`, cross-date `weighted_selection_portfolios`, slot-sensitive `placement_resource_portfolios`, `conditional_commitments`, cross-date `placement_commitments`, and the tie-break rule), and the exact deterministic message-classification procedure (`reply_rule_order` and `reply_rule_definitions`).
+`/app/input/policy_notes.json` gives the planning window, the after-hours cutoff, the exact objective to optimize (`objective_order`, spelled out precisely in `objective_definitions`), the exact scheduling constraints (`scheduling_rules`, covering conflicts/travel gaps, protected blocks, VIP overrides, after-hours eligibility, movable-vs-fixed placement, dependency ordering, overlapping `selection_portfolios`, cross-date `weighted_selection_portfolios`, slot-sensitive `placement_resource_portfolios`, bounded `conditional_commitments`, bounded cross-date `placement_commitments`, overlapping threshold-based `placement_coverage_bonuses`, and the tie-break rule), and the exact deterministic message-classification procedure (`reply_rule_order` and `reply_rule_definitions`).
 
 `/app/input/inbox/messages.json` lists inbox messages, each carrying the boolean fields (`missing_required_details`, `requires_escalation`, `no_legal_alternative`, `conflict`, `alternate_available`) that `reply_rule_definitions` is written against.
 
@@ -24,4 +24,4 @@ Do not modify anything under `/app/input/`. Write only `/app/output.json`, a sin
 
 `reply_categories` — an object mapping every `message_id` to exactly one of `ACK`, `DECLINE`, `PROPOSE_ALTERNATE`, `REQUEST_INFO`, `ESCALATE`.
 
-`objective_score` — an object with integer fields `priority_score`, `lateness_minutes`, `moved_count`, `travel_minutes`, computed exactly as defined in `objective_definitions` for your `final_schedule`.
+`objective_score` — an object with integer fields `priority_score`, `coverage_bonus_points`, `lateness_minutes`, `moved_count`, `travel_minutes`, computed exactly as defined in `objective_definitions` for your `final_schedule`.

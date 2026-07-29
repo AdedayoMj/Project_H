@@ -10,11 +10,11 @@ Pipeline per trip:
      meals dated that day (anti-double-dip), floored at zero.
   3. Approval disposition (per-line threshold + running category-aggregate).
   4. Trip-budget optimization: if per-diem + all reimbursable line amounts
-     exceeds the trip cap, defer a subset of lines (constrained 0/1 knapsack)
-     satisfying overlapping weighted retention portfolios and conditional
-     claim bundles while maximizing, lexicographically, retained
-     priority-weight, then retained amount, then the line-id-lexicographic
-     retention vector (a total order -> unique).
+     exceeds the trip cap, defer a subset of lines satisfying overlapping
+     weighted portfolios and bounded conditional commitments. Maximize,
+     lexicographically, retained priority weight, realized threshold-coverage
+     bonus points, retained amount, then the line-id-lexicographic retention
+     vector (a total order -> unique).
 All money is integer home-currency cents.
 """
 from __future__ import annotations
@@ -136,17 +136,27 @@ def solve_budget_knapsack(
     cap,
     retention_portfolios,
     retention_commitments,
+    retention_coverage_bonuses,
     tie_break,
 ):
     """reimb_lines: list of dicts {line_id, date, amount, weight}. Choose a
     RETAINED subset maximizing (sum weight, then sum amount, then line-id
     lexicographic retention) s.t. per_diem_total + sum retained amount <= cap.
-    The retained subset must also satisfy every weighted portfolio and
-    conditional commitment. Returns DEFERRED line_ids (empty if everything
-    fits, in which case retention constraints do not activate)."""
+    The retained subset must also satisfy every weighted portfolio and bounded
+    conditional commitment. Returns (DEFERRED line_ids, realized coverage
+    bonus points); constraints do not activate when everything fits."""
     budget = cap - per_diem_total
+
+    def coverage_score(retained):
+        return sum(
+            rule["bonus_points"]
+            for rule in retention_coverage_bonuses
+            if len(retained.intersection(rule["line_ids"])) >= rule["minimum_retained"]
+        )
+
     if sum(l["amount"] for l in reimb_lines) <= budget:
-        return set()
+        retained = {line["line_id"] for line in reimb_lines}
+        return set(), coverage_score(retained)
     # policy fixes the tie-break walk order, so the lexicographic step is well-defined
     sort_keys = tuple(tie_break["sort_keys"])
     order = sorted(
@@ -165,18 +175,36 @@ def solve_budget_knapsack(
         for rule in retention_commitments
         for line_id in [rule["if_retained_line_id"], *rule["then_line_ids"]]
     )
+    referenced_line_ids.update(
+        line_id
+        for rule in retention_coverage_bonuses
+        for line_id in rule["line_ids"]
+    )
     assert referenced_line_ids <= known_line_ids, (
         "retention rules may reference only surviving reimbursable lines"
     )
 
-    def solve(fix_weight=None, fix_amount=None, forced=None):
+    def solve(fix_weight=None, fix_bonus=None, fix_amount=None, forced=None):
         m = cp_model.CpModel()
         x = {l["line_id"]: m.NewBoolVar(l["line_id"]) for l in order}  # 1 = retained
         m.Add(sum(x[l["line_id"]] * l["amount"] for l in order) <= budget)
         W = sum(x[l["line_id"]] * l["weight"] for l in order)
         A = sum(x[l["line_id"]] * l["amount"] for l in order)
+        bonus_vars = {}
+        for rule in retention_coverage_bonuses:
+            met = m.NewBoolVar(rule["bonus_id"])
+            count = sum(x[line_id] for line_id in rule["line_ids"])
+            m.Add(count >= rule["minimum_retained"]).OnlyEnforceIf(met)
+            m.Add(count <= rule["minimum_retained"] - 1).OnlyEnforceIf(met.Not())
+            bonus_vars[rule["bonus_id"]] = met
+        B = sum(
+            rule["bonus_points"] * bonus_vars[rule["bonus_id"]]
+            for rule in retention_coverage_bonuses
+        )
         if fix_weight is not None:
             m.Add(W == fix_weight)
+        if fix_bonus is not None:
+            m.Add(B == fix_bonus)
         if fix_amount is not None:
             m.Add(A == fix_amount)
         for rule in retention_portfolios:
@@ -187,23 +215,28 @@ def solve_budget_knapsack(
             m.Add(units >= rule["minimum_retained_units"])
             m.Add(units <= rule["maximum_retained_units"])
         for rule in retention_commitments:
-            m.Add(
-                sum(x[line_id] for line_id in rule["then_line_ids"])
-                >= rule["minimum_then_retained"]
-            ).OnlyEnforceIf(x[rule["if_retained_line_id"]])
+            companion_count = sum(x[line_id] for line_id in rule["then_line_ids"])
+            trigger = x[rule["if_retained_line_id"]]
+            m.Add(companion_count >= rule["minimum_then_retained"]).OnlyEnforceIf(trigger)
+            m.Add(companion_count <= rule["maximum_then_retained"]).OnlyEnforceIf(trigger)
         for lid, val in (forced or {}).items():
             m.Add(x[lid] == val)
-        return m, x, W, A
+        return m, x, W, B, A
 
     s = cp_model.CpSolver()
     s.parameters.num_search_workers = 4
 
-    m, x, W, A = solve()
+    m, x, W, B, A = solve()
     m.Maximize(W)
     assert s.Solve(m) == cp_model.OPTIMAL
     best_w = int(s.Value(W))
 
-    m, x, W, A = solve(fix_weight=best_w)
+    m, x, W, B, A = solve(fix_weight=best_w)
+    m.Maximize(B)
+    assert s.Solve(m) == cp_model.OPTIMAL
+    best_b = int(s.Value(B))
+
+    m, x, W, B, A = solve(fix_weight=best_w, fix_bonus=best_b)
     m.Maximize(A)
     assert s.Solve(m) == cp_model.OPTIMAL
     best_a = int(s.Value(A))
@@ -213,9 +246,14 @@ def solve_budget_knapsack(
     for l in order:
         trial = dict(forced)
         trial[l["line_id"]] = 1
-        m, x, W, A = solve(fix_weight=best_w, fix_amount=best_a, forced=trial)
+        m, x, W, B, A = solve(
+            fix_weight=best_w,
+            fix_bonus=best_b,
+            fix_amount=best_a,
+            forced=trial,
+        )
         forced[l["line_id"]] = 1 if s.Solve(m) in (cp_model.OPTIMAL, cp_model.FEASIBLE) else 0
-    return {lid for lid, v in forced.items() if v == 0}
+    return {lid for lid, v in forced.items() if v == 0}, best_b
 
 
 def main():
@@ -281,12 +319,13 @@ def main():
     # ---- phase 4: trip-budget knapsack ----
     knap_lines = [{"line_id": l["line_id"], "date": l["date"], "amount": computed[l["line_id"]],
                    "weight": 6 - int(l["priority"])} for l in reimb]
-    deferred = solve_budget_knapsack(
+    deferred, retained_coverage_bonus = solve_budget_knapsack(
         knap_lines,
         total_per_diem,
         policy["trip_reimbursement_cap_cents"],
         policy.get("retention_portfolios", []),
         policy.get("retention_commitments", []),
+        policy.get("retention_coverage_bonuses", []),
         policy["retention_tie_break"],
     )
 
@@ -323,6 +362,7 @@ def main():
             "gross_reimbursable_cents": gross,
             "trip_budget_cap_cents": policy["trip_reimbursement_cap_cents"],
             "final_reimbursable_cents": final,
+            "retained_coverage_bonus_points": retained_coverage_bonus,
             "deferred_over_budget_line_ids": sorted(deferred),
             "total_flagged_for_approval_cents": total_flagged,
             "category_breakdown": cat_break,
