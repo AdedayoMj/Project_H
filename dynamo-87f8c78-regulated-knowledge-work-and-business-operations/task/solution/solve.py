@@ -7,7 +7,8 @@ under the scheduling_rules in policy_notes.json, search the (small) space of
 placement choices for the occurrence set that optimizes objective_order, and
 classify every inbox message with the deterministic reply_rule_order. Dense
 components also enforce overlapping selection portfolios, weighted attendance
-budgets, and conditional commitments from policy_notes.json.
+budgets, placement-sensitive resource budgets, and conditional commitments from
+policy_notes.json.
 """
 
 from __future__ import annotations
@@ -198,7 +199,9 @@ def find_components(
     matrix: dict,
     selection_portfolios: list[dict],
     weighted_selection_portfolios: list[dict],
+    placement_resource_portfolios: list[dict],
     conditional_commitments: list[dict],
+    placement_commitments: list[dict],
 ) -> list[list[dict]]:
     """Group occurrences that could ever conflict, or are dependency-linked."""
     parent = {occ["occurrence_id"]: occ["occurrence_id"] for occ in occurrences}
@@ -235,8 +238,15 @@ def find_components(
         list(rule["event_units"]) for rule in weighted_selection_portfolios
     )
     coupled_event_sets.extend(
+        list(rule["event_base_units"]) for rule in placement_resource_portfolios
+    )
+    coupled_event_sets.extend(
         [rule["if_event_id"], *rule["then_event_ids"]]
         for rule in conditional_commitments
+    )
+    coupled_event_sets.extend(
+        [rule["if_event_id"], *rule["then_event_ranks"]]
+        for rule in placement_commitments
     )
     for event_ids in coupled_event_sets:
         members = [
@@ -258,7 +268,9 @@ def solve_group(
     matrix: dict,
     selection_portfolios: list[dict],
     weighted_selection_portfolios: list[dict],
+    placement_resource_portfolios: list[dict],
     conditional_commitments: list[dict],
+    placement_commitments: list[dict],
 ) -> list[tuple[list[dict], dict[str, int]]]:
     """Dispatch to the exhaustive search for small components, or CP-SAT for components
     whose choice space is too large to brute force."""
@@ -271,14 +283,18 @@ def solve_group(
                 matrix,
                 selection_portfolios,
                 weighted_selection_portfolios,
+                placement_resource_portfolios,
                 conditional_commitments,
+                placement_commitments,
             )
     return solve_group_bruteforce(
         group,
         matrix,
         selection_portfolios,
         weighted_selection_portfolios,
+        placement_resource_portfolios,
         conditional_commitments,
+        placement_commitments,
     )
 
 
@@ -287,7 +303,9 @@ def solve_group_cpsat(
     matrix: dict,
     selection_portfolios: list[dict],
     weighted_selection_portfolios: list[dict],
+    placement_resource_portfolios: list[dict],
     conditional_commitments: list[dict],
+    placement_commitments: list[dict],
 ) -> list[tuple[list[dict], dict[str, int]]]:
     """CP-SAT search for a component too large to brute force. Only handles components
     with no protected/vip_override occurrences. Different-venue placements are
@@ -345,12 +363,47 @@ def solve_group_cpsat(
         model.Add(units >= rule["minimum_units"])
         model.Add(units <= rule["maximum_units"])
 
+    occurrences_by_event = {occ["event_id"]: occ for occ in group}
+    for rule in placement_resource_portfolios:
+        terms = []
+        for event_id, base_units in rule["event_base_units"].items():
+            occ = occurrences_by_event.get(event_id)
+            if occ is None:
+                continue
+            for placement in occ["placements"]:
+                rank_adjustment = rule["rank_adjustments"][str(placement["rank"])]
+                var = choice_vars[(occ["occurrence_id"], placement["rank"])]
+                terms.append((base_units + rank_adjustment) * var)
+        units = sum(terms)
+        model.Add(units >= rule["minimum_units"])
+        model.Add(units <= rule["maximum_units"])
+
     for rule in conditional_commitments:
         triggers = event_vars.get(rule["if_event_id"], [])
         required = [
             var
             for event_id in rule["then_event_ids"]
             for var in event_vars.get(event_id, [])
+        ]
+        triggered = model.NewBoolVar(f'{rule["commitment_id"]}__triggered')
+        model.Add(sum(triggers) >= 1).OnlyEnforceIf(triggered)
+        model.Add(sum(triggers) == 0).OnlyEnforceIf(triggered.Not())
+        model.Add(sum(required) >= rule["minimum_then_scheduled"]).OnlyEnforceIf(
+            triggered
+        )
+
+    for rule in placement_commitments:
+        triggers = [
+            choice_vars[(occ["occurrence_id"], rank)]
+            for occ in group
+            if occ["event_id"] == rule["if_event_id"]
+            for rank in rule["if_placement_ranks"]
+        ]
+        required = [
+            choice_vars[(occ["occurrence_id"], rank)]
+            for occ in group
+            if occ["event_id"] in rule["then_event_ranks"]
+            for rank in rule["then_event_ranks"][occ["event_id"]]
         ]
         triggered = model.NewBoolVar(f'{rule["commitment_id"]}__triggered')
         model.Add(sum(triggers) >= 1).OnlyEnforceIf(triggered)
@@ -390,12 +443,12 @@ def solve_group_cpsat(
         else:
             model.Minimize(sum(terms))
         status = solver.Solve(model)
-        assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE), "CP-SAT component has no feasible solution"
-        target = int(solver.ObjectiveValue())
+        assert status == cp_model.OPTIMAL, "CP-SAT component optimum was not proven"
+        target = int(solver.Value(sum(terms)))
         model.Add(sum(terms) == target)
 
     status = solver.Solve(model)
-    assert status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+    assert status == cp_model.OPTIMAL
 
     schedule_entries, ranks, chosen_vars = [], {}, []
     for occ in group:
@@ -422,7 +475,9 @@ def selection_rules_satisfied(
     schedule_entries: list[dict],
     selection_portfolios: list[dict],
     weighted_selection_portfolios: list[dict],
+    placement_resource_portfolios: list[dict],
     conditional_commitments: list[dict],
+    placement_commitments: list[dict],
 ) -> bool:
     scheduled_by_event: dict[str, int] = {}
     for entry in schedule_entries:
@@ -442,11 +497,37 @@ def selection_rules_satisfied(
         if not (rule["minimum_units"] <= units <= rule["maximum_units"]):
             return False
 
+    for rule in placement_resource_portfolios:
+        units = sum(
+            rule["event_base_units"][entry["occ"]["event_id"]]
+            + rule["rank_adjustments"][str(entry["rank"])]
+            for entry in schedule_entries
+            if entry["occ"]["event_id"] in rule["event_base_units"]
+        )
+        if not (rule["minimum_units"] <= units <= rule["maximum_units"]):
+            return False
+
     for rule in conditional_commitments:
         if scheduled_by_event.get(rule["if_event_id"], 0):
             count = sum(
                 scheduled_by_event.get(event_id, 0)
                 for event_id in rule["then_event_ids"]
+            )
+            if count < rule["minimum_then_scheduled"]:
+                return False
+
+    for rule in placement_commitments:
+        triggered = any(
+            entry["occ"]["event_id"] == rule["if_event_id"]
+            and entry["rank"] in rule["if_placement_ranks"]
+            for entry in schedule_entries
+        )
+        if triggered:
+            count = sum(
+                entry["rank"] in rule["then_event_ranks"].get(
+                    entry["occ"]["event_id"], []
+                )
+                for entry in schedule_entries
             )
             if count < rule["minimum_then_scheduled"]:
                 return False
@@ -459,7 +540,9 @@ def solve_group_bruteforce(
     matrix: dict,
     selection_portfolios: list[dict],
     weighted_selection_portfolios: list[dict],
+    placement_resource_portfolios: list[dict],
     conditional_commitments: list[dict],
+    placement_commitments: list[dict],
 ) -> list[tuple[list[dict], dict[str, int]]]:
     """Every (schedule_entries, ranks) tied for locally-optimal (priority, lateness, moved) in one component."""
     choice_spaces = [
@@ -485,7 +568,9 @@ def solve_group_bruteforce(
             schedule_entries,
             selection_portfolios,
             weighted_selection_portfolios,
+            placement_resource_portfolios,
             conditional_commitments,
+            placement_commitments,
         ):
             continue
 
@@ -535,7 +620,9 @@ def solve_schedule(
     cutoff_local: str,
     selection_portfolios: list[dict],
     weighted_selection_portfolios: list[dict],
+    placement_resource_portfolios: list[dict],
     conditional_commitments: list[dict],
+    placement_commitments: list[dict],
 ) -> dict:
     for occ in occurrences:
         occ["placements"] = build_placements(occ, cutoff_local)
@@ -545,7 +632,9 @@ def solve_schedule(
         matrix,
         selection_portfolios,
         weighted_selection_portfolios,
+        placement_resource_portfolios,
         conditional_commitments,
+        placement_commitments,
     )
     group_candidates = []
     for group in groups:
@@ -561,10 +650,21 @@ def solve_schedule(
             if rule["if_event_id"] in event_ids
             or event_ids.intersection(rule["then_event_ids"])
         ]
+        group_placement_commitments = [
+            rule
+            for rule in placement_commitments
+            if rule["if_event_id"] in event_ids
+            or event_ids.intersection(rule["then_event_ranks"])
+        ]
         group_weighted_portfolios = [
             rule
             for rule in weighted_selection_portfolios
             if event_ids.intersection(rule["event_units"])
+        ]
+        group_placement_resource_portfolios = [
+            rule
+            for rule in placement_resource_portfolios
+            if event_ids.intersection(rule["event_base_units"])
         ]
         group_candidates.append(
             solve_group(
@@ -572,7 +672,9 @@ def solve_schedule(
                 matrix,
                 group_portfolios,
                 group_weighted_portfolios,
+                group_placement_resource_portfolios,
                 group_commitments,
+                group_placement_commitments,
             )
         )
 
@@ -632,7 +734,9 @@ def main() -> None:
         cutoff_local,
         policy.get("selection_portfolios", []),
         policy.get("weighted_selection_portfolios", []),
+        policy.get("placement_resource_portfolios", []),
         policy.get("conditional_commitments", []),
+        policy.get("placement_commitments", []),
     )
     scheduled_ids = {e["occ"]["occurrence_id"] for e in result["schedule"]}
 

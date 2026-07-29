@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 OUTPUT_PATH = Path("/app/output.json")
 INPUT_PATH = Path("/app/input")
@@ -98,6 +100,58 @@ def test_weighted_selection_portfolios_satisfied():
             for entry in data["final_schedule"]
         )
         assert rule["minimum_units"] <= units <= rule["maximum_units"]
+
+
+def test_placement_sensitive_rules_satisfied():
+    """Placement portfolios and conditional slot commitments use each chosen distinct rank."""
+    data = _load_output()
+    policy = json.loads((INPUT_PATH / "policy_notes.json").read_text())
+    events = {}
+    for calendar_path in (INPUT_PATH / "calendars").glob("*.json"):
+        for event in json.loads(calendar_path.read_text())["events"]:
+            events[event["event_id"]] = event
+
+    chosen_ranks = {}
+    for entry in data["final_schedule"]:
+        event = events[entry["event_id"]]
+        local_start = (
+            datetime.fromisoformat(entry["start_utc"].replace("Z", "+00:00"))
+            .astimezone(ZoneInfo(event["timezone"]))
+            .strftime("%Y-%m-%dT%H:%M:%S")
+        )
+        occurrence_original = entry["occurrence_id"].split("@", 1)[1]
+        raw_options = [
+            (occurrence_original, event["venue"]),
+            *((slot["start_local"], slot["venue"]) for slot in event.get("candidate_slots", [])),
+        ]
+        distinct_options = list(dict.fromkeys(raw_options))
+        chosen_ranks[entry["occurrence_id"]] = distinct_options.index(
+            (local_start, entry["venue"])
+        )
+
+    for rule in policy["placement_resource_portfolios"]:
+        units = sum(
+            rule["event_base_units"][entry["event_id"]]
+            + rule["rank_adjustments"][str(chosen_ranks[entry["occurrence_id"]])]
+            for entry in data["final_schedule"]
+            if entry["event_id"] in rule["event_base_units"]
+        )
+        assert rule["minimum_units"] <= units <= rule["maximum_units"]
+
+    scheduled_event_ranks = {
+        entry["event_id"]: chosen_ranks[entry["occurrence_id"]]
+        for entry in data["final_schedule"]
+    }
+    for rule in policy["placement_commitments"]:
+        triggered = scheduled_event_ranks.get(rule["if_event_id"]) in set(
+            rule["if_placement_ranks"]
+        )
+        if triggered:
+            count = sum(
+                scheduled_event_ranks.get(event_id) in set(ranks)
+                for event_id, ranks in rule["then_event_ranks"].items()
+            )
+            assert count >= rule["minimum_then_scheduled"]
 
 
 def test_reply_categories_values_are_legal():

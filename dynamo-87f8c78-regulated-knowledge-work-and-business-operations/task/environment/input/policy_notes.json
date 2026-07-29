@@ -137,6 +137,91 @@
       "maximum_units": 44
     }
   ],
+  "placement_resource_portfolios": [
+    {
+      "portfolio_id": "executive-preparation-wave",
+      "event_base_units": {
+        "mov-summit-01": 5,
+        "mov-summit-03": 8,
+        "mov-summit-04": 9,
+        "mov-summit-06": 6,
+        "mov-summit-11": 9,
+        "mov-summit-16": 8,
+        "mov-summit-18": 7,
+        "mov-summit-23": 6,
+        "mov-summit-28": 5,
+        "mov-war-03": 8,
+        "mov-war-07": 9,
+        "mov-war-10": 8,
+        "mov-war-12": 7,
+        "mov-war-13": 9,
+        "mov-war-18": 8,
+        "mov-war-22": 6,
+        "mov-war-26": 7
+      },
+      "rank_adjustments": {"0": 0, "1": 3, "2": 7},
+      "minimum_units": 100,
+      "maximum_units": 100
+    },
+    {
+      "portfolio_id": "stakeholder-switching-load",
+      "event_base_units": {
+        "mov-summit-02": 3,
+        "mov-summit-05": 5,
+        "mov-summit-07": 4,
+        "mov-summit-10": 6,
+        "mov-summit-12": 4,
+        "mov-summit-14": 5,
+        "mov-summit-18": 6,
+        "mov-summit-21": 2,
+        "mov-summit-23": 5,
+        "mov-summit-26": 3,
+        "mov-war-02": 3,
+        "mov-war-05": 5,
+        "mov-war-08": 4,
+        "mov-war-10": 6,
+        "mov-war-11": 2,
+        "mov-war-14": 4,
+        "mov-war-17": 5,
+        "mov-war-20": 4,
+        "mov-war-22": 5,
+        "mov-war-25": 3
+      },
+      "rank_adjustments": {"0": 4, "1": 1, "2": 8},
+      "minimum_units": 69,
+      "maximum_units": 69
+    },
+    {
+      "portfolio_id": "decision-readiness-balance",
+      "event_base_units": {
+        "mov-summit-01": 4,
+        "mov-summit-04": 7,
+        "mov-summit-06": 6,
+        "mov-summit-08": 3,
+        "mov-summit-11": 8,
+        "mov-summit-13": 4,
+        "mov-summit-16": 7,
+        "mov-summit-19": 5,
+        "mov-summit-21": 3,
+        "mov-summit-24": 5,
+        "mov-summit-27": 2,
+        "mov-summit-28": 6,
+        "mov-war-01": 3,
+        "mov-war-04": 6,
+        "mov-war-07": 8,
+        "mov-war-09": 4,
+        "mov-war-12": 6,
+        "mov-war-15": 7,
+        "mov-war-18": 7,
+        "mov-war-21": 4,
+        "mov-war-24": 3,
+        "mov-war-26": 6
+      },
+      "rank_adjustments": {"0": 2, "1": 6, "2": 3},
+      "minimum_units": 78,
+      "maximum_units": 78
+    }
+  ],
   "conditional_commitments": [
     {
       "commitment_id": "summit-innovation-follow-through",
@@ -149,6 +234,32 @@
       "if_event_id": "mov-war-22",
       "then_event_ids": ["mov-war-02", "mov-war-11", "mov-war-24", "mov-war-25"],
       "minimum_then_scheduled": 3
+    }
+  ],
+  "placement_commitments": [
+    {
+      "commitment_id": "summit-to-war-room-slot-follow-through",
+      "if_event_id": "mov-summit-18",
+      "if_placement_ranks": [2],
+      "then_event_ranks": {
+        "mov-war-04": [0, 2],
+        "mov-war-05": [0],
+        "mov-war-13": [1, 2],
+        "mov-war-26": [0, 1]
+      },
+      "minimum_then_scheduled": 2
+    },
+    {
+      "commitment_id": "war-room-to-summit-slot-follow-through",
+      "if_event_id": "mov-war-12",
+      "if_placement_ranks": [2],
+      "then_event_ranks": {
+        "mov-summit-01": [1],
+        "mov-summit-06": [1],
+        "mov-summit-21": [1],
+        "mov-summit-23": [1]
+      },
+      "minimum_then_scheduled": 2
     }
   ],
   "reply_categories": [
@@ -178,7 +289,9 @@
     "conditional_commitment_rule": "For each entry in conditional_commitments, if at least one occurrence whose event_id equals if_event_id is scheduled, then at least minimum_then_scheduled occurrences whose event_id is listed in then_event_ids must also be scheduled. If no if_event_id occurrence is scheduled, that entry imposes no minimum.",
     "dependency_rule": "If occurrence B lists occurrence A's event_id in its dependencies, and both A and B appear in final_schedule, B's scheduled start must be no earlier than A's scheduled end. If A is not in final_schedule, B has no ordering constraint from this rule.",
     "movable_rule": "An occurrence with movable=false has exactly one legal placement (its original start_local/venue) and can only be included as-is or left out of final_schedule entirely. An occurrence with movable=true may instead be placed at its original start_local/venue or at any of its candidate_slots, subject to the after-hours rule above.",
+    "placement_commitment_rule": "For each entry in placement_commitments, if an occurrence whose event_id equals if_event_id is scheduled at one of if_placement_ranks, then at least minimum_then_scheduled occurrences must be scheduled at an event_id and distinct placement rank listed together in then_event_ranks. Otherwise the entry imposes no minimum. These cross-date implications apply simultaneously.",
     "portfolio_selection_rule": "For each entry in selection_portfolios, count scheduled occurrences whose event_id appears in that entry's event_ids. The count must be at least minimum_scheduled and at most maximum_scheduled, inclusive. Portfolio rules apply simultaneously and may overlap.",
+    "placement_resource_rule": "For each entry in placement_resource_portfolios, a scheduled occurrence whose event_id is in event_base_units contributes that event's base units plus the rank_adjustments value for its chosen distinct placement rank; a deferred or unlisted occurrence contributes zero. Keep each total between minimum_units and maximum_units, inclusive. These portfolios apply simultaneously, overlap, span dates, and couple event selection to the exact candidate slot chosen.",
     "protected_rule": "An occurrence with protected=true can never be moved and can only be left out of final_schedule if it directly conflicts with another scheduled occurrence whose vip_override=true; in every other situation a protected occurrence must appear in final_schedule at its original start_local/venue.",
     "tie_break_rule": "After the four objective_order metrics above are optimized, any remaining tie is broken by comparing, in ascending order of occurrence_id, the rank of each occurrence's chosen placement: rank 0 is its original start_local/venue, and ranks 1, 2, ... are its remaining candidate_slots entries in listed order, skipping any candidate_slots entry that exactly duplicates the original placement or an earlier candidate_slots entry (such a duplicate is not a distinct placement and receives no rank of its own). An occurrence left out of final_schedule entirely ranks after all of its distinct placements. The valid final_schedule is the one whose sequence of ranks, read in occurrence_id order, is lexicographically smallest.",
     "vip_override_rule": "An occurrence with vip_override=true is exempt from the after-hours cutoff. It is also the only thing that can unlock leaving a protected occurrence out of final_schedule (see protected_rule): if a scheduled vip_override occurrence directly conflicts with a protected occurrence, deferring that protected occurrence becomes a legal choice, and objective_order then decides -- like any other choice -- whether deferring it actually is optimal. Being vip_override=true does not by itself guarantee an occurrence beats a protected occurrence; it only makes that outcome reachable.",
