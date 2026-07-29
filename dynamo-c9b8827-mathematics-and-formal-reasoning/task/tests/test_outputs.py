@@ -6,18 +6,20 @@ import os
 import re
 from collections import Counter, deque
 from functools import lru_cache
-from itertools import combinations
+from itertools import combinations, permutations, product
 from pathlib import Path
 
 
 APP_ROOT = Path(os.environ.get("POOLING_APP_ROOT", "/app"))
 INPUT = APP_ROOT / "input" / "pooling.json"
 OUTPUT = APP_ROOT / "output.json"
-EXPECTED_INPUT_SHA256 = "52c89629394661d977f53e284d030d61d1e22c42e2c1fa1c51dfea1bc5ad478b"
-EXPECTED_OUTPUT_SHA256 = "755918aee48ee0d13cab2cb8d0fc461b1bba5d0c9d363c88dd17aea12e2e6091"
+EXPECTED_INPUT_SHA256 = "912e8301886e49636a6eb9c0e2dd4f7a6732dddba4326317d93916907b7533ec"
+EXPECTED_OUTPUT_SHA256 = "2380f855ea6420081aa528a2f5ab8928cba9ebdbd3f84c2b34d1ca369a05530f"
 
 Permutation = tuple[int, ...]
+CohortClass = tuple[int, ...]
 Design = tuple[int, ...]
+SAMPLE_ORDERS = tuple(permutations(range(3)))
 
 
 def load_output() -> dict:
@@ -25,7 +27,9 @@ def load_output() -> dict:
 
 
 def canonical_digest(value: object) -> str:
-    payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    payload = json.dumps(
+        value, sort_keys=True, separators=(",", ":")
+    ).encode()
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -46,7 +50,9 @@ def invert(permutation: Permutation) -> Permutation:
     return tuple(result)
 
 
-def close_generators(generators: list[Permutation], width: int) -> list[Permutation]:
+def close_generators(
+    generators: list[Permutation], width: int
+) -> list[Permutation]:
     identity = tuple(range(width))
     discovered = {identity}
     frontier = deque([identity])
@@ -61,33 +67,53 @@ def close_generators(generators: list[Permutation], width: int) -> list[Permutat
 
 
 def bit_string(mask: int, width: int) -> str:
-    return "".join("1" if mask & (1 << position) else "0" for position in range(width))
+    return "".join(
+        "1" if mask & (1 << position) else "0"
+        for position in range(width)
+    )
 
 
 def mask_from_string(value: str) -> int:
-    return sum(1 << index for index, bit in enumerate(value) if bit == "1")
+    return sum(
+        1 << index for index, bit in enumerate(value) if bit == "1"
+    )
 
 
-def complement(mask: int, width: int) -> int:
-    return ((1 << width) - 1) ^ mask
+def normalize_class(
+    masks: CohortClass, width: int
+) -> CohortClass:
+    return tuple(
+        sorted(masks, key=lambda mask: bit_string(mask, width))
+    )
 
 
-def normalize(mask: int, width: int) -> int:
-    opposite = complement(mask, width)
-    return min((mask, opposite), key=lambda item: bit_string(item, width))
+def move_mask(
+    mask: int, permutation: Permutation
+) -> int:
+    return sum(
+        1 << destination
+        for source, destination in enumerate(permutation)
+        if mask & (1 << source)
+    )
 
 
-def move_mask(mask: int, permutation: Permutation, width: int) -> int:
-    moved = 0
-    for source, destination in enumerate(permutation):
-        if mask & (1 << source):
-            moved |= 1 << destination
-    return moved
-
-
-def quotient_distance(left: int, right: int, width: int) -> int:
-    distance = (left ^ right).bit_count()
-    return min(distance, width - distance)
+def labelled_plate_partitions(
+    positions: tuple[int, ...], block_size: int
+) -> list[CohortClass]:
+    universe = set(positions)
+    result = []
+    for first in combinations(positions, block_size):
+        remainder = universe - set(first)
+        for second in combinations(sorted(remainder), block_size):
+            third = tuple(sorted(remainder - set(second)))
+            if len(third) == block_size:
+                result.append(
+                    tuple(
+                        sum(1 << position for position in block)
+                        for block in (first, second, third)
+                    )
+                )
+    return result
 
 
 @lru_cache(maxsize=1)
@@ -95,37 +121,57 @@ def instance_context() -> dict:
     data = json.loads(INPUT.read_text())
     pool_order = data["pool_order"]
     width = len(pool_order)
-    pool_index = {pool_id: index for index, pool_id in enumerate(pool_order)}
+    pool_index = {
+        pool_id: index for index, pool_id in enumerate(pool_order)
+    }
     generators = [
         tuple(pool_index[target] for target in row["image"])
         for row in data["symmetry_rules"]["pool_generators"]
     ]
     group = close_generators(generators, width)
 
-    plate_positions: dict[str, list[int]] = {}
+    plates: dict[str, list[int]] = {}
     for index, pool in enumerate(data["pools"]):
-        plate_positions.setdefault(pool["plate"], []).append(index)
-    replication = data["incidence_rules"]["sample_replication"]
-    per_plate = data["incidence_rules"]["per_plate_replication"]
+        plates.setdefault(pool["plate"], []).append(index)
+    block_size = data["incidence_rules"]["per_plate_replication"]
+    partitions = [
+        labelled_plate_partitions(tuple(indices), block_size)
+        for indices in plates.values()
+    ]
     cohort_classes = set()
-    for positions in combinations(range(width), replication):
-        mask = sum(1 << position for position in positions)
-        if all(
-            sum(bool(mask & (1 << position)) for position in plate) == per_plate
-            for plate in plate_positions.values()
-        ):
-            cohort_classes.add(normalize(mask, width))
-    classes = sorted(cohort_classes, key=lambda mask: bit_string(mask, width))
-    class_index = {mask: index for index, mask in enumerate(classes)}
-
+    for selected in product(*partitions):
+        masks = tuple(
+            sum(partition[sample] for partition in selected)
+            for sample in range(3)
+        )
+        cohort_classes.add(normalize_class(masks, width))
+    classes = sorted(
+        cohort_classes,
+        key=lambda row: tuple(
+            bit_string(mask, width) for mask in row
+        ),
+    )
+    class_index = {
+        cohort_class: index
+        for index, cohort_class in enumerate(classes)
+    }
     actions = []
     for permutation in group:
-        actions.append(
-            tuple(
-                class_index[normalize(move_mask(mask, permutation, width), width)]
-                for mask in classes
+        action = []
+        for cohort_class in classes:
+            moved = normalize_class(
+                tuple(
+                    move_mask(mask, permutation)
+                    for mask in cohort_class
+                ),
+                width,
             )
-        )
+            action.append(class_index[moved])
+        actions.append(tuple(action))
+    plate_masks = tuple(
+        sum(1 << position for position in indices)
+        for indices in plates.values()
+    )
     return {
         "data": data,
         "width": width,
@@ -134,41 +180,111 @@ def instance_context() -> dict:
         "class_index": class_index,
         "actions": actions,
         "perm_to_action": dict(zip(group, actions)),
-        "plate_positions": plate_positions,
+        "plate_positions": tuple(tuple(row) for row in plates.values()),
+        "plate_masks": plate_masks,
     }
+
+
+def encoded_class(class_id: int) -> str:
+    context = instance_context()
+    width = context["width"]
+    return "/".join(
+        bit_string(mask, width)
+        for mask in context["classes"][class_id]
+    )
+
+
+@lru_cache(maxsize=None)
+def pool_orbit_id(class_id: int) -> str:
+    return min(
+        (
+            encoded_class(action[class_id])
+            for action in instance_context()["actions"]
+        ),
+        key=str.encode,
+    )
+
+
+@lru_cache(maxsize=None)
+def contingency_profile(left_id: int, right_id: int) -> str:
+    context = instance_context()
+    left = context["classes"][left_id]
+    right = context["classes"][right_id]
+    plate_masks = context["plate_masks"]
+    best = None
+    for left_order in SAMPLE_ORDERS:
+        for right_order in SAMPLE_ORDERS:
+            segments = []
+            for plate_mask in plate_masks:
+                segments.append(
+                    tuple(
+                        (
+                            left[left_order[row]]
+                            & right[right_order[column]]
+                            & plate_mask
+                        ).bit_count()
+                        for row in range(3)
+                        for column in range(3)
+                    )
+                )
+            for plate_order in permutations(range(len(segments))):
+                flattened = tuple(
+                    value
+                    for plate in plate_order
+                    for value in segments[plate]
+                )
+                if best is None or flattened < best:
+                    best = flattened
+    assert best is not None
+    return "".join(str(value) for value in best)
+
+
+@lru_cache(maxsize=None)
+def xor_spectrum(class_ids: tuple[int, int, int]) -> str:
+    classes = instance_context()["classes"]
+    width = instance_context()["width"]
+    values = []
+    for sample_indices in product(range(3), repeat=3):
+        mask = 0
+        for class_id, sample_index in zip(
+            class_ids, sample_indices
+        ):
+            mask ^= classes[class_id][sample_index]
+        weight = mask.bit_count()
+        values.append(min(weight, width - weight))
+    return "".join(str(value) for value in sorted(values))
 
 
 def encoded_design(design: Design) -> str:
     context = instance_context()
     width = context["width"]
-    classes = context["classes"]
-    rows = []
-    for class_id in design:
-        first = bit_string(classes[class_id], width)
-        second = "".join("1" if bit == "0" else "0" for bit in first)
-        rows.extend((first, second))
-    return "/".join(rows)
+    return "/".join(
+        bit_string(mask, width)
+        for class_id in design
+        for mask in context["classes"][class_id]
+    )
 
 
 def parse_representative(value: str) -> Design:
     context = instance_context()
     data = context["data"]
     width = context["width"]
-    classes = context["classes"]
     class_index = context["class_index"]
     rows = value.split("/")
-    assert len(rows) == 2 * len(data["cohort_order"])
+    assert len(rows) == 3 * len(data["cohort_order"])
     result = []
     for cohort in range(len(data["cohort_order"])):
-        first, second = rows[2 * cohort : 2 * cohort + 2]
-        assert re.fullmatch(rf"[01]{{{width}}}", first)
-        assert re.fullmatch(rf"[01]{{{width}}}", second)
-        assert first < second
-        assert all(a != b for a, b in zip(first, second))
-        mask = mask_from_string(first)
-        assert mask in class_index
-        assert bit_string(complement(mask, width), width) == second
-        result.append(class_index[mask])
+        strings = rows[3 * cohort : 3 * cohort + 3]
+        assert strings == sorted(strings)
+        assert all(re.fullmatch(rf"[01]{{{width}}}", row) for row in strings)
+        masks = tuple(mask_from_string(row) for row in strings)
+        assert all(
+            left & right == 0
+            for left, right in combinations(masks, 2)
+        )
+        assert sum(masks) == (1 << width) - 1
+        assert masks in class_index
+        result.append(class_index[masks])
     return tuple(result)
 
 
@@ -178,22 +294,22 @@ def valid_design(design: Design) -> bool:
     width = context["width"]
     classes = context["classes"]
     plate_positions = context["plate_positions"]
-    masks = [classes[index] for index in design]
-    if len(set(masks)) != len(masks):
+    if len(set(design)) != len(design):
         return False
 
-    rows = []
-    for mask in masks:
-        rows.extend((mask, complement(mask, width)))
+    rows = [
+        mask for class_id in design for mask in classes[class_id]
+    ]
     replication = data["incidence_rules"]["sample_replication"]
     per_plate = data["incidence_rules"]["per_plate_replication"]
     capacity = data["incidence_rules"]["pool_capacity"]
     if any(mask.bit_count() != replication for mask in rows):
         return False
     if any(
-        sum(bool(mask & (1 << position)) for position in positions) != per_plate
+        sum(bool(mask & (1 << position)) for position in plate)
+        != per_plate
         for mask in rows
-        for positions in plate_positions.values()
+        for plate in plate_positions
     ):
         return False
     if any(
@@ -202,18 +318,39 @@ def valid_design(design: Design) -> bool:
     ):
         return False
 
-    for deleted in range(width):
-        survivors = [mask & ~(1 << deleted) for mask in rows]
-        if any(mask == 0 for mask in survivors) or len(set(survivors)) != len(rows):
-            return False
+    loss_limit = data["incidence_rules"][
+        "maximum_simultaneous_pool_losses"
+    ]
+    for loss_count in range(1, loss_limit + 1):
+        for deleted in combinations(range(width), loss_count):
+            removed = sum(1 << pool for pool in deleted)
+            survivors = [mask & ~removed for mask in rows]
+            if any(mask == 0 for mask in survivors):
+                return False
+            if len(set(survivors)) != len(rows):
+                return False
 
     cohort_index = {
-        cohort_id: index for index, cohort_id in enumerate(data["cohort_order"])
+        cohort_id: index
+        for index, cohort_id in enumerate(data["cohort_order"])
     }
+    for rule in data["cohort_class_rules"]["constraints"]:
+        cohort = cohort_index[rule["cohort_id"]]
+        if pool_orbit_id(design[cohort]) != rule["required_pool_orbit_id"]:
+            return False
     for rule in data["cohort_pair_rules"]["constraints"]:
-        left = masks[cohort_index[rule["cohort_a"]]]
-        right = masks[cohort_index[rule["cohort_b"]]]
-        if quotient_distance(left, right, width) != rule["quotient_distance"]:
+        left = cohort_index[rule["cohort_a"]]
+        right = cohort_index[rule["cohort_b"]]
+        if (
+            contingency_profile(design[left], design[right])
+            not in rule["allowed_profiles"]
+        ):
+            return False
+    for rule in data["cohort_triple_rules"]["constraints"]:
+        class_ids = tuple(
+            design[cohort_index[value]] for value in rule["cohorts"]
+        )
+        if xor_spectrum(class_ids) not in rule["allowed_profiles"]:
             return False
     return True
 
@@ -222,57 +359,99 @@ def valid_design(design: Design) -> bool:
 def enumerate_valid_designs() -> frozenset[Design]:
     context = instance_context()
     data = context["data"]
-    width = context["width"]
     classes = context["classes"]
     cohort_count = len(data["cohort_order"])
     cohort_index = {
-        cohort_id: index for index, cohort_id in enumerate(data["cohort_order"])
+        cohort_id: index
+        for index, cohort_id in enumerate(data["cohort_order"])
     }
-    restrictions: dict[tuple[int, int], int] = {}
-    neighbors: list[list[tuple[int, int]]] = [[] for _ in range(cohort_count)]
+
+    orbit_domains: dict[str, set[int]] = {}
+    for class_id in range(len(classes)):
+        orbit_domains.setdefault(pool_orbit_id(class_id), set()).add(class_id)
+    domains = [set(range(len(classes))) for _ in range(cohort_count)]
+    for rule in data["cohort_class_rules"]["constraints"]:
+        domains[cohort_index[rule["cohort_id"]]] = set(
+            orbit_domains[rule["required_pool_orbit_id"]]
+        )
+
+    neighbors: list[list[tuple[int, bool, frozenset[str]]]] = [
+        [] for _ in range(cohort_count)
+    ]
     for rule in data["cohort_pair_rules"]["constraints"]:
         left = cohort_index[rule["cohort_a"]]
         right = cohort_index[rule["cohort_b"]]
-        required = rule["quotient_distance"]
-        restrictions[tuple(sorted((left, right)))] = required
-        neighbors[left].append((right, required))
-        neighbors[right].append((left, required))
+        allowed = frozenset(rule["allowed_profiles"])
+        neighbors[left].append((right, True, allowed))
+        neighbors[right].append((left, False, allowed))
 
-    relation = {
-        required: [
-            {
-                right
-                for right in range(len(classes))
-                if quotient_distance(classes[left], classes[right], width) == required
-            }
-            for left in range(len(classes))
-        ]
-        for required in set(restrictions.values())
-    }
-    order = sorted(
-        range(cohort_count), key=lambda cohort: (-len(neighbors[cohort]), cohort)
-    )
+    triples_by_cohort = [[] for _ in range(cohort_count)]
+    for rule in data["cohort_triple_rules"]["constraints"]:
+        triple = tuple(
+            cohort_index[value] for value in rule["cohorts"]
+        )
+        allowed = frozenset(rule["allowed_profiles"])
+        for cohort in triple:
+            triples_by_cohort[cohort].append((triple, allowed))
+
     assignment = [-1] * cohort_count
     completed: set[Design] = set()
 
-    def visit(depth: int, available: set[int]) -> None:
-        if depth == cohort_count:
+    def candidate_domain(cohort: int, used: set[int]) -> set[int]:
+        candidates = domains[cohort] - used
+        for other, candidate_is_left, allowed in neighbors[cohort]:
+            assigned = assignment[other]
+            if assigned < 0:
+                continue
+            candidates = {
+                candidate
+                for candidate in candidates
+                if (
+                    contingency_profile(candidate, assigned)
+                    if candidate_is_left
+                    else contingency_profile(assigned, candidate)
+                )
+                in allowed
+            }
+        for triple, allowed in triples_by_cohort[cohort]:
+            others = [
+                assignment[value]
+                for value in triple
+                if value != cohort
+            ]
+            if all(value >= 0 for value in others):
+                candidates = {
+                    candidate
+                    for candidate in candidates
+                    if xor_spectrum(
+                        tuple(
+                            candidate
+                            if value == cohort
+                            else assignment[value]
+                            for value in triple
+                        )
+                    )
+                    in allowed
+                }
+        return candidates
+
+    def visit(unassigned: set[int], used: set[int]) -> None:
+        if not unassigned:
             design = tuple(assignment)
             assert valid_design(design)
             completed.add(design)
             return
-        cohort = order[depth]
-        candidates = set(available)
-        for other, required in neighbors[cohort]:
-            assigned = assignment[other]
-            if assigned >= 0:
-                candidates.intersection_update(relation[required][assigned])
-        for class_id in sorted(candidates):
+        candidates_by_size = [
+            (len(candidate_domain(cohort, used)), cohort)
+            for cohort in unassigned
+        ]
+        _, cohort = min(candidates_by_size)
+        for class_id in sorted(candidate_domain(cohort, used)):
             assignment[cohort] = class_id
-            visit(depth + 1, available - {class_id})
+            visit(unassigned - {cohort}, used | {class_id})
             assignment[cohort] = -1
 
-    visit(0, set(range(len(classes))))
+    visit(set(range(cohort_count)), set())
     return frozenset(completed)
 
 
@@ -285,13 +464,15 @@ def orbit_reference() -> tuple[frozenset[str], Counter[int]]:
     while remaining:
         seed = next(iter(remaining))
         orbit = {
-            tuple(action[class_id] for class_id in seed) for action in actions
+            tuple(action[class_id] for class_id in seed)
+            for action in actions
         }
         canonical = min(orbit)
         representatives.add(encoded_design(canonical))
         stabilizers[
             sum(
-                tuple(action[class_id] for class_id in canonical) == canonical
+                tuple(action[class_id] for class_id in canonical)
+                == canonical
                 for action in actions
             )
         ] += 1
@@ -319,7 +500,7 @@ def conjugacy_reference() -> tuple[tuple[str, int, int], ...]:
             all(action[class_id] == class_id for class_id in design)
             for design in valid
         )
-        class_id = "".join(str(value) for value in representative)
+        class_id = "".join(f"{value:02d}" for value in representative)
         rows.append((class_id, len(conjugates), fixed))
         remaining.difference_update(conjugates)
     rows.sort()
@@ -351,7 +532,11 @@ def test_exact_documented_schema_and_scalar_types():
         "labelled_designs",
         "equivalence_classes",
     }
-    assert set(data["group_orders"]) == {"pool", "sample_swaps", "full"}
+    assert set(data["group_orders"]) == {
+        "pool",
+        "sample_permutations",
+        "full",
+    }
     assert set(data["burnside"]) == {
         "numerator",
         "denominator",
@@ -376,25 +561,29 @@ def test_exact_documented_schema_and_scalar_types():
             "class_size",
             "fixed_normalized_designs",
         }
-        assert re.fullmatch(r"[0-7]{8}", row["class_id"])
+        assert re.fullmatch(r"(?:0[0-9]|1[01]){12}", row["class_id"])
         exact_int(row["class_size"], positive=True)
         exact_int(row["fixed_normalized_designs"])
 
 
 def test_generated_group_orders_and_representative_validity():
-    """The disclosed groups are derived exactly and every representative is valid and canonical."""
+    """The disclosed groups are derived and every representative passes every loss/profile rule."""
     data = load_output()
     context = instance_context()
     instance = context["data"]
     group_orders = data["group_orders"]
+    assert len(context["classes"]) == 1350
     assert len(context["group"]) == instance["symmetry_rules"]["pool_group_order"]
     assert group_orders["pool"] == len(context["group"])
     assert (
-        group_orders["sample_swaps"]
-        == instance["symmetry_rules"]["sample_swap_group_order"]
+        group_orders["sample_permutations"]
+        == instance["symmetry_rules"]["sample_permutation_group_order"]
     )
     assert group_orders["full"] == instance["symmetry_rules"]["full_group_order"]
-    assert group_orders["full"] == group_orders["pool"] * group_orders["sample_swaps"]
+    assert (
+        group_orders["full"]
+        == group_orders["pool"] * group_orders["sample_permutations"]
+    )
 
     representatives = data["canonical_representatives"]
     assert representatives == sorted(set(representatives), key=str.encode)
@@ -410,7 +599,7 @@ def test_generated_group_orders_and_representative_validity():
 
 
 def test_complete_orbit_enumeration_and_stabilizer_histogram():
-    """Independent exhaustive search proves that no canonical class is missing or duplicated."""
+    """Independent propagation proves no canonical class is missing or duplicated."""
     data = load_output()
     expected_representatives, expected_histogram = orbit_reference()
     submitted = data["canonical_representatives"]
@@ -425,13 +614,16 @@ def test_complete_orbit_enumeration_and_stabilizer_histogram():
 
 
 def test_exact_counts_and_orbit_stabilizer_reconciliation():
-    """Normalized and fully labelled totals equal the two required orbit–stabilizer sums."""
+    """Normalized and labelled totals equal both required orbit–stabilizer sums."""
     data = load_output()
     valid_count = len(enumerate_valid_designs())
     counts = data["counts"]
     groups = data["group_orders"]
     assert counts["normalized_designs"] == valid_count
-    assert counts["labelled_designs"] == valid_count * groups["sample_swaps"]
+    assert (
+        counts["labelled_designs"]
+        == valid_count * groups["sample_permutations"]
+    )
     normalized_sum = sum(
         groups["pool"] // row["stabilizer_size"] * row["classes"]
         for row in data["stabilizer_histogram"]
@@ -445,7 +637,7 @@ def test_exact_counts_and_orbit_stabilizer_reconciliation():
 
 
 def test_conjugacy_fixed_counts_and_burnside_reconciliation():
-    """Every residual conjugacy class and fixed count is exact and Burnside gives the orbit total."""
+    """Every residual conjugacy class and fixed count is exact and Burnside reconciles."""
     data = load_output()
     expected = [
         {
@@ -460,16 +652,18 @@ def test_conjugacy_fixed_counts_and_burnside_reconciliation():
     assert submitted == sorted(submitted, key=lambda row: row["class_id"].encode())
     assert sum(row["class_size"] for row in submitted) == data["group_orders"]["pool"]
     numerator = sum(
-        row["class_size"] * row["fixed_normalized_designs"] for row in submitted
+        row["class_size"] * row["fixed_normalized_designs"]
+        for row in submitted
     )
     assert data["burnside"]["numerator"] == numerator
     assert data["burnside"]["denominator"] == data["group_orders"]["pool"]
     assert (
         numerator
-        == data["burnside"]["denominator"] * data["counts"]["equivalence_classes"]
+        == data["burnside"]["denominator"]
+        * data["counts"]["equivalence_classes"]
     )
 
 
 def test_complete_canonical_artifact_matches_reference():
-    """The complete deterministic enumeration has the independently pinned canonical digest."""
+    """The complete deterministic enumeration has the independently pinned digest."""
     assert canonical_digest(load_output()) == EXPECTED_OUTPUT_SHA256
