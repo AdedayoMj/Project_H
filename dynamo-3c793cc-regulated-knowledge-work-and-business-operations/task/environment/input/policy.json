@@ -231,6 +231,42 @@
       "unavailable_line_ids": ["E26", "E64"],
       "additional_cap_reduction_cents": 5000,
       "maximum_reactivated_lines": 2
+    },
+    {
+      "scenario_id": "airfare-attestation-rejection",
+      "unavailable_line_ids": ["E67", "E73"],
+      "additional_cap_reduction_cents": 21000,
+      "maximum_reactivated_lines": 3
+    },
+    {
+      "scenario_id": "board-review-rejection",
+      "unavailable_line_ids": ["E33", "E63"],
+      "additional_cap_reduction_cents": 12500,
+      "maximum_reactivated_lines": 3
+    },
+    {
+      "scenario_id": "mileage-record-rejection",
+      "unavailable_line_ids": ["M01", "M03"],
+      "additional_cap_reduction_cents": 4500,
+      "maximum_reactivated_lines": 2
+    },
+    {
+      "scenario_id": "partner-evidence-rejection",
+      "unavailable_line_ids": ["E37", "E49"],
+      "additional_cap_reduction_cents": 15000,
+      "maximum_reactivated_lines": 3
+    },
+    {
+      "scenario_id": "route-receipt-rejection",
+      "unavailable_line_ids": ["E04", "E61"],
+      "additional_cap_reduction_cents": 8000,
+      "maximum_reactivated_lines": 2
+    },
+    {
+      "scenario_id": "stakeholder-meal-rejection",
+      "unavailable_line_ids": ["E32", "E56"],
+      "additional_cap_reduction_cents": 19500,
+      "maximum_reactivated_lines": 3
     }
   ],
   "retention_recovery_reserve": {
@@ -242,6 +278,72 @@
       "MILEAGE": 2
     }
   },
+  "retention_recovery_certification_schedule": {
+    "period_order": ["C1", "C2", "C3", "C4"],
+    "release_period_by_statement_post_date": {
+      "2026-04-06": "C1",
+      "2026-04-07": "C1",
+      "2026-04-08": "C1",
+      "2026-04-09": "C1",
+      "2026-04-10": "C2",
+      "2026-04-11": "C2",
+      "2026-04-12": "C2",
+      "2026-04-13": "C3",
+      "2026-04-14": "C3",
+      "2026-04-15": "C3",
+      "2026-04-16": "C4",
+      "2026-04-17": "C4",
+      "2026-04-18": "C4"
+    },
+    "category_score_adjustment": {
+      "MEALS": 5,
+      "AIRFARE": 11,
+      "MILEAGE": 3
+    },
+    "reviewers": [
+      {
+        "reviewer_id": "AUDIT-A",
+        "eligible_categories": ["MEALS", "MILEAGE"],
+        "capacity_units_by_period": {"C1": 9, "C2": 9, "C3": 6, "C4": 6},
+        "score_points_by_period": {"C1": 41, "C2": 32, "C3": 23, "C4": 14}
+      },
+      {
+        "reviewer_id": "AUDIT-B",
+        "eligible_categories": ["MEALS", "AIRFARE"],
+        "capacity_units_by_period": {"C1": 9, "C2": 11, "C3": 11, "C4": 9},
+        "score_points_by_period": {"C1": 37, "C2": 31, "C3": 25, "C4": 19}
+      },
+      {
+        "reviewer_id": "AUDIT-C",
+        "eligible_categories": ["AIRFARE", "MILEAGE"],
+        "capacity_units_by_period": {"C1": 8, "C2": 10, "C3": 10, "C4": 8},
+        "score_points_by_period": {"C1": 35, "C2": 28, "C3": 21, "C4": 13}
+      }
+    ],
+    "conditional_precedence": [
+      {"before_line_id": "E39", "after_line_id": "E50"},
+      {"before_line_id": "E41", "after_line_id": "E55"},
+      {"before_line_id": "E46", "after_line_id": "E68"},
+      {"before_line_id": "E05", "after_line_id": "E17"}
+    ],
+    "period_separation_groups": [
+      {
+        "group_id": "meal-control-a",
+        "line_ids": ["E05", "E17", "E39", "E50", "E57"],
+        "maximum_in_one_period": 2
+      },
+      {
+        "group_id": "meal-control-b",
+        "line_ids": ["E41", "E46", "E55", "E62", "E64"],
+        "maximum_in_one_period": 2
+      },
+      {
+        "group_id": "fare-control",
+        "line_ids": ["E12", "E24", "E66", "E68", "E69", "E72", "E74", "E75"],
+        "maximum_in_one_period": 1
+      }
+    ]
+  },
   "retention_tie_break": {
     "applies_after": [
       "worst_recovery_priority_weight",
@@ -249,6 +351,7 @@
       "worst_recovery_coverage_bonus_points",
       "total_recovery_coverage_bonus_points",
       "primary_coverage_bonus_points",
+      "reserve_certification_score",
       "worst_recovery_amount",
       "primary_retained_amount"
     ],

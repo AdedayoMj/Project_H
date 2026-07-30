@@ -433,7 +433,66 @@
     ],
     "final_reimbursable_cents": 1002137,
     "gross_reimbursable_cents": 1945718,
+    "recovery_reserve_certification_score": 253,
     "recovery_reserve_certification_units": 29,
+    "recovery_reserve_certifications": [
+      {
+        "certification_units": 3,
+        "line_id": "E05",
+        "period": "C3",
+        "reviewer_id": "AUDIT-A",
+        "score_points": 28
+      },
+      {
+        "certification_units": 3,
+        "line_id": "E17",
+        "period": "C4",
+        "reviewer_id": "AUDIT-B",
+        "score_points": 24
+      },
+      {
+        "certification_units": 3,
+        "line_id": "E39",
+        "period": "C2",
+        "reviewer_id": "AUDIT-A",
+        "score_points": 37
+      },
+      {
+        "certification_units": 3,
+        "line_id": "E41",
+        "period": "C2",
+        "reviewer_id": "AUDIT-A",
+        "score_points": 37
+      },
+      {
+        "certification_units": 3,
+        "line_id": "E46",
+        "period": "C2",
+        "reviewer_id": "AUDIT-A",
+        "score_points": 37
+      },
+      {
+        "certification_units": 3,
+        "line_id": "E50",
+        "period": "C3",
+        "reviewer_id": "AUDIT-B",
+        "score_points": 30
+      },
+      {
+        "certification_units": 3,
+        "line_id": "E55",
+        "period": "C4",
+        "reviewer_id": "AUDIT-B",
+        "score_points": 24
+      },
+      {
+        "certification_units": 8,
+        "line_id": "E68",
+        "period": "C3",
+        "reviewer_id": "AUDIT-B",
+        "score_points": 36
+      }
+    ],
     "recovery_reserve_line_ids": [
       "E05",
       "E17",
@@ -448,6 +507,21 @@
     "retained_priority_weight": 191,
     "retention_recovery_scenarios": [
       {
+        "final_reimbursable_cents": 915463,
+        "reactivated_line_ids": [
+          "E05",
+          "E50",
+          "E68"
+        ],
+        "retained_coverage_bonus_points": 486,
+        "retained_priority_weight": 189,
+        "scenario_id": "airfare-attestation-rejection",
+        "unavailable_line_ids": [
+          "E67",
+          "E73"
+        ]
+      },
+      {
         "final_reimbursable_cents": 1031077,
         "reactivated_line_ids": [
           "E68"
@@ -458,6 +532,21 @@
         "unavailable_line_ids": [
           "E09",
           "E65"
+        ]
+      },
+      {
+        "final_reimbursable_cents": 983796,
+        "reactivated_line_ids": [
+          "E05",
+          "E41",
+          "E55"
+        ],
+        "retained_coverage_bonus_points": 445,
+        "retained_priority_weight": 191,
+        "scenario_id": "board-review-rejection",
+        "unavailable_line_ids": [
+          "E33",
+          "E63"
         ]
       },
       {
@@ -533,6 +622,20 @@
         ]
       },
       {
+        "final_reimbursable_cents": 1010530,
+        "reactivated_line_ids": [
+          "E05",
+          "E41"
+        ],
+        "retained_coverage_bonus_points": 445,
+        "retained_priority_weight": 188,
+        "scenario_id": "mileage-record-rejection",
+        "unavailable_line_ids": [
+          "M01",
+          "M03"
+        ]
+      },
+      {
         "final_reimbursable_cents": 979073,
         "reactivated_line_ids": [
           "E05",
@@ -545,6 +648,21 @@
         "unavailable_line_ids": [
           "E54",
           "E71"
+        ]
+      },
+      {
+        "final_reimbursable_cents": 993376,
+        "reactivated_line_ids": [
+          "E05",
+          "E41",
+          "E46"
+        ],
+        "retained_coverage_bonus_points": 402,
+        "retained_priority_weight": 188,
+        "scenario_id": "partner-evidence-rejection",
+        "unavailable_line_ids": [
+          "E37",
+          "E49"
         ]
       },
       {
@@ -562,18 +680,47 @@
         ]
       },
       {
-        "final_reimbursable_cents": 937266,
+        "final_reimbursable_cents": 929226,
         "reactivated_line_ids": [
-          "E17",
+          "E05",
           "E41",
           "E55"
         ],
         "retained_coverage_bonus_points": 445,
-        "retained_priority_weight": 185,
+        "retained_priority_weight": 184,
         "scenario_id": "regional-vendor-rejection",
         "unavailable_line_ids": [
           "E36",
           "E70"
+        ]
+      },
+      {
+        "final_reimbursable_cents": 998743,
+        "reactivated_line_ids": [
+          "E05",
+          "E41"
+        ],
+        "retained_coverage_bonus_points": 343,
+        "retained_priority_weight": 187,
+        "scenario_id": "route-receipt-rejection",
+        "unavailable_line_ids": [
+          "E04",
+          "E61"
+        ]
+      },
+      {
+        "final_reimbursable_cents": 979670,
+        "reactivated_line_ids": [
+          "E05",
+          "E41",
+          "E46"
+        ],
+        "retained_coverage_bonus_points": 445,
+        "retained_priority_weight": 186,
+        "scenario_id": "stakeholder-meal-rejection",
+        "unavailable_line_ids": [
+          "E32",
+          "E56"
         ]
       },
       {
@@ -593,10 +740,10 @@
     ],
     "total_flagged_for_approval_cents": 881275,
     "total_per_diem_cents": 14400,
-    "total_recovery_coverage_bonus_points": 4418,
+    "total_recovery_coverage_bonus_points": 6984,
     "trip_budget_cap_cents": 1040200,
-    "worst_case_recovery_coverage_bonus_points": 384,
-    "worst_case_recovery_final_reimbursable_cents": 937266,
+    "worst_case_recovery_coverage_bonus_points": 343,
+    "worst_case_recovery_final_reimbursable_cents": 915463,
     "worst_case_recovery_priority_weight": 184
   }
 }

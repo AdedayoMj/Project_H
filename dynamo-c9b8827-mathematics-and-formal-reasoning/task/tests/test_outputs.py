@@ -13,8 +13,8 @@ from pathlib import Path
 APP_ROOT = Path(os.environ.get("POOLING_APP_ROOT", "/app"))
 INPUT = APP_ROOT / "input" / "pooling.json"
 OUTPUT = APP_ROOT / "output.json"
-EXPECTED_INPUT_SHA256 = "0c463d88a78c987a50c7b88ea92fe9923b1df3fd71274102b5af20ea6221f4af"
-EXPECTED_OUTPUT_SHA256 = "00cbd219e30872f001d1c2950a4e33e539188c86d52530137f3d12116d14d946"
+EXPECTED_INPUT_SHA256 = "4cd1c6c502faab6c2af02c14e0c04f3001a17195b183dfa38f8458f0b0eb0a20"
+EXPECTED_OUTPUT_SHA256 = "e255df8f5238004f13c6346e20a902b390e47cafc5949371395c7378de35b411"
 
 Permutation = tuple[int, ...]
 CohortClass = tuple[int, ...]
@@ -298,6 +298,52 @@ def union_xor_spectrum(
     )
 
 
+def binary_rank(rows: tuple[int, ...]) -> int:
+    pivots: dict[int, int] = {}
+    for row in rows:
+        value = row
+        while value:
+            column = value.bit_length() - 1
+            if column in pivots:
+                value ^= pivots[column]
+            else:
+                pivots[column] = value
+                break
+    return len(pivots)
+
+
+@lru_cache(maxsize=None)
+def deletion_rank_spectrum(
+    class_ids: tuple[int, ...], maximum_losses: int
+) -> str:
+    context = instance_context()
+    width = context["width"]
+    classes = context["classes"]
+    rows = tuple(
+        mask
+        for class_id in class_ids
+        for mask in classes[class_id]
+    )
+    encoded = []
+    for loss_count in range(maximum_losses + 1):
+        frequencies: Counter[int] = Counter()
+        for deleted in combinations(range(width), loss_count):
+            removed = sum(1 << pool for pool in deleted)
+            frequencies[
+                binary_rank(
+                    tuple(mask & ~removed for mask in rows)
+                )
+            ] += 1
+        encoded.append(
+            f"{loss_count}:"
+            + ",".join(
+                f"{rank:02d}x{frequency:03d}"
+                for rank, frequency in sorted(frequencies.items())
+            )
+        )
+    return ";".join(encoded)
+
+
 def encoded_design(design: Design) -> str:
     context = instance_context()
     width = context["width"]
@@ -401,6 +447,17 @@ def valid_design(design: Design) -> bool:
         )
         if union_xor_spectrum(class_ids) not in rule["allowed_profiles"]:
             return False
+    for rule in data["cohort_loss_rank_rules"]["constraints"]:
+        class_ids = tuple(
+            design[cohort_index[value]] for value in rule["cohorts"]
+        )
+        if (
+            deletion_rank_spectrum(
+                class_ids, rule["maximum_losses"]
+            )
+            not in rule["allowed_profiles"]
+        ):
+            return False
     return True
 
 
@@ -464,6 +521,18 @@ def enumerate_valid_designs() -> frozenset[Design]:
                 (quadruple, allowed)
             )
 
+    ranks_by_cohort = [[] for _ in range(cohort_count)]
+    for rule in data["cohort_loss_rank_rules"]["constraints"]:
+        cohorts = tuple(
+            cohort_index[value] for value in rule["cohorts"]
+        )
+        maximum_losses = rule["maximum_losses"]
+        allowed = frozenset(rule["allowed_profiles"])
+        for cohort in cohorts:
+            ranks_by_cohort[cohort].append(
+                (cohorts, maximum_losses, allowed)
+            )
+
     assignment = [-1] * cohort_count
     completed: set[Design] = set()
 
@@ -520,6 +589,29 @@ def enumerate_valid_designs() -> frozenset[Design]:
                             else assignment[value]
                             for value in quadruple
                         )
+                    )
+                    in allowed
+                }
+        for cohorts, maximum_losses, allowed in ranks_by_cohort[
+            cohort
+        ]:
+            others = [
+                assignment[value]
+                for value in cohorts
+                if value != cohort
+            ]
+            if all(value >= 0 for value in others):
+                candidates = {
+                    candidate
+                    for candidate in candidates
+                    if deletion_rank_spectrum(
+                        tuple(
+                            candidate
+                            if value == cohort
+                            else assignment[value]
+                            for value in cohorts
+                        ),
+                        maximum_losses,
                     )
                     in allowed
                 }

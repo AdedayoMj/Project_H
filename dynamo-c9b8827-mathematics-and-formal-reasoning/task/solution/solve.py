@@ -212,6 +212,51 @@ def quadruple_union_xor_profile(
     )
 
 
+def gf2_rank(rows: tuple[int, ...]) -> int:
+    basis: dict[int, int] = {}
+    for row in rows:
+        value = row
+        while value:
+            pivot = value.bit_length() - 1
+            if pivot in basis:
+                value ^= basis[pivot]
+            else:
+                basis[pivot] = value
+                break
+    return len(basis)
+
+
+@lru_cache(maxsize=None)
+def loss_rank_profile(
+    classes: tuple[CohortClass, ...],
+    width: int,
+    maximum_losses: int,
+) -> str:
+    rows = tuple(
+        mask for cohort_class in classes for mask in cohort_class
+    )
+    sections = []
+    for loss_count in range(maximum_losses + 1):
+        histogram = Counter(
+            gf2_rank(
+                tuple(
+                    mask
+                    & ~sum(1 << pool for pool in deleted)
+                    for mask in rows
+                )
+            )
+            for deleted in combinations(range(width), loss_count)
+        )
+        sections.append(
+            f"{loss_count}:"
+            + ",".join(
+                f"{rank:02d}x{count:03d}"
+                for rank, count in sorted(histogram.items())
+            )
+        )
+    return ";".join(sections)
+
+
 def robust_after_pool_losses(
     design: tuple[CohortClass, ...],
     width: int,
@@ -301,6 +346,18 @@ def enumerate_normalized_designs(
         for cohort in cohorts:
             quadruples_by_cohort[cohort].append((cohorts, allowed))
 
+    loss_ranks_by_cohort: list[
+        list[tuple[tuple[int, ...], int, frozenset[str]]]
+    ] = [[] for _ in range(cohort_count)]
+    for row in data["cohort_loss_rank_rules"]["constraints"]:
+        cohorts = tuple(cohort_index[value] for value in row["cohorts"])
+        maximum_losses = row["maximum_losses"]
+        allowed = frozenset(row["allowed_profiles"])
+        for cohort in cohorts:
+            loss_ranks_by_cohort[cohort].append(
+                (cohorts, maximum_losses, allowed)
+            )
+
     assignment = [-1] * cohort_count
     valid: set[Design] = set()
     maximum_losses = data["incidence_rules"][
@@ -378,6 +435,32 @@ def enumerate_normalized_designs(
                             for member in cohorts
                         ),
                         width,
+                    )
+                    in allowed
+                }
+        for cohorts, maximum_losses, allowed in loss_ranks_by_cohort[
+            cohort
+        ]:
+            others = [
+                assignment[other]
+                for other in cohorts
+                if other != cohort
+            ]
+            if all(class_id >= 0 for class_id in others):
+                candidates = {
+                    candidate
+                    for candidate in candidates
+                    if loss_rank_profile(
+                        tuple(
+                            classes[
+                                candidate
+                                if member == cohort
+                                else assignment[member]
+                            ]
+                            for member in cohorts
+                        ),
+                        width,
+                        maximum_losses,
                     )
                     in allowed
                 }

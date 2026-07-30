@@ -12,8 +12,9 @@ Pipeline per trip:
   4. Robust trip-budget optimization: choose a primary retained set and, for
      each disclosed post-close rejection scenario, a limited recovery from the
      primary-deferred claims. Every primary/recovery set obeys the cap,
-     portfolios, commitments, and coverage rules. Seven objective levels and
-     a primary-then-recovery canonical walk make the joint solution unique.
+     portfolios, commitments, coverage rules, and reserve-certification
+     schedule. Eight objective levels and a primary/recovery/certification
+     canonical walk make the joint solution unique.
 All money is integer home-currency cents.
 """
 from __future__ import annotations
@@ -138,6 +139,7 @@ def solve_budget_knapsack(
     retention_coverage_bonuses,
     retention_recovery_scenarios,
     retention_recovery_reserve,
+    retention_recovery_certification_schedule,
     tie_break,
 ):
     """Jointly optimize the primary closeout and every rejection recovery."""
@@ -228,7 +230,24 @@ def solve_budget_knapsack(
             earned.append(rule["bonus_points"] * met)
         return sum(earned)
 
-    def build(fixed=None, primary_forced=None, recovery_forced=None):
+    certification = retention_recovery_certification_schedule
+    periods = tuple(certification["period_order"])
+    period_index = {
+        period: index for index, period in enumerate(periods)
+    }
+    reviewers = tuple(
+        sorted(
+            certification["reviewers"],
+            key=lambda reviewer: reviewer["reviewer_id"],
+        )
+    )
+
+    def build(
+        fixed=None,
+        primary_forced=None,
+        recovery_forced=None,
+        certification_forced=None,
+    ):
         m = cp_model.CpModel()
         x = {
             line["line_id"]: m.NewBoolVar(f"primary__{line['line_id']}")
@@ -295,6 +314,80 @@ def solve_budget_knapsack(
             <= retention_recovery_reserve["maximum_certification_units"]
         )
 
+        certification_assignment = {}
+        certification_period = {}
+        certification_score_terms = []
+        category_adjustment = certification[
+            "category_score_adjustment"
+        ]
+        for line in order:
+            lid = line["line_id"]
+            release_period = certification[
+                "release_period_by_statement_post_date"
+            ][line["statement_post_date"]]
+            release_index = period_index[release_period]
+            options = {}
+            for reviewer in reviewers:
+                if line["category"] not in reviewer["eligible_categories"]:
+                    continue
+                reviewer_id = reviewer["reviewer_id"]
+                for period in periods[release_index:]:
+                    option = m.NewBoolVar(
+                        f"cert__{lid}__{reviewer_id}__{period}"
+                    )
+                    options[(reviewer_id, period)] = option
+                    score = (
+                        reviewer["score_points_by_period"][period]
+                        + category_adjustment[line["category"]]
+                    )
+                    certification_score_terms.append(score * option)
+            m.Add(sum(options.values()) == reserve[lid])
+            certification_assignment[lid] = options
+            certification_period[lid] = sum(
+                period_index[period] * option
+                for (_, period), option in options.items()
+            )
+
+        for reviewer in reviewers:
+            reviewer_id = reviewer["reviewer_id"]
+            for period in periods:
+                m.Add(
+                    sum(
+                        retention_recovery_reserve[
+                            "category_certification_units"
+                        ][line["category"]]
+                        * certification_assignment[line["line_id"]].get(
+                            (reviewer_id, period), 0
+                        )
+                        for line in order
+                    )
+                    <= reviewer["capacity_units_by_period"][period]
+                )
+
+        big_m = len(periods)
+        for rule in certification["conditional_precedence"]:
+            before = rule["before_line_id"]
+            after = rule["after_line_id"]
+            m.Add(
+                certification_period[before] + 1
+                <= certification_period[after]
+                + big_m * (2 - reserve[before] - reserve[after])
+            )
+
+        for rule in certification["period_separation_groups"]:
+            for period in periods:
+                m.Add(
+                    sum(
+                        certification_assignment[line_id].get(
+                            (reviewer["reviewer_id"], period), 0
+                        )
+                        for line_id in rule["line_ids"]
+                        for reviewer in reviewers
+                    )
+                    <= rule["maximum_in_one_period"]
+                )
+
+        certification_score = sum(certification_score_terms)
         worst_w = m.NewIntVar(0, max_weight, "worst_recovery_priority_weight")
         worst_b = m.NewIntVar(0, max_bonus, "worst_recovery_coverage_bonus")
         worst_a = m.NewIntVar(0, max_amount, "worst_recovery_amount")
@@ -310,6 +403,7 @@ def solve_budget_knapsack(
             "worst_recovery_coverage_bonus_points": worst_b,
             "total_recovery_coverage_bonus_points": total_b,
             "primary_coverage_bonus_points": primary_b,
+            "reserve_certification_score": certification_score,
             "worst_recovery_amount": worst_a,
             "primary_retained_amount": primary_a,
         }
@@ -319,14 +413,29 @@ def solve_budget_knapsack(
             m.Add(x[lid] == val)
         for (sid, lid), val in (recovery_forced or {}).items():
             m.Add(recovery_x[sid][lid] == val)
-        return m, x, recovery_x, objectives
+        for (lid, reviewer_id, period), val in (
+            certification_forced or {}
+        ).items():
+            m.Add(
+                certification_assignment[lid][
+                    (reviewer_id, period)
+                ]
+                == val
+            )
+        return (
+            m,
+            x,
+            recovery_x,
+            certification_assignment,
+            objectives,
+        )
 
     s = cp_model.CpSolver()
     s.parameters.num_search_workers = 4
     objective_order = list(tie_break["applies_after"])
     fixed = {}
     for key in objective_order:
-        m, x, recovery_x, objectives = build(fixed=fixed)
+        m, x, recovery_x, cert_x, objectives = build(fixed=fixed)
         m.Maximize(objectives[key])
         assert s.Solve(m) == cp_model.OPTIMAL
         fixed[key] = int(s.Value(objectives[key]))
@@ -335,7 +444,7 @@ def solve_budget_knapsack(
     for line in order:
         lid = line["line_id"]
         trial = {**primary_forced, lid: 1}
-        m, x, recovery_x, objectives = build(
+        m, x, recovery_x, cert_x, objectives = build(
             fixed=fixed,
             primary_forced=trial,
         )
@@ -351,7 +460,7 @@ def solve_budget_knapsack(
             if lid in unavailable or primary_forced[lid]:
                 continue
             trial = {**recovery_forced, (sid, lid): 1}
-            m, x, recovery_x, objectives = build(
+            m, x, recovery_x, cert_x, objectives = build(
                 fixed=fixed,
                 primary_forced=primary_forced,
                 recovery_forced=trial,
@@ -361,10 +470,57 @@ def solve_budget_knapsack(
                 1 if status in (cp_model.OPTIMAL, cp_model.FEASIBLE) else 0
             )
 
-    m, x, recovery_x, objectives = build(
+    m, x, recovery_x, cert_x, objectives = build(
         fixed=fixed,
         primary_forced=primary_forced,
         recovery_forced=recovery_forced,
+    )
+    assert s.Solve(m) in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+
+    reserve_line_ids = {
+        lid
+        for lid, options in cert_x.items()
+        if any(s.Value(option) for option in options.values())
+    }
+    certification_forced = {}
+    for line in order:
+        lid = line["line_id"]
+        if lid not in reserve_line_ids:
+            continue
+        options = sorted(
+            cert_x[lid],
+            key=lambda option: (
+                period_index[option[1]],
+                option[0],
+            ),
+        )
+        for reviewer_id, period in options:
+            trial = {
+                **certification_forced,
+                (lid, reviewer_id, period): 1,
+            }
+            trial_model, _, _, _, _ = build(
+                fixed=fixed,
+                primary_forced=primary_forced,
+                recovery_forced=recovery_forced,
+                certification_forced=trial,
+            )
+            status = s.Solve(trial_model)
+            if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+                certification_forced[
+                    (lid, reviewer_id, period)
+                ] = 1
+                break
+        else:
+            raise RuntimeError(
+                f"no canonical certification option for {lid}"
+            )
+
+    m, x, recovery_x, cert_x, objectives = build(
+        fixed=fixed,
+        primary_forced=primary_forced,
+        recovery_forced=recovery_forced,
+        certification_forced=certification_forced,
     )
     assert s.Solve(m) in (cp_model.OPTIMAL, cp_model.FEASIBLE)
     primary_retained = {lid for lid, val in primary_forced.items() if val}
@@ -418,6 +574,46 @@ def solve_budget_knapsack(
         ]
         for line_id in metrics["recovery_reserve_line_ids"]
     )
+    certification_rows = []
+    certification_score = 0
+    reviewer_by_id = {
+        reviewer["reviewer_id"]: reviewer
+        for reviewer in reviewers
+    }
+    for line in order:
+        lid = line["line_id"]
+        for (reviewer_id, period), option in cert_x[lid].items():
+            if not s.Value(option):
+                continue
+            units = retention_recovery_reserve[
+                "category_certification_units"
+            ][line["category"]]
+            score = (
+                reviewer_by_id[reviewer_id][
+                    "score_points_by_period"
+                ][period]
+                + certification["category_score_adjustment"][
+                    line["category"]
+                ]
+            )
+            certification_score += score
+            certification_rows.append(
+                {
+                    "line_id": lid,
+                    "reviewer_id": reviewer_id,
+                    "period": period,
+                    "certification_units": units,
+                    "score_points": score,
+                }
+            )
+    metrics["recovery_reserve_certifications"] = sorted(
+        certification_rows,
+        key=lambda row: row["line_id"],
+    )
+    metrics["recovery_reserve_certification_score"] = (
+        certification_score
+    )
+    assert certification_score == fixed["reserve_certification_score"]
     return known_line_ids - primary_retained, metrics
 
 
@@ -487,6 +683,7 @@ def main():
             "line_id": line["line_id"],
             "date": line["date"],
             "category": line["category"],
+            "statement_post_date": line["statement_post_date"],
             "amount": computed[line["line_id"]],
             "weight": 6 - int(line["priority"]),
         }
@@ -501,6 +698,7 @@ def main():
         policy.get("retention_coverage_bonuses", []),
         policy.get("retention_recovery_scenarios", []),
         policy["retention_recovery_reserve"],
+        policy["retention_recovery_certification_schedule"],
         policy["retention_tie_break"],
     )
 

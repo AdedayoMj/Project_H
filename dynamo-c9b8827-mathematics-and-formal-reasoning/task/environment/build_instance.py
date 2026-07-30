@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-from collections import deque
+from collections import Counter, deque
 from itertools import combinations, permutations, product
 from pathlib import Path
 
@@ -27,12 +27,16 @@ COHORTS = [
     ("CTRL", "synthetic-control blinded aliquots"),
     ("RENAL", "renal-panel blinded aliquots"),
     ("META", "metabolic-panel blinded aliquots"),
+    ("HEMA", "hematology-panel blinded aliquots"),
+    ("ENDO", "endocrinology-panel blinded aliquots"),
 ]
 
-# Three non-equivalent planted witnesses generate allowed invariant values. They
-# are never copied into the agent environment. The public JSON contains only the
-# derived orbit/profile restrictions, and both oracle and verifier enumerate all
-# solutions independently from those restrictions.
+# Ten non-equivalent planted witnesses generate broad local profile domains. The
+# first three also generate the higher-order global restrictions. No witness is
+# copied into the agent environment: the public JSON contains only derived
+# invariant values, and both oracle and verifier enumerate independently.
+ACCEPTED_WITNESS_COUNT = 3
+PAIR_DECOY_OFFSETS = (0, 1)
 WITNESS_SIGNATURES = [
     [
         ["001100100100110000", "010001001001001100", "100010010010000011"],
@@ -43,26 +47,116 @@ WITNESS_SIGNATURES = [
         ["000110001100000011", "010001100010110000", "101000010001001100"],
         ["000011010001110000", "011000101000001100", "100100000110000011"],
         ["000110100001001100", "011000010100000011", "100001001010110000"],
+        ["001100001100001100", "010001010001010010", "100010100010100001"],
+        ["001010110000100001", "010100001010001010", "100001000101010100"],
     ],
     [
-        ["000011010010010100", "001100001001000011", "110000100100101000"],
-        ["001001010010000110", "010010100100100001", "100100001001011000"],
-        ["000110000011001100", "011000110000110000", "100001001100000011"],
-        ["000011110000001001", "001100000011100100", "110000001100010010"],
-        ["001100100100000110", "010010000011011000", "100001011000100001"],
-        ["001100011000000110", "010001100001101000", "100010000110010001"],
-        ["000110100010100001", "001001001100000110", "110000010001011000"],
-        ["000110110000000011", "011000000101110000", "100001001010001100"],
-    ],
-    [
-        ["000011001001001100", "010100010010000011", "101000100100110000"],
-        ["000110100100001001", "011000010010100100", "100001001001010010"],
-        ["000011011000110000", "001100000110001100", "110000100001000011"],
-        ["000011110000001001", "001100000011100100", "110000001100010010"],
+        ["001001000011101000", "010010110000000011", "100100001100010100"],
+        ["001001100001010010", "010010011000100100", "100100000110001001"],
+        ["000110000011100001", "011000001100011000", "100001110000000110"],
+        ["000011001100010010", "001100110000001001", "110000000011100100"],
         ["001100100100100001", "010010000011000110", "100001011000011000"],
-        ["000110010100001010", "011000100001110000", "100001001010000101"],
-        ["001010000011001100", "010100011000110000", "100001100100000011"],
+        ["001010010100011000", "010100101000100001", "100001000011000110"],
+        ["000110100001100010", "001001000110001100", "110000011000010001"],
         ["000011010100100001", "001100000011011000", "110000101000000110"],
+        ["001100001100001100", "010001100001010001", "100010010010100010"],
+        ["001100100010101000", "010001001100000110", "100010010001010001"],
+    ],
+    [
+        ["000110010010011000", "011000001001000101", "100001100100100010"],
+        ["001001000110010010", "010010100001100100", "100100011000001001"],
+        ["000110001100000011", "011000000011001100", "100001110000110000"],
+        ["000110001001100001", "011000100100000110", "100001010010011000"],
+        ["000011100001001001", "001100001100110000", "110000010010000110"],
+        ["000011101000010001", "001100000011000110", "110000010100101000"],
+        ["001100100100011000", "010001011000100001", "100010000011000110"],
+        ["001100100001110000", "010001000110001100", "100010011000000011"],
+        ["000101000101000011", "011000011000011000", "100010100010100100"],
+        ["001100000110010001", "010001010001100010", "100010101000001100"],
+    ],
+    [
+        ["001001001100001010", "010010000011110000", "100100110000000101"],
+        ["001001000110010010", "010010100001100100", "100100011000001001"],
+        ["000011110000011000", "001100001100000110", "110000000011100001"],
+        ["000110011000100100", "011000100001010010", "100001000110001001"],
+        ["000110000011010010", "001001001100100001", "110000110000001100"],
+        ["000011001010010100", "001100010100101000", "110000100001000011"],
+        ["000110011000001010", "011000100100110000", "100001000011000101"],
+        ["000110110000100001", "010001001100000110", "101000000011011000"],
+        ["000101000101000110", "001010001010001001", "110000110000110000"],
+        ["000011101000000110", "010100000110010001", "101000010001101000"],
+    ],
+    [
+        ["000110100100100001", "010001010010000110", "101000001001011000"],
+        ["001001110000010010", "010010001100100100", "100100000011001001"],
+        ["000110100001000011", "011000011000001100", "100001000110110000"],
+        ["001001000110011000", "010010100001000110", "100100011000100001"],
+        ["001100001100000011", "010010000011011000", "100001110000100100"],
+        ["000011001010010100", "001100010100101000", "110000100001000011"],
+        ["000011000101100001", "011000001010000110", "100100110000011000"],
+        ["000011000110101000", "001100100001010001", "110000011000000110"],
+        ["001100001010001010", "010010010100010100", "100001100001100001"],
+        ["000101001010000101", "001010110000100010", "110000000101011000"],
+    ],
+    [
+        ["000110010010010001", "011000001001101000", "100001100100000110"],
+        ["001001110000100100", "010010001100001001", "100100000011010010"],
+        ["000011100001100001", "001100011000000110", "110000000110011000"],
+        ["000011110000001001", "001100000011100100", "110000001100010010"],
+        ["000110001100100100", "001001000011011000", "110000110000000011"],
+        ["000110001100000011", "010001000011101000", "101000110000010100"],
+        ["000011100010000110", "011000010001100001", "100100001100011000"],
+        ["000110110000001010", "011000001100100001", "100001000011010100"],
+        ["000110000110000110", "010001010001110000", "101000101000001001"],
+        ["000011100001010100", "010100010100101000", "101000001010000011"],
+    ],
+    [
+        ["000110010010011000", "010001001001100001", "101000100100000110"],
+        ["001001000011100100", "010010110000001001", "100100001100010010"],
+        ["000011000011000110", "001100110000011000", "110000001100100001"],
+        ["001001000110100001", "010010100001011000", "100100011000000110"],
+        ["000011001001011000", "011000000110000110", "100100110000100001"],
+        ["000011101000010001", "001100000011000110", "110000010100101000"],
+        ["001100000110001001", "010001011000110000", "100010100001000110"],
+        ["000110101000000011", "011000000011110000", "100001010100001100"],
+        ["000011100010100010", "011000011000011000", "100100000101000101"],
+        ["000101010100100001", "001010001010010100", "110000100001001010"],
+    ],
+    [
+        ["000011100010010010", "001100010001001001", "110000001100100100"],
+        ["000011010010100100", "001100001001010010", "110000100100001001"],
+        ["000110000011000110", "011000110000100001", "100001001100011000"],
+        ["001001100001000110", "010010011000100001", "100100000110011000"],
+        ["000011001100001100", "011000010010000011", "100100100001110000"],
+        ["001010010100000011", "010100101000001100", "100001000011110000"],
+        ["000110000011001001", "011000010100000110", "100001101000110000"],
+        ["000110010001110000", "011000100010001100", "100001001100000011"],
+        ["000011000011000011", "011000101000101000", "100100010100010100"],
+        ["000101011000110000", "001010000101000101", "110000100010001010"],
+    ],
+    [
+        ["001010000110010010", "010100100001100100", "100001011000001001"],
+        ["000011001001100100", "001100100100010010", "110000010010001001"],
+        ["000110011000001100", "011000000110000011", "100001100001110000"],
+        ["000011100100110000", "001100010010000011", "110000001001001100"],
+        ["001100001001100001", "010010110000011000", "100001000110000110"],
+        ["000011101000010001", "001100000011000110", "110000010100101000"],
+        ["000011001010000110", "001100010100110000", "110000100001001001"],
+        ["000110000011101000", "011000110000000011", "100001001100010100"],
+        ["000110000110000110", "010001010001001001", "101000101000110000"],
+        ["001100000110010001", "010001010001100010", "100010101000001100"],
+    ],
+    [
+        ["000011001001000101", "001100100100110000", "110000010010001010"],
+        ["000011100100010010", "001100010010001001", "110000001001100100"],
+        ["000011001100011000", "001100000011000110", "110000110000100001"],
+        ["001001000011110000", "010010110000001100", "100100001100000011"],
+        ["000110100100001100", "011000000011010010", "100001011000100001"],
+        ["001010000011010100", "010100001100101000", "100001110000000011"],
+        ["000011000110100010", "011000100001010001", "100100011000001100"],
+        ["000110110000000101", "011000001100100010", "100001000011011000"],
+        ["001010001100001010", "010100010010010100", "100001100001100001"],
+        ["000110000011101000", "010001010100000110", "101000101000010001"],
     ],
 ]
 
@@ -244,6 +338,46 @@ def quadruple_union_xor_profile(classes: list[CohortClass]) -> str:
     )
 
 
+def gf2_rank(rows: list[int]) -> int:
+    basis: dict[int, int] = {}
+    for row in rows:
+        value = row
+        while value:
+            pivot = value.bit_length() - 1
+            if pivot in basis:
+                value ^= basis[pivot]
+            else:
+                basis[pivot] = value
+                break
+    return len(basis)
+
+
+def loss_rank_profile(
+    classes: list[CohortClass], maximum_losses: int
+) -> str:
+    rows = [mask for cohort_class in classes for mask in cohort_class]
+    sections = []
+    for loss_count in range(maximum_losses + 1):
+        histogram = Counter(
+            gf2_rank(
+                [
+                    mask
+                    & ~sum(1 << pool for pool in deleted)
+                    for mask in rows
+                ]
+            )
+            for deleted in combinations(range(WIDTH), loss_count)
+        )
+        sections.append(
+            f"{loss_count}:"
+            + ",".join(
+                f"{rank:02d}x{count:03d}"
+                for rank, count in sorted(histogram.items())
+            )
+        )
+    return ";".join(sections)
+
+
 def build(root: Path) -> None:
     input_dir = root / "input"
     if input_dir.exists():
@@ -293,6 +427,8 @@ def build(root: Path) -> None:
         ]
         for witness in WITNESS_SIGNATURES
     ]
+    assert len(witnesses) > ACCEPTED_WITNESS_COUNT >= 2
+    accepted_witnesses = witnesses[:ACCEPTED_WITNESS_COUNT]
     for witness in witnesses:
         assert all(
             len(cohort) == 3
@@ -353,9 +489,14 @@ def build(root: Path) -> None:
     for left, right in combinations(range(len(cohort_order)), 2):
         profiles = {
             pair_profile(
-                witness[left], witness[right], plate_masks
+                witnesses[witness_index][left],
+                witnesses[
+                    (witness_index + offset) % len(witnesses)
+                ][right],
+                plate_masks,
             )
-            for witness in witnesses
+            for offset in PAIR_DECOY_OFFSETS
+            for witness_index in range(len(witnesses))
         }
         pair_constraints.append(
             {
@@ -368,10 +509,12 @@ def build(root: Path) -> None:
     triple_index_sets = [
         (0, 1, 4),
         (1, 2, 5),
-        (2, 3, 6),
+        (2, 3, 8),
         (3, 4, 7),
-        (0, 5, 6),
-        (1, 6, 7),
+        (0, 5, 9),
+        (1, 6, 8),
+        (2, 7, 9),
+        (4, 6, 9),
     ]
     triple_constraints = []
     for triple_indices in triple_index_sets:
@@ -379,7 +522,7 @@ def build(root: Path) -> None:
             triple_xor_profile(
                 [witness[index] for index in triple_indices]
             )
-            for witness in witnesses
+            for witness in accepted_witnesses
         }
         triple_constraints.append(
             {
@@ -391,10 +534,12 @@ def build(root: Path) -> None:
         )
 
     quadruple_index_sets = [
-        (0, 1, 4, 6),
-        (1, 2, 5, 7),
+        (0, 1, 4, 8),
+        (1, 2, 5, 9),
         (0, 2, 3, 7),
-        (3, 4, 5, 6),
+        (3, 4, 6, 8),
+        (0, 5, 7, 9),
+        (2, 4, 8, 9),
     ]
     quadruple_constraints = []
     for quadruple_indices in quadruple_index_sets:
@@ -402,7 +547,7 @@ def build(root: Path) -> None:
             quadruple_union_xor_profile(
                 [witness[index] for index in quadruple_indices]
             )
-            for witness in witnesses
+            for witness in accepted_witnesses
         }
         quadruple_constraints.append(
             {
@@ -414,8 +559,34 @@ def build(root: Path) -> None:
             }
         )
 
+    loss_rank_index_sets = [
+        (0, 1, 2, 8, 9),
+        (2, 3, 4, 6, 8),
+        (0, 4, 5, 7, 9),
+        (1, 3, 5, 6, 9),
+        (0, 2, 4, 7, 8, 9),
+    ]
+    loss_rank_constraints = []
+    for rank_indices in loss_rank_index_sets:
+        profiles = {
+            loss_rank_profile(
+                [witness[index] for index in rank_indices],
+                maximum_losses=2,
+            )
+            for witness in accepted_witnesses
+        }
+        loss_rank_constraints.append(
+            {
+                "cohorts": [
+                    cohort_order[index] for index in rank_indices
+                ],
+                "maximum_losses": 2,
+                "allowed_profiles": sorted(profiles),
+            }
+        )
+
     instance = {
-        "format_version": 4,
+        "format_version": 5,
         "provenance": {
             "kind": "synthetic",
             "description": (
@@ -437,17 +608,17 @@ def build(root: Path) -> None:
             "samples_per_cohort": 3,
             "sample_replication": 6,
             "per_plate_replication": 2,
-            "pool_capacity": 8,
+            "pool_capacity": 10,
             "cohort_pool_occupancy": (
                 "Every pool contains exactly one of the three samples from every cohort."
             ),
             "maximum_simultaneous_pool_losses": 2,
             "pool_loss_separation": (
-                "After deleting any subset of at most two pool columns, all twenty-four "
+                "After deleting any subset of at most two pool columns, all thirty "
                 "sample signatures remain pairwise distinct and every sample remains present."
             ),
             "distinct_cohort_classes": (
-                "The eight unordered three-signature cohort partitions must be distinct."
+                "The ten unordered three-signature cohort partitions must be distinct."
             ),
         },
         "cohort_class_rules": {
@@ -490,12 +661,25 @@ def build(root: Path) -> None:
             ),
             "constraints": quadruple_constraints,
         },
+        "cohort_loss_rank_rules": {
+            "profile": (
+                "For the listed cohorts, use their three sample signatures as binary "
+                "rows over GF(2). For each loss count k from zero through maximum_losses "
+                "and every k-subset of pool columns, delete those columns and compute "
+                "the GF(2) row rank. For each k form the ascending rank histogram and "
+                "encode each bin as rrxccc (rr is two decimal rank digits, x is literal, "
+                "and ccc is three count digits), prefix it by k:, join bins with ',' and sections "
+                "with ';'. The pool-subset histogram makes the profile invariant under "
+                "the entire disclosed pool action; row order is immaterial."
+            ),
+            "constraints": loss_rank_constraints,
+        },
         "symmetry_rules": {
             "sample_action": (
                 "The three samples inside each cohort may be permuted independently; "
                 "cohorts themselves may not be permuted."
             ),
-            "sample_permutation_group_order": 1679616,
+            "sample_permutation_group_order": 60466176,
             "pool_action": (
                 "A generator image lists, in pool_order, the destination pool of each "
                 "old pool. Close the generators under composition. Synchronized hexagon "
@@ -504,7 +688,7 @@ def build(root: Path) -> None:
             ),
             "pool_generators": generator_rows,
             "pool_group_order": 72,
-            "full_group_order": 120932352,
+            "full_group_order": 4353564672,
             "equivalence": (
                 "Two labelled incidence matrices are equivalent exactly when one is "
                 "obtained from the other by a generated pool permutation and any "
@@ -520,7 +704,7 @@ def build(root: Path) -> None:
             ),
             "encoding": (
                 "After cohort normalization, read cohorts in cohort_order, retain all "
-                "three signatures in normalized order, and join the twenty-four "
+                "three signatures in normalized order, and join the thirty "
                 "signatures with one '/' byte."
             ),
             "canonical_representative": (
@@ -537,7 +721,7 @@ def build(root: Path) -> None:
                 "samples inside every cohort counts separately."
             ),
             "normalized_designs": (
-                "First quotient labelled designs by the 1,679,616 independent "
+                "First quotient labelled designs by the 60,466,176 independent "
                 "within-cohort sample permutations, using cohort_normalization."
             ),
             "equivalence_classes": (
@@ -546,7 +730,7 @@ def build(root: Path) -> None:
             ),
             "stabilizer_size": (
                 "For a normalized design, count pool-group elements that leave its "
-                "ordered eight cohort classes unchanged. This equals the stabilizer size "
+                "ordered ten cohort classes unchanged. This equals the stabilizer size "
                 "of its canonical labelled representative under the full group."
             ),
             "conjugacy": (

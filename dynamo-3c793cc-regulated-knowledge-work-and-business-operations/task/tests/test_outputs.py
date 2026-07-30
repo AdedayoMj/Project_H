@@ -32,6 +32,8 @@ TRIP_SUMMARY_KEYS = {
     "worst_case_recovery_final_reimbursable_cents",
     "recovery_reserve_line_ids",
     "recovery_reserve_certification_units",
+    "recovery_reserve_certification_score",
+    "recovery_reserve_certifications",
     "retention_recovery_scenarios",
     "deferred_over_budget_line_ids",
     "total_flagged_for_approval_cents",
@@ -44,6 +46,13 @@ RECOVERY_KEYS = {
     "retained_priority_weight",
     "retained_coverage_bonus_points",
     "final_reimbursable_cents",
+}
+CERTIFICATION_KEYS = {
+    "line_id",
+    "reviewer_id",
+    "period",
+    "certification_units",
+    "score_points",
 }
 
 
@@ -111,7 +120,7 @@ def test_line_items_well_formed():
 
 
 def test_trip_summary_well_formed():
-    """The summary has all seven disclosed fields with valid category and value types."""
+    """The summary has every disclosed field with valid nested and scalar types."""
     data = _load_output()
     summary = data["trip_summary"]
     assert set(summary) == TRIP_SUMMARY_KEYS
@@ -127,6 +136,7 @@ def test_trip_summary_well_formed():
         "total_recovery_coverage_bonus_points",
         "worst_case_recovery_final_reimbursable_cents",
         "recovery_reserve_certification_units",
+        "recovery_reserve_certification_score",
         "total_flagged_for_approval_cents",
     ):
         assert isinstance(summary[key], int) and not isinstance(summary[key], bool)
@@ -135,6 +145,7 @@ def test_trip_summary_well_formed():
     assert all(isinstance(x, str) for x in summary["deferred_over_budget_line_ids"])
     assert isinstance(summary["retention_recovery_scenarios"], list)
     assert isinstance(summary["recovery_reserve_line_ids"], list)
+    assert isinstance(summary["recovery_reserve_certifications"], list)
     assert all(
         isinstance(line_id, str)
         for line_id in summary["recovery_reserve_line_ids"]
@@ -144,6 +155,22 @@ def test_trip_summary_well_formed():
     )
     assert len(summary["recovery_reserve_line_ids"]) == len(
         set(summary["recovery_reserve_line_ids"])
+    )
+    certification_line_ids = []
+    for row in summary["recovery_reserve_certifications"]:
+        assert set(row) == CERTIFICATION_KEYS
+        assert isinstance(row["line_id"], str)
+        assert isinstance(row["reviewer_id"], str)
+        assert isinstance(row["period"], str)
+        for key in ("certification_units", "score_points"):
+            assert isinstance(row[key], int) and not isinstance(
+                row[key], bool
+            )
+            assert row[key] >= 0
+        certification_line_ids.append(row["line_id"])
+    assert certification_line_ids == sorted(certification_line_ids)
+    assert len(certification_line_ids) == len(
+        set(certification_line_ids)
     )
     for scenario in summary["retention_recovery_scenarios"]:
         assert set(scenario) == RECOVERY_KEYS
@@ -273,7 +300,7 @@ def test_retention_rules_and_coverage_score_satisfied():
 
 
 def test_recovery_scenarios_are_feasible_and_reconciled():
-    """Every disclosed rejection recovery obeys coupling, cap, adjusted portfolios, commitments, and scores."""
+    """Recoveries and their shared certification schedule obey every coupled rule."""
     data = _load_output()
     summary = data["trip_summary"]
     policy = json.loads((INPUT_PATH / "policy.json").read_text())
@@ -370,6 +397,72 @@ def test_recovery_scenarios_are_feasible_and_reconciled():
     )
     assert units == summary["recovery_reserve_certification_units"]
     assert units <= reserve_policy["maximum_certification_units"]
+
+    schedule_policy = policy[
+        "retention_recovery_certification_schedule"
+    ]
+    periods = schedule_policy["period_order"]
+    period_index = {
+        period: index for index, period in enumerate(periods)
+    }
+    reviewers = {
+        reviewer["reviewer_id"]: reviewer
+        for reviewer in schedule_policy["reviewers"]
+    }
+    certifications = summary["recovery_reserve_certifications"]
+    by_line = {row["line_id"]: row for row in certifications}
+    assert set(by_line) == reserve
+    certification_score = 0
+    capacity_used = {
+        (reviewer_id, period): 0
+        for reviewer_id in reviewers
+        for period in periods
+    }
+    for line_id, assignment in by_line.items():
+        expense = row_by_id[line_id]
+        reviewer = reviewers[assignment["reviewer_id"]]
+        period = assignment["period"]
+        category = expense["category"]
+        assert category in reviewer["eligible_categories"]
+        release = schedule_policy[
+            "release_period_by_statement_post_date"
+        ][expense["statement_post_date"]]
+        assert period_index[period] >= period_index[release]
+        expected_units = reserve_policy[
+            "category_certification_units"
+        ][category]
+        assert assignment["certification_units"] == expected_units
+        expected_score = (
+            reviewer["score_points_by_period"][period]
+            + schedule_policy["category_score_adjustment"][category]
+        )
+        assert assignment["score_points"] == expected_score
+        certification_score += expected_score
+        capacity_used[(assignment["reviewer_id"], period)] += (
+            expected_units
+        )
+    assert (
+        certification_score
+        == summary["recovery_reserve_certification_score"]
+    )
+    for (reviewer_id, period), used in capacity_used.items():
+        assert used <= reviewers[reviewer_id][
+            "capacity_units_by_period"
+        ][period]
+    for rule in schedule_policy["conditional_precedence"]:
+        before = by_line.get(rule["before_line_id"])
+        after = by_line.get(rule["after_line_id"])
+        if before is not None and after is not None:
+            assert period_index[before["period"]] < period_index[
+                after["period"]
+            ]
+    for rule in schedule_policy["period_separation_groups"]:
+        for period in periods:
+            assigned = sum(
+                by_line.get(line_id, {}).get("period") == period
+                for line_id in rule["line_ids"]
+            )
+            assert assigned <= rule["maximum_in_one_period"]
 
 
 def test_line_items_match_reference():

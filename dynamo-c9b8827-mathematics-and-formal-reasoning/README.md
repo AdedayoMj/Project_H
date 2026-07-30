@@ -6,7 +6,7 @@ The task is done when `/app/output.json` exactly enumerates every valid three-he
 
 ## Success criteria
 
-1. Count all normalized and fully labelled designs satisfying replication, plate balance, pool capacity, cohort-orbit, ordered contingency-profile, ternary-XOR-spectrum, fourth-order union/XOR-spectrum, and every one- and two-pool-loss separation rule.
+1. Count all normalized and fully labelled designs satisfying replication, plate balance, pool capacity, cohort-orbit, ordered contingency-profile, ternary-XOR-spectrum, fourth-order union/XOR-spectrum, GF(2) deletion-rank, and every one- and two-pool-loss separation rule.
 2. Derive the generated pool and within-cohort sample-permutation group orders exactly.
 3. Emit every equivalence class once as its UTF-8-byte-sorted canonical incidence encoding.
 4. Compute the complete nonzero stabilizer histogram and reconcile both normalized and labelled totals by orbit–stabilizer.
@@ -26,4 +26,4 @@ harbor run -p . --agent nop      # reward < 1.0
 
 ## Notes
 
-The input is a deterministic synthetic laboratory-design instance. It contains 121,500 admissible balanced three-sample cohort partitions and eight ordered cohorts, so materializing pairwise compatibility over the full universe or post-filtering the raw ordered assignment space is infeasible. Independent within-cohort `S₃` sample actions are quotiented first, followed by the residual 72-element synchronized-hexagon and three-plate action; the input states why this two-stage quotient is the full equivalence relation.
+The input is a deterministic synthetic laboratory-design instance. It contains 121,500 admissible balanced three-sample cohort partitions and ten ordered cohorts. Cross-witness pair decoys make local profiles deliberately non-identifying, while overlapping ternary, fourth-order, and deletion-rank invariants enforce global compatibility. Independent within-cohort `S₃` sample actions are quotiented first, followed by the residual 72-element synchronized-hexagon and three-plate action.

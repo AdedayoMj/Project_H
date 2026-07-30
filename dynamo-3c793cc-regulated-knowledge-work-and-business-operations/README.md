@@ -1,6 +1,6 @@
 # T&E Reimbursement Audit
 
-This task asks an agent to compute exact reimbursements and compliance dispositions for one executive's international trip, then solve a four-level constrained retention problem with overlapping portfolios, bounded commitments, and threshold-coverage bonuses.
+This task asks an agent to compute exact reimbursements and compliance dispositions for one executive's international trip, then jointly solve primary closeout, sixteen adverse recoveries, a shared reserve, and its capacity-limited certification schedule under eight lexicographic objectives.
 
 ## Inputs
 
@@ -25,3 +25,5 @@ This task asks an agent to compute exact reimbursements and compliance dispositi
 - every output line matches the reference output exactly
 - the trip summary matches the reference output exactly
 - every retained portfolio, bounded commitment, and reported coverage-bonus score reconciles
+- all sixteen recoveries share the exact reported reserve
+- every certification assignment satisfies release dates, reviewer eligibility, capacities, conditional precedences, separation groups, and score reconciliation
