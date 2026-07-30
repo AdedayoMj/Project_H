@@ -13,8 +13,8 @@ from pathlib import Path
 APP_ROOT = Path(os.environ.get("POOLING_APP_ROOT", "/app"))
 INPUT = APP_ROOT / "input" / "pooling.json"
 OUTPUT = APP_ROOT / "output.json"
-EXPECTED_INPUT_SHA256 = "912e8301886e49636a6eb9c0e2dd4f7a6732dddba4326317d93916907b7533ec"
-EXPECTED_OUTPUT_SHA256 = "2380f855ea6420081aa528a2f5ab8928cba9ebdbd3f84c2b34d1ca369a05530f"
+EXPECTED_INPUT_SHA256 = "0c463d88a78c987a50c7b88ea92fe9923b1df3fd71274102b5af20ea6221f4af"
+EXPECTED_OUTPUT_SHA256 = "00cbd219e30872f001d1c2950a4e33e539188c86d52530137f3d12116d14d946"
 
 Permutation = tuple[int, ...]
 CohortClass = tuple[int, ...]
@@ -155,19 +155,33 @@ def instance_context() -> dict:
         cohort_class: index
         for index, cohort_class in enumerate(classes)
     }
+    masks = {
+        mask for cohort_class in classes for mask in cohort_class
+    }
+    mask_keys = {
+        mask: bit_string(mask, width) for mask in masks
+    }
     actions = []
     for permutation in group:
-        action = []
-        for cohort_class in classes:
-            moved = normalize_class(
-                tuple(
-                    move_mask(mask, permutation)
-                    for mask in cohort_class
-                ),
-                width,
+        mask_images = {
+            mask: move_mask(mask, permutation) for mask in masks
+        }
+        actions.append(
+            tuple(
+                class_index[
+                    tuple(
+                        sorted(
+                            (
+                                mask_images[mask]
+                                for mask in cohort_class
+                            ),
+                            key=mask_keys.__getitem__,
+                        )
+                    )
+                ]
+                for cohort_class in classes
             )
-            action.append(class_index[moved])
-        actions.append(tuple(action))
+        )
     plate_masks = tuple(
         sum(1 << position for position in indices)
         for indices in plates.values()
@@ -253,6 +267,35 @@ def xor_spectrum(class_ids: tuple[int, int, int]) -> str:
         weight = mask.bit_count()
         values.append(min(weight, width - weight))
     return "".join(str(value) for value in sorted(values))
+
+
+@lru_cache(maxsize=None)
+def union_xor_spectrum(
+    class_ids: tuple[int, int, int, int],
+) -> str:
+    classes = instance_context()["classes"]
+    width = instance_context()["width"]
+    values = []
+    for sample_indices in product(range(3), repeat=4):
+        union = 0
+        xor = 0
+        for class_id, sample_index in zip(
+            class_ids, sample_indices
+        ):
+            mask = classes[class_id][sample_index]
+            union |= mask
+            xor ^= mask
+        xor_weight = xor.bit_count()
+        values.append(
+            (
+                union.bit_count(),
+                min(xor_weight, width - xor_weight),
+            )
+        )
+    return "".join(
+        f"{union_weight:02d}{xor_weight:02d}"
+        for union_weight, xor_weight in sorted(values)
+    )
 
 
 def encoded_design(design: Design) -> str:
@@ -352,6 +395,12 @@ def valid_design(design: Design) -> bool:
         )
         if xor_spectrum(class_ids) not in rule["allowed_profiles"]:
             return False
+    for rule in data["cohort_quadruple_rules"]["constraints"]:
+        class_ids = tuple(
+            design[cohort_index[value]] for value in rule["cohorts"]
+        )
+        if union_xor_spectrum(class_ids) not in rule["allowed_profiles"]:
+            return False
     return True
 
 
@@ -367,8 +416,18 @@ def enumerate_valid_designs() -> frozenset[Design]:
     }
 
     orbit_domains: dict[str, set[int]] = {}
-    for class_id in range(len(classes)):
-        orbit_domains.setdefault(pool_orbit_id(class_id), set()).add(class_id)
+    required_orbit_ids = {
+        rule["required_pool_orbit_id"]
+        for rule in data["cohort_class_rules"]["constraints"]
+    }
+    for orbit_id in required_orbit_ids:
+        cohort_class = tuple(
+            mask_from_string(value) for value in orbit_id.split("/")
+        )
+        class_id = context["class_index"][cohort_class]
+        orbit_domains[orbit_id] = {
+            action[class_id] for action in context["actions"]
+        }
     domains = [set(range(len(classes))) for _ in range(cohort_count)]
     for rule in data["cohort_class_rules"]["constraints"]:
         domains[cohort_index[rule["cohort_id"]]] = set(
@@ -393,6 +452,17 @@ def enumerate_valid_designs() -> frozenset[Design]:
         allowed = frozenset(rule["allowed_profiles"])
         for cohort in triple:
             triples_by_cohort[cohort].append((triple, allowed))
+
+    quadruples_by_cohort = [[] for _ in range(cohort_count)]
+    for rule in data["cohort_quadruple_rules"]["constraints"]:
+        quadruple = tuple(
+            cohort_index[value] for value in rule["cohorts"]
+        )
+        allowed = frozenset(rule["allowed_profiles"])
+        for cohort in quadruple:
+            quadruples_by_cohort[cohort].append(
+                (quadruple, allowed)
+            )
 
     assignment = [-1] * cohort_count
     completed: set[Design] = set()
@@ -429,6 +499,26 @@ def enumerate_valid_designs() -> frozenset[Design]:
                             if value == cohort
                             else assignment[value]
                             for value in triple
+                        )
+                    )
+                    in allowed
+                }
+        for quadruple, allowed in quadruples_by_cohort[cohort]:
+            others = [
+                assignment[value]
+                for value in quadruple
+                if value != cohort
+            ]
+            if all(value >= 0 for value in others):
+                candidates = {
+                    candidate
+                    for candidate in candidates
+                    if union_xor_spectrum(
+                        tuple(
+                            candidate
+                            if value == cohort
+                            else assignment[value]
+                            for value in quadruple
                         )
                     )
                     in allowed
@@ -561,7 +651,7 @@ def test_exact_documented_schema_and_scalar_types():
             "class_size",
             "fixed_normalized_designs",
         }
-        assert re.fullmatch(r"(?:0[0-9]|1[01]){12}", row["class_id"])
+        assert re.fullmatch(r"(?:0[0-9]|1[0-7]){18}", row["class_id"])
         exact_int(row["class_size"], positive=True)
         exact_int(row["fixed_normalized_designs"])
 
@@ -572,7 +662,7 @@ def test_generated_group_orders_and_representative_validity():
     context = instance_context()
     instance = context["data"]
     group_orders = data["group_orders"]
-    assert len(context["classes"]) == 1350
+    assert len(context["classes"]) == 121500
     assert len(context["group"]) == instance["symmetry_rules"]["pool_group_order"]
     assert group_orders["pool"] == len(context["group"])
     assert (

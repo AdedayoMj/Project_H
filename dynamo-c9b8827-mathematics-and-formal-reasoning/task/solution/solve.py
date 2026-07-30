@@ -170,8 +170,9 @@ def pair_profile(
 
 
 @lru_cache(maxsize=None)
-def triple_xor_profile(classes: tuple[CohortClass, ...]) -> str:
-    width = max(mask.bit_length() for row in classes for mask in row)
+def triple_xor_profile(
+    classes: tuple[CohortClass, ...], width: int
+) -> str:
     values = []
     for sample_indices in product(range(3), repeat=3):
         mask = 0
@@ -182,6 +183,33 @@ def triple_xor_profile(classes: tuple[CohortClass, ...]) -> str:
         weight = mask.bit_count()
         values.append(min(weight, width - weight))
     return "".join(str(value) for value in sorted(values))
+
+
+@lru_cache(maxsize=None)
+def quadruple_union_xor_profile(
+    classes: tuple[CohortClass, ...], width: int
+) -> str:
+    values = []
+    for sample_indices in product(range(3), repeat=4):
+        union = 0
+        xor = 0
+        for cohort_class, sample_index in zip(
+            classes, sample_indices
+        ):
+            mask = cohort_class[sample_index]
+            union |= mask
+            xor ^= mask
+        xor_weight = xor.bit_count()
+        values.append(
+            (
+                union.bit_count(),
+                min(xor_weight, width - xor_weight),
+            )
+        )
+    return "".join(
+        f"{union_weight:02d}{xor_weight:02d}"
+        for union_weight, xor_weight in sorted(values)
+    )
 
 
 def robust_after_pool_losses(
@@ -214,19 +242,31 @@ def enumerate_normalized_designs(
     }
     width = len(data["pool_order"])
 
-    class_orbit_ids = [
-        min(
-            (
-                encode_class(classes[action[class_id]], width)
-                for action in actions
-            ),
-            key=str.encode,
-        )
-        for class_id in range(len(classes))
-    ]
+    class_index = {
+        cohort_class: class_id
+        for class_id, cohort_class in enumerate(classes)
+    }
     orbit_domains: dict[str, set[int]] = {}
-    for class_id, orbit_id in enumerate(class_orbit_ids):
-        orbit_domains.setdefault(orbit_id, set()).add(class_id)
+    required_orbit_ids = {
+        row["required_pool_orbit_id"]
+        for row in data["cohort_class_rules"]["constraints"]
+    }
+    for orbit_id in required_orbit_ids:
+        cohort_class = normalize_class(
+            tuple(
+                sum(
+                    1 << index
+                    for index, bit in enumerate(value)
+                    if bit == "1"
+                )
+                for value in orbit_id.split("/")
+            ),
+            width,
+        )
+        class_id = class_index[cohort_class]
+        orbit_domains[orbit_id] = {
+            action[class_id] for action in actions
+        }
     domains = [set(range(len(classes))) for _ in range(cohort_count)]
     for row in data["cohort_class_rules"]["constraints"]:
         domains[cohort_index[row["cohort_id"]]] = set(
@@ -243,16 +283,23 @@ def enumerate_normalized_designs(
         pair_neighbors[left].append((right, True, allowed))
         pair_neighbors[right].append((left, False, allowed))
 
-    triple_rules = []
     triples_by_cohort: list[
         list[tuple[tuple[int, ...], frozenset[str]]]
     ] = [[] for _ in range(cohort_count)]
     for row in data["cohort_triple_rules"]["constraints"]:
         cohorts = tuple(cohort_index[value] for value in row["cohorts"])
         allowed = frozenset(row["allowed_profiles"])
-        triple_rules.append((cohorts, allowed))
         for cohort in cohorts:
             triples_by_cohort[cohort].append((cohorts, allowed))
+
+    quadruples_by_cohort: list[
+        list[tuple[tuple[int, ...], frozenset[str]]]
+    ] = [[] for _ in range(cohort_count)]
+    for row in data["cohort_quadruple_rules"]["constraints"]:
+        cohorts = tuple(cohort_index[value] for value in row["cohorts"])
+        allowed = frozenset(row["allowed_profiles"])
+        for cohort in cohorts:
+            quadruples_by_cohort[cohort].append((cohorts, allowed))
 
     assignment = [-1] * cohort_count
     valid: set[Design] = set()
@@ -306,7 +353,31 @@ def enumerate_normalized_designs(
                                 else assignment[member]
                             ]
                             for member in cohorts
-                        )
+                        ),
+                        width,
+                    )
+                    in allowed
+                }
+        for cohorts, allowed in quadruples_by_cohort[cohort]:
+            others = [
+                assignment[other]
+                for other in cohorts
+                if other != cohort
+            ]
+            if all(class_id >= 0 for class_id in others):
+                candidates = {
+                    candidate
+                    for candidate in candidates
+                    if quadruple_union_xor_profile(
+                        tuple(
+                            classes[
+                                candidate
+                                if member == cohort
+                                else assignment[member]
+                            ]
+                            for member in cohorts
+                        ),
+                        width,
                     )
                     in allowed
                 }
@@ -394,12 +465,30 @@ def main() -> None:
         cohort_class: index
         for index, cohort_class in enumerate(classes)
     }
+    masks = {
+        mask for cohort_class in classes for mask in cohort_class
+    }
+    mask_keys = {
+        mask: signature(mask, width) for mask in masks
+    }
     actions = []
     for operation in pool_group:
+        mask_images = {
+            mask: permute_mask(mask, operation, width)
+            for mask in masks
+        }
         actions.append(
             tuple(
                 class_index[
-                    permute_class(cohort_class, operation, width)
+                    tuple(
+                        sorted(
+                            (
+                                mask_images[mask]
+                                for mask in cohort_class
+                            ),
+                            key=mask_keys.__getitem__,
+                        )
+                    )
                 ]
                 for cohort_class in classes
             )
