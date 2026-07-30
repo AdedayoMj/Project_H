@@ -26,4 +26,4 @@ harbor run -p . --agent nop      # reward < 1.0
 
 ## Notes
 
-The input is a deterministic synthetic laboratory-design instance. It contains 121,500 admissible balanced three-sample cohort partitions and ten ordered cohorts. Cross-witness pair decoys make local profiles deliberately non-identifying, while overlapping ternary, fourth-order, and deletion-rank invariants enforce global compatibility. Independent within-cohort `S₃` sample actions are quotiented first, followed by the residual 72-element synchronized-hexagon and three-plate action.
+The input is a deterministic synthetic laboratory-design instance. It contains 121,500 admissible balanced three-sample cohort partitions and ten ordered cohorts. Fully mixed cross-witness pair, ternary, and fourth-order decoys make local profiles deliberately non-identifying, while overlapping deletion-rank invariants enforce global compatibility. Independent within-cohort `S₃` sample actions are quotiented first, followed by the residual 72-element synchronized-hexagon and three-plate action.

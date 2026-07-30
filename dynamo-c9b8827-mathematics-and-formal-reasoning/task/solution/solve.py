@@ -237,16 +237,12 @@ def loss_rank_profile(
     )
     sections = []
     for loss_count in range(maximum_losses + 1):
-        histogram = Counter(
-            gf2_rank(
-                tuple(
-                    mask
-                    & ~sum(1 << pool for pool in deleted)
-                    for mask in rows
-                )
-            )
-            for deleted in combinations(range(width), loss_count)
-        )
+        histogram: Counter[int] = Counter()
+        for deleted in combinations(range(width), loss_count):
+            removed = sum(1 << pool for pool in deleted)
+            histogram[
+                gf2_rank(tuple(mask & ~removed for mask in rows))
+            ] += 1
         sections.append(
             f"{loss_count}:"
             + ",".join(
@@ -313,10 +309,38 @@ def enumerate_normalized_designs(
             action[class_id] for action in actions
         }
     domains = [set(range(len(classes))) for _ in range(cohort_count)]
+    orbit_representatives: dict[int, int] = {}
     for row in data["cohort_class_rules"]["constraints"]:
-        domains[cohort_index[row["cohort_id"]]] = set(
+        cohort = cohort_index[row["cohort_id"]]
+        domains[cohort] = set(
             orbit_domains[row["required_pool_orbit_id"]]
         )
+        orbit_representatives[cohort] = class_index[
+            normalize_class(
+                tuple(
+                    sum(
+                        1 << index
+                        for index, bit in enumerate(value)
+                        if bit == "1"
+                    )
+                    for value in row[
+                        "required_pool_orbit_id"
+                    ].split("/")
+                ),
+                width,
+            )
+        ]
+
+    # A regular cohort orbit is an exact transversal for the residual pool
+    # action: every design orbit has one and only one image whose anchor is the
+    # disclosed orbit representative. Search that slice, then restore all
+    # normalized pool images for the required pre-quotient count.
+    anchor = next(
+        cohort
+        for cohort in range(cohort_count)
+        if len(domains[cohort]) == len(actions)
+    )
+    domains[anchor] = {orbit_representatives[anchor]}
 
     pair_neighbors: list[list[tuple[int, bool, frozenset[str]]]] = [
         [] for _ in range(cohort_count)
@@ -488,7 +512,11 @@ def enumerate_normalized_designs(
             assignment[cohort] = -1
 
     search(set(range(cohort_count)), set())
-    return valid
+    return {
+        tuple(action[class_id] for class_id in design)
+        for design in valid
+        for action in actions
+    }
 
 
 def encode_design(

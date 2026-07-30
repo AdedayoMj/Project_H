@@ -13,8 +13,8 @@ from pathlib import Path
 APP_ROOT = Path(os.environ.get("POOLING_APP_ROOT", "/app"))
 INPUT = APP_ROOT / "input" / "pooling.json"
 OUTPUT = APP_ROOT / "output.json"
-EXPECTED_INPUT_SHA256 = "4cd1c6c502faab6c2af02c14e0c04f3001a17195b183dfa38f8458f0b0eb0a20"
-EXPECTED_OUTPUT_SHA256 = "e255df8f5238004f13c6346e20a902b390e47cafc5949371395c7378de35b411"
+EXPECTED_INPUT_SHA256 = "39c04170676f9d6488666072ff4d7be07c360c65cc1aac4fa9ebb868484a3ddb"
+EXPECTED_OUTPUT_SHA256 = "54a54d608b467ab9d102d47cf25467c1ee90171c1d5fc811244433d8c9e4a57b"
 
 Permutation = tuple[int, ...]
 CohortClass = tuple[int, ...]
@@ -486,10 +486,25 @@ def enumerate_valid_designs() -> frozenset[Design]:
             action[class_id] for action in context["actions"]
         }
     domains = [set(range(len(classes))) for _ in range(cohort_count)]
+    orbit_representatives: dict[int, int] = {}
     for rule in data["cohort_class_rules"]["constraints"]:
-        domains[cohort_index[rule["cohort_id"]]] = set(
+        cohort = cohort_index[rule["cohort_id"]]
+        domains[cohort] = set(
             orbit_domains[rule["required_pool_orbit_id"]]
         )
+        orbit_representatives[cohort] = context["class_index"][
+            tuple(
+                mask_from_string(value)
+                for value in rule["required_pool_orbit_id"].split("/")
+            )
+        ]
+
+    anchor = next(
+        cohort
+        for cohort in range(cohort_count)
+        if len(domains[cohort]) == len(context["actions"])
+    )
+    domains[anchor] = {orbit_representatives[anchor]}
 
     neighbors: list[list[tuple[int, bool, frozenset[str]]]] = [
         [] for _ in range(cohort_count)
@@ -620,8 +635,8 @@ def enumerate_valid_designs() -> frozenset[Design]:
     def visit(unassigned: set[int], used: set[int]) -> None:
         if not unassigned:
             design = tuple(assignment)
-            assert valid_design(design)
-            completed.add(design)
+            if valid_design(design):
+                completed.add(design)
             return
         candidates_by_size = [
             (len(candidate_domain(cohort, used)), cohort)
@@ -634,7 +649,11 @@ def enumerate_valid_designs() -> frozenset[Design]:
             assignment[cohort] = -1
 
     visit(set(range(cohort_count)), set())
-    return frozenset(completed)
+    return frozenset(
+        tuple(action[class_id] for class_id in design)
+        for design in completed
+        for action in context["actions"]
+    )
 
 
 @lru_cache(maxsize=1)

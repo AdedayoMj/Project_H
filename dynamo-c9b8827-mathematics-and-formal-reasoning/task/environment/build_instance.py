@@ -31,12 +31,13 @@ COHORTS = [
     ("ENDO", "endocrinology-panel blinded aliquots"),
 ]
 
-# Ten non-equivalent planted witnesses generate broad local profile domains. The
-# first three also generate the higher-order global restrictions. No witness is
-# copied into the agent environment: the public JSON contains only derived
-# invariant values, and both oracle and verifier enumerate independently.
-ACCEPTED_WITNESS_COUNT = 3
-PAIR_DECOY_OFFSETS = (0, 1)
+# Ten non-equivalent planted witnesses generate broad local profile domains,
+# while deliberately mixed cross-witness tuples add locally plausible decoys.
+# No witness is copied into the agent environment: the public JSON contains only
+# derived invariant values, and both oracle and verifier enumerate independently.
+PAIR_DECOY_OFFSETS = tuple(range(10))
+TRIPLE_DECOY_OFFSETS = (0, 1, 2)
+QUADRUPLE_DECOY_OFFSETS = (0, 1)
 WITNESS_SIGNATURES = [
     [
         ["001100100100110000", "010001001001001100", "100010010010000011"],
@@ -358,16 +359,12 @@ def loss_rank_profile(
     rows = [mask for cohort_class in classes for mask in cohort_class]
     sections = []
     for loss_count in range(maximum_losses + 1):
-        histogram = Counter(
-            gf2_rank(
-                [
-                    mask
-                    & ~sum(1 << pool for pool in deleted)
-                    for mask in rows
-                ]
-            )
-            for deleted in combinations(range(WIDTH), loss_count)
-        )
+        histogram: Counter[int] = Counter()
+        for deleted in combinations(range(WIDTH), loss_count):
+            removed = sum(1 << pool for pool in deleted)
+            histogram[
+                gf2_rank([mask & ~removed for mask in rows])
+            ] += 1
         sections.append(
             f"{loss_count}:"
             + ",".join(
@@ -427,8 +424,7 @@ def build(root: Path) -> None:
         ]
         for witness in WITNESS_SIGNATURES
     ]
-    assert len(witnesses) > ACCEPTED_WITNESS_COUNT >= 2
-    accepted_witnesses = witnesses[:ACCEPTED_WITNESS_COUNT]
+    assert len(witnesses) == 10
     for witness in witnesses:
         assert all(
             len(cohort) == 3
@@ -520,9 +516,19 @@ def build(root: Path) -> None:
     for triple_indices in triple_index_sets:
         triple_profiles = {
             triple_xor_profile(
-                [witness[index] for index in triple_indices]
+                [
+                    witnesses[
+                        (witness_index + offset) % len(witnesses)
+                    ][index]
+                    for index, offset in zip(
+                        triple_indices,
+                        (0, second_offset, third_offset),
+                    )
+                ]
             )
-            for witness in accepted_witnesses
+            for witness_index in range(len(witnesses))
+            for second_offset in TRIPLE_DECOY_OFFSETS
+            for third_offset in TRIPLE_DECOY_OFFSETS
         }
         triple_constraints.append(
             {
@@ -545,9 +551,20 @@ def build(root: Path) -> None:
     for quadruple_indices in quadruple_index_sets:
         quadruple_profiles = {
             quadruple_union_xor_profile(
-                [witness[index] for index in quadruple_indices]
+                [
+                    witnesses[
+                        (witness_index + offset) % len(witnesses)
+                    ][index]
+                    for index, offset in zip(
+                        quadruple_indices,
+                        (0, second_offset, third_offset, fourth_offset),
+                    )
+                ]
             )
-            for witness in accepted_witnesses
+            for witness_index in range(len(witnesses))
+            for second_offset in QUADRUPLE_DECOY_OFFSETS
+            for third_offset in QUADRUPLE_DECOY_OFFSETS
+            for fourth_offset in QUADRUPLE_DECOY_OFFSETS
         }
         quadruple_constraints.append(
             {
@@ -573,7 +590,7 @@ def build(root: Path) -> None:
                 [witness[index] for index in rank_indices],
                 maximum_losses=2,
             )
-            for witness in accepted_witnesses
+            for witness in witnesses
         }
         loss_rank_constraints.append(
             {
@@ -586,7 +603,7 @@ def build(root: Path) -> None:
         )
 
     instance = {
-        "format_version": 5,
+        "format_version": 6,
         "provenance": {
             "kind": "synthetic",
             "description": (
