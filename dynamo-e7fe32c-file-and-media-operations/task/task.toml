@@ -1,0 +1,38 @@
+artifacts = [
+  "/app/output/recovered.ttf",
+  "/app/output/sources.zip",
+  "/app/output/manifest.json",
+  "/app/output/proof.png",
+  "/app/output/specimen.pdf",
+]
+
+[task]
+name = "dynamo/variable-font-revival"
+description = "Reconstruct an editable three-axis OpenType variable font from damaged specimen scans."
+
+[metadata]
+category = "File and Media Operations"
+subcategory = "Image and design processing"
+model_tested = "Opus-4.8"
+agent_tested = "Terminus-2"
+task_objective = ["recover_or_repair_artifact", "transform", "build_or_package"]
+artifact_type = ["media_artifact", "archive_or_compressed_artifact", "generated_output_artifact"]
+expert_time_estimate_hours = 64.0
+difficulty_explanation = "A senior type designer, font engineer, and computational-imaging specialist must jointly reverse a deterministic synthetic family from 42 realistically damaged specimen scans. Each page has projective deformation, blur, ink gain, bleed-through, stains, tears, occlusions, sensor noise, six high-confidence fiducial outliers, and an unreliable axis label. The solver must recover 48 discrete glyph programs across seven compatible masters, infer three nonlinearly mapped variation axes, robustly estimate kerning and anchors from contaminated measurements, recover substitutions, and author mutually consistent TTF, UFO/Designspace, PNG, JSON, and live-font PDF artifacts. Tracing static scans, trusting labels, fitting masters independently, baking scan gain into outlines, omitting source topology, or approximating GSUB/GPOS visually can look convincing at observed samples while failing unseen design-space coordinates."
+solution_explanation = "Decode each scan's three-channel calibration patch by robust statistics and classify it to a disclosed capture location. Fit image-to-page homographies with outlier rejection, rectify the pages, sample the known cell centres, and fuse redundant observations to recover each glyph's binary program. Robustly recover the candidate pair values and anchor parameters from the measurement probes and elect the ligature outputs by consensus. Instantiate the disclosed compatible rounded-cell geometry at the default and six axis-extreme masters; build valid master fonts with identical point topology and recovered feature data; merge them through the mapped Designspace into a glyf/gvar variable TTF. Emit equivalent UFO sources, the exact audit manifest, the normative multi-instance proof, and a one-page PDF containing the proof plus embedded-font live text."
+verification_explanation = "The verifier fingerprints every input and checks the exact five-file output set. It validates the manifest schemas and hidden glyph digests, measures every submitted homography against all 24 disclosed fiducials, requires at least the 18 genuine correspondences within 0.65 pixel, and checks recovered axis coordinates within 1.0 weight unit, 0.15 width unit, and 0.15 optical-size unit; these bands exceed the median residual of the disclosed low-noise calibration samples while excluding neighbouring capture locations and label guesses. FontTools structural checks require the exact cmap, repertoire, naming, axes, avar/fvar/gvar variation and functional GSUB/GPOS/GDEF tables while rejecting bitmap, colour, and SVG fallbacks. HarfBuzz compares hidden strings for exact glyph sequences and allows two design units in advances/kerning and three in mark offsets, covering robust-probe rounding but not an adjacent plausible metric. FreeType distributes every nonblank glyph across four withheld three-axis coordinates: IoU >=0.997 limits cumulative silhouette disagreement and the 0.004 em symmetric boundary band equals 2.05 pixels at the 512-pixel test em, admitting one-unit outline serialization and antialias quantization while the paired IoU rejects coherent shifts, missing cells, scan-gain traces, and static-instance fonts. The ZIP verifier rejects unsafe entries, parses all seven UFOs and the Designspace, and checks compatible rounded-cell topology, widths, kerning, anchors, and source coordinates within one design unit. The submitted proof must equal a pinned normative rerender from the submitted font; against the hidden font, median absolute RGB <=0.35 and p99 <=3 admit sparse edge changes from the permitted unit-scale outline/metric variation but reject a wrong glyph or axis model. Finally, the PDF must be one-page, unencrypted, correctly sized and titled, contain every live string and an embedded recovered-family font, and rasterize with mean absolute RGB <=1.0, which covers lossless image embedding and renderer rounding without admitting a visually different proof."
+
+[verifier]
+timeout_sec = 300.0
+
+[agent]
+timeout_sec = 3600.0
+
+[environment]
+build_timeout_sec = 900.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 10240
+gpus = 0
+allow_internet = true
+mcp_servers = []
