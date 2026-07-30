@@ -62,12 +62,18 @@ def path_key(value: str) -> bytes:
     return value.encode("utf-8")
 
 
-def decode_text(data: bytes, media: str) -> str:
-    # The protocol treats either leading BOM as a media signature, not text.
+def decode_text(data: bytes, media: str, bom_rules: dict) -> str:
+    if media in bom_rules:
+        rule = bom_rules[media]
+        prefix = bytes.fromhex(rule["hex_prefix"])
+        remove_bytes = rule["remove_bytes"]
+        if remove_bytes != len(prefix) or not data.startswith(prefix):
+            raise ValueError(f"{media} is missing its declared BOM signature")
+        data = data[remove_bytes:]
     if media == "utf16le_text":
-        return data[2:].decode("utf-16le")
+        return data.decode("utf-16le")
     if media == "utf8_text":
-        return data[3:].decode("utf-8")
+        return data.decode("utf-8")
     try:
         return data.decode("utf-8")
     except UnicodeDecodeError:
@@ -171,9 +177,9 @@ def _exif_fields(data: bytes) -> dict[int, str]:
     return values
 
 
-def extract_text(data: bytes, media: str) -> str:
+def extract_text(data: bytes, media: str, bom_rules: dict) -> str:
     if media in {"text", "utf8_text", "utf16le_text"}:
-        return decode_text(data, media)
+        return decode_text(data, media, bom_rules)
     if media == "pdf":
         chunks = re.findall(rb"stream\n(.*?)\nendstream", data, re.S)
         output = []
@@ -277,10 +283,13 @@ def contains_term(text: str, term: str) -> bool:
         start = at + 1
 
 
-def normalized_hash(item: Item) -> str:
+def normalized_hash(item: Item, bom_rules: dict) -> str:
     assert item.data is not None
     if item.media in {"text", "utf8_text", "utf16le_text"}:
-        value = unicodedata.normalize("NFC", decode_text(item.data, item.media))
+        value = unicodedata.normalize(
+            "NFC",
+            decode_text(item.data, item.media, bom_rules),
+        )
         value = value.replace("\r\n", "\n").replace("\r", "\n")
         value = "\n".join(line.rstrip(" \t") for line in value.split("\n"))
         payload = value.encode("utf-8")
@@ -315,6 +324,7 @@ def main() -> None:
     roster = json.loads((INPUT / "custodians.json").read_text())["custodians"]
     family_map = json.loads((INPUT / "families.json").read_text())["path_to_family"]
     technical_media = protocol["technical_exclusion_media_types"]
+    bom_rules = protocol["normalized_hash"]["bom_removal"]
     cust_by_prefix = {entry["path_prefix"]: (entry["custodian"], entry["rank"]) for entry in roster}
 
     def attributes(path: str) -> tuple[str, int, str]:
@@ -346,9 +356,32 @@ def main() -> None:
             )
         )
 
-    max_depth = protocol["archive"]["maximum_depth"]
-    entry_limit = protocol["archive"]["entry_uncompressed_limit_bytes"]
-    total_limit = protocol["archive"]["total_uncompressed_limit_bytes_per_container"]
+    archive_rules = protocol["archive"]
+    max_depth = archive_rules["maximum_depth"]
+    physical_zip_depth = archive_rules["physical_zip_depth"]
+    depth_increment = archive_rules["member_depth_increment"]
+    maximum_depth_inclusive = archive_rules["maximum_depth_inclusive"]
+    entry_limit = archive_rules["entry_uncompressed_limit_bytes"]
+    total_limit = archive_rules["total_uncompressed_limit_bytes_per_container"]
+
+    def exceeds_depth(depth: int) -> bool:
+        if maximum_depth_inclusive:
+            return depth > max_depth
+        return depth >= max_depth
+
+    def add_unexamined(path: str, size: int) -> Item:
+        custodian, rank, family = attributes(path)
+        item = Item(
+            path,
+            size,
+            custodian,
+            rank,
+            family,
+            media=technical_media["DEPTH_LIMIT"],
+            disposition="DEPTH_LIMIT",
+        )
+        items.append(item)
+        return item
 
     def add_atomic(
         path: str,
@@ -360,12 +393,8 @@ def main() -> None:
     ) -> Item:
         custodian, rank, family = attributes(path)
         item = Item(path, len(data), custodian, rank, family, data=data, physical=physical, inherited_date=inherited)
-        if archive_depth > max_depth:
-            item.media = technical_media["DEPTH_LIMIT"]
-            item.disposition = "DEPTH_LIMIT"
-            item.data = None
-            items.append(item)
-            return item
+        if exceeds_depth(archive_depth):
+            raise RuntimeError("archive depth must be checked before reading member bytes")
         item.media = classify(data)
         if item.media == "unsupported":
             item.media = technical_media["UNSUPPORTED_TYPE"]
@@ -381,10 +410,10 @@ def main() -> None:
             expand(item, data, archive_depth)
             item.data = None
             return item
-        text = extract_text(data, item.media)
+        text = extract_text(data, item.media, bom_rules)
         item.responsive = any(contains_term(text, term) for term in protocol["content"]["keywords"])
         item.privileged = any(contains_term(text, term) for term in protocol["content"]["privilege_terms"])
-        item.normalized_hash = normalized_hash(item)
+        item.normalized_hash = normalized_hash(item, bom_rules)
         item.data = None
         items.append(item)
         return item
@@ -396,20 +425,13 @@ def main() -> None:
             total = 0
             for entry in entries:
                 child_path = parent.path + "!" + entry.filename
-                custodian, rank, family = attributes(child_path)
+                child_depth = archive_depth + depth_increment
+                if exceeds_depth(child_depth):
+                    add_unexamined(child_path, entry.file_size)
+                    continue
                 total += entry.file_size
                 if entry.file_size > entry_limit or total > total_limit:
-                    items.append(
-                        Item(
-                            child_path,
-                            entry.file_size,
-                            custodian,
-                            rank,
-                            family,
-                            media=technical_media["DEPTH_LIMIT"],
-                            disposition="DEPTH_LIMIT",
-                        )
-                    )
+                    add_unexamined(child_path, entry.file_size)
                     continue
                 child_data = zf.read(entry)
                 add_atomic(
@@ -417,7 +439,7 @@ def main() -> None:
                     child_data,
                     physical=None,
                     inherited=parent.effective,
-                    archive_depth=archive_depth + 1,
+                    archive_depth=child_depth,
                 )
 
     for rel, full, info in regular:
@@ -453,7 +475,13 @@ def main() -> None:
                 continue
             fh.seek(0)
             data = fh.read()
-        add_atomic(rel, data, physical=full, inherited=None, archive_depth=0)
+        add_atomic(
+            rel,
+            data,
+            physical=full,
+            inherited=None,
+            archive_depth=physical_zip_depth,
+        )
 
     family_triggers: dict[str, list[str]] = defaultdict(list)
     for item in items:

@@ -18,7 +18,7 @@ EXPECTED_CORPUS_SHA256 = "dabe819b514f92f96b64dd07fa416dcb753d02f7a4da0800224c22
 EXPECTED_INPUT_SHA256 = {
     "custodians.json": "4a3e52bc97c76c334021c37ca52e99d72971cff6ed7f618fabafd88ac3080468",
     "families.json": "ca423b604d3a0743615ff911ccd8abf5c00b5a63c31b04ee4dd700fda7decc8e",
-    "protocol.json": "9e05ce086a227977bce2ef93caa41792fedbb938cc7dddf15ff81b1c93c2eb0f",
+    "protocol.json": "b198ec7f80f18df7a0356f5e7ba649aa9adfa770543f222b5994821e21fd7f4b",
 }
 DISPOSITIONS = {
     "SYMLINK", "HARDLINK_ALIAS", "DEPTH_LIMIT", "UNSUPPORTED_TYPE", "CONTAINER",
@@ -79,6 +79,26 @@ def test_source_collection_and_protocol_are_unchanged():
     actual_input = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in INPUT.iterdir() if path.is_file()}
     assert actual_input == EXPECTED_INPUT_SHA256
     assert corpus_digest() == EXPECTED_CORPUS_SHA256
+
+
+def test_protocol_exposes_bom_and_archive_boundary_semantics():
+    """The agent-visible protocol fixes BOM byte counts and pre-read inclusive archive-depth arithmetic."""
+    protocol = json.loads((INPUT / "protocol.json").read_text())
+    archive = protocol["archive"]
+    assert archive["physical_zip_depth"] == 0
+    assert archive["member_depth_increment"] == 1
+    assert archive["maximum_depth_inclusive"] is True
+    assert "before reading" in archive["depth_boundary"]
+    assert "member_depth<=maximum_depth" in archive["depth_boundary"]
+    assert protocol["normalized_hash"]["bom_removal"] == {
+        "utf8_text": {"hex_prefix": "efbbbf", "remove_bytes": 3},
+        "utf16le_text": {"hex_prefix": "fffe", "remove_bytes": 2},
+        "rule": (
+            "remove exactly one leading classification signature before both "
+            "text extraction and normalized hashing; do not remove any "
+            "subsequent decoded U+FEFF character"
+        ),
+    }
 
 
 def test_top_level_and_record_schemas_are_exact():

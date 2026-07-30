@@ -29,8 +29,11 @@ PROTOCOL = {
     "archive": {
         "designated_media_type": "zip",
         "maximum_depth": 3,
+        "physical_zip_depth": 0,
+        "member_depth_increment": 1,
+        "maximum_depth_inclusive": True,
         "depth_definition": "a physical corpus ZIP is depth 0; each non-directory member has its containing ZIP's depth plus 1, so a physical ZIP's direct members are depth 1",
-        "depth_boundary": "examine members whose depth is at most maximum_depth; inventory a member above maximum_depth as DEPTH_LIMIT with media type unexamined and do not read or expand it",
+        "depth_boundary": "before reading a member, compute member_depth=containing_zip_depth+member_depth_increment; examine it exactly when member_depth<=maximum_depth, and otherwise inventory it from ZIP metadata as DEPTH_LIMIT with media type unexamined without reading, classifying, hashing, decoding, or expanding its bytes",
         "ooxml_is_atomic": True,
         "entry_uncompressed_limit_bytes": 16777216,
         "total_uncompressed_limit_bytes_per_container": 67108864,
@@ -78,7 +81,12 @@ PROTOCOL = {
     "normalized_hash": {
         "algorithm": "sha256 lowercase hex",
         "text_media_types": ["text", "utf8_text", "utf16le_text"],
-        "text_rule": "decode according to media type after removing the UTF-8 or UTF-16LE signature BOM, NFC-normalize, convert CRLF/CR to LF, strip trailing space and tab from every line, UTF-8 encode",
+        "bom_removal": {
+            "utf8_text": {"hex_prefix": "efbbbf", "remove_bytes": 3},
+            "utf16le_text": {"hex_prefix": "fffe", "remove_bytes": 2},
+            "rule": "remove exactly one leading classification signature before both text extraction and normalized hashing; do not remove any subsequent decoded U+FEFF character",
+        },
+        "text_rule": "decode according to media type after applying bom_removal, NFC-normalize, convert CRLF/CR to LF, strip trailing space and tab from every line, UTF-8 encode",
         "binary_rule": "hash exact bytes",
     },
     "families": {

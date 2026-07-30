@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 
+from ortools.sat.python import cp_model
+
 
 APP_ROOT = Path(os.environ.get("GEOM_APP_ROOT", "/app"))
 INPUT = APP_ROOT / "input" / "facility.json"
@@ -153,6 +155,7 @@ def main() -> None:
         boundary_vertices.extend(polygon)
         edges.extend((polygon[index], polygon[(index + 1) % len(polygon)]) for index in range(len(polygon)))
 
+    observer_rows = {row["observer_id"]: row for row in data["observers"]}
     observers = {
         row["observer_id"]: (
             tuple(row["position"]),
@@ -214,50 +217,220 @@ def main() -> None:
         (row["from"], row["to"]): row["cost"]
         for row in data["transitions"]
     }
-    # State value is the four-level objective followed by slab assignments.
-    states: dict[
-        str,
-        tuple[int, int, tuple[str, ...], tuple[Fraction, ...], tuple[str, ...]],
-    ] = {
-        observer_id: (0, 0, (observer_id,), (), (observer_id,))
-        for observer_id in availability[0]
-    }
-    for slab_index, choices in enumerate(availability[1:], start=1):
-        next_states: dict[
-            str,
-            tuple[int, int, tuple[str, ...], tuple[Fraction, ...], tuple[str, ...]],
-        ] = {}
-        for current in choices:
-            best = None
-            for previous, state in states.items():
-                cost, handoffs, sequence, handoff_times, assignments = state
-                if previous == current:
-                    candidate = (
-                        cost,
-                        handoffs,
-                        sequence,
-                        handoff_times,
-                        assignments + (current,),
-                    )
-                elif (previous, current) in transition_cost:
-                    candidate = (
-                        cost + transition_cost[(previous, current)],
-                        handoffs + 1,
-                        sequence + (current,),
-                        handoff_times + (critical[slab_index],),
-                        assignments + (current,),
-                    )
-                else:
+    observer_index = {observer_id: index for index, observer_id in enumerate(observer_ids)}
+    observer_count = len(observer_ids)
+    pair_choices: list[list[tuple[int, int, int, str, str]]] = []
+    for choices in availability:
+        pairs = []
+        for primary in choices:
+            if "primary" not in observer_rows[primary]["roles"]:
+                continue
+            for backup in choices:
+                if "backup" not in observer_rows[backup]["roles"]:
                     continue
-                if best is None or candidate[:4] < best[:4]:
-                    best = candidate
-            if best is not None:
-                next_states[current] = best
-        if not next_states:
-            raise RuntimeError("generated instance lacks transition-compatible coverage")
-        states = next_states
-    optimum = min(states.values(), key=lambda state: state[:4])
-    total_cost, handoffs, sequence, handoff_times, assignments = optimum
+                if primary == backup:
+                    continue
+                if (
+                    observer_rows[primary]["failure_domain"]
+                    == observer_rows[backup]["failure_domain"]
+                ):
+                    continue
+                primary_index = observer_index[primary]
+                backup_index = observer_index[backup]
+                code = primary_index * observer_count + backup_index
+                pairs.append((code, primary_index, backup_index, primary, backup))
+        pairs.sort(key=lambda row: (row[3], row[4]))
+        if not pairs:
+            raise RuntimeError("generated instance lacks separated pair coverage")
+        pair_choices.append(pairs)
+
+    model = cp_model.CpModel()
+    pair_states = [
+        model.NewIntVarFromDomain(
+            cp_model.Domain.FromValues([code for code, _, _, _, _ in choices]),
+            f"pair_{cell}",
+        )
+        for cell, choices in enumerate(pair_choices)
+    ]
+    primary_states = [
+        model.NewIntVarFromDomain(
+            cp_model.Domain.FromValues(sorted({primary for _, primary, _, _, _ in choices})),
+            f"primary_{cell}",
+        )
+        for cell, choices in enumerate(pair_choices)
+    ]
+    backup_states = [
+        model.NewIntVarFromDomain(
+            cp_model.Domain.FromValues(sorted({backup for _, _, backup, _, _ in choices})),
+            f"backup_{cell}",
+        )
+        for cell, choices in enumerate(pair_choices)
+    ]
+    selected: list[dict[int, cp_model.IntVar]] = []
+    for cell, choices in enumerate(pair_choices):
+        literals = {}
+        allowed_pairs = []
+        for code, primary_index, backup_index, primary, backup in choices:
+            literal = model.NewBoolVar(f"cell_{cell}__{primary}__{backup}")
+            model.Add(pair_states[cell] == code).OnlyEnforceIf(literal)
+            model.Add(pair_states[cell] != code).OnlyEnforceIf(literal.Not())
+            literals[code] = literal
+            allowed_pairs.append((primary_index, backup_index))
+        model.AddExactlyOne(literals.values())
+        model.AddAllowedAssignments(
+            [primary_states[cell], backup_states[cell]],
+            allowed_pairs,
+        )
+        model.Add(
+            pair_states[cell]
+            == primary_states[cell] * observer_count + backup_states[cell]
+        )
+        selected.append(literals)
+
+    membership: dict[str, list[cp_model.LinearExpr]] = {
+        observer_id: [] for observer_id in observer_ids
+    }
+    for cell, choices in enumerate(pair_choices):
+        by_observer = {observer_id: [] for observer_id in observer_ids}
+        for code, _, _, primary, backup in choices:
+            by_observer[primary].append(selected[cell][code])
+            by_observer[backup].append(selected[cell][code])
+        for observer_id in observer_ids:
+            membership[observer_id].append(sum(by_observer[observer_id]))
+
+    maximum_load = model.NewIntVar(0, len(availability), "maximum_observer_load")
+    for observer_id in observer_ids:
+        load = sum(membership[observer_id])
+        model.Add(maximum_load >= load)
+        limit = observer_rows[observer_id]["maximum_consecutive_cells"]
+        for start in range(0, len(availability) - limit):
+            model.Add(sum(membership[observer_id][start : start + limit + 1]) <= limit)
+
+    transition_cost_vars = []
+    handoff_event_vars = []
+    role_change_vars = []
+    for boundary in range(1, len(availability)):
+        role_costs = []
+        role_cost_bounds = []
+        role_changes_at_boundary = []
+        for role, previous_states, current_states in (
+            ("primary", primary_states, primary_states),
+            ("backup", backup_states, backup_states),
+        ):
+            previous_values = sorted(
+                {
+                    row[1 if role == "primary" else 2]
+                    for row in pair_choices[boundary - 1]
+                }
+            )
+            current_values = sorted(
+                {
+                    row[1 if role == "primary" else 2]
+                    for row in pair_choices[boundary]
+                }
+            )
+            allowed = []
+            for previous_index in previous_values:
+                previous = observer_ids[previous_index]
+                for current_index in current_values:
+                    current = observer_ids[current_index]
+                    if previous == current:
+                        allowed.append((previous_index, current_index, 0, 0))
+                    elif (previous, current) in transition_cost:
+                        allowed.append(
+                            (
+                                previous_index,
+                                current_index,
+                                transition_cost[(previous, current)],
+                                1,
+                            )
+                        )
+            if not allowed:
+                raise RuntimeError(
+                    f"generated instance lacks {role} transition-compatible coverage"
+                )
+            cost_bound = max(row[2] for row in allowed)
+            cost_var = model.NewIntVar(0, cost_bound, f"{role}_cost_{boundary}")
+            change_var = model.NewBoolVar(f"{role}_change_{boundary}")
+            model.AddAllowedAssignments(
+                [
+                    previous_states[boundary - 1],
+                    current_states[boundary],
+                    cost_var,
+                    change_var,
+                ],
+                allowed,
+            )
+            role_costs.append(cost_var)
+            role_cost_bounds.append(cost_bound)
+            role_changes_at_boundary.append(change_var)
+
+        cost_var = model.NewIntVar(
+            0,
+            sum(role_cost_bounds),
+            f"cost_{boundary}",
+        )
+        model.Add(cost_var == sum(role_costs))
+        event_var = model.NewBoolVar(f"event_{boundary}")
+        changes_var = model.NewIntVar(0, 2, f"role_changes_{boundary}")
+        model.AddMaxEquality(event_var, role_changes_at_boundary)
+        model.Add(changes_var == sum(role_changes_at_boundary))
+        transition_cost_vars.append(cost_var)
+        handoff_event_vars.append(event_var)
+        role_change_vars.append(changes_var)
+
+    total_cost = sum(transition_cost_vars)
+    handoff_events = sum(handoff_event_vars)
+    role_changes = sum(role_change_vars)
+    maximum_handoff_events = len(availability) - 1
+    maximum_role_changes = 2 * maximum_handoff_events
+    event_weight = maximum_role_changes + 1
+    load_weight = (maximum_handoff_events + 1) * event_weight
+    cost_weight = (len(availability) + 1) * load_weight
+    combined_objective = (
+        total_cost * cost_weight
+        + maximum_load * load_weight
+        + handoff_events * event_weight
+        + role_changes
+    )
+    solver = cp_model.CpSolver()
+    solver.parameters.num_search_workers = 4
+    solver.parameters.random_seed = 884576
+    model.Minimize(combined_objective)
+    validation_error = model.Validate()
+    if validation_error:
+        raise RuntimeError(f"invalid CP-SAT model: {validation_error}")
+    assert solver.Solve(model) == cp_model.OPTIMAL
+    objective_values = [
+        int(solver.Value(total_cost)),
+        int(solver.Value(maximum_load)),
+        int(solver.Value(handoff_events)),
+        int(solver.Value(role_changes)),
+    ]
+    for objective, optimum in zip(
+        (total_cost, maximum_load, handoff_events, role_changes),
+        objective_values,
+    ):
+        model.Add(objective == optimum)
+
+    for cell, state in enumerate(pair_states):
+        minimum_code = pair_choices[cell][0][0]
+        if solver.Value(state) == minimum_code:
+            model.Add(state == minimum_code)
+        else:
+            model.ClearHints()
+            for hinted_state in pair_states:
+                model.AddHint(hinted_state, solver.Value(hinted_state))
+            model.Minimize(state)
+            assert solver.Solve(model) == cp_model.OPTIMAL
+            model.Add(state == solver.Value(state))
+
+    code_to_pair = {
+        code: (primary, backup)
+        for choices in pair_choices
+        for code, _, _, primary, backup in choices
+    }
+    assignments = [code_to_pair[solver.Value(state)] for state in pair_states]
 
     schedule = []
     start_slab = 0
@@ -265,7 +438,8 @@ def main() -> None:
         if index == len(assignments) or assignments[index] != assignments[start_slab]:
             schedule.append(
                 {
-                    "observer": assignments[start_slab],
+                    "primary": assignments[start_slab][0],
+                    "backup": assignments[start_slab][1],
                     "start": rational(critical[start_slab]),
                     "end": rational(critical[index]),
                 }
@@ -284,10 +458,11 @@ def main() -> None:
         ],
         "schedule": schedule,
         "objective": {
-            "transition_cost": total_cost,
-            "handoffs": handoffs,
-            "observer_sequence": list(sequence),
-            "handoff_times": [rational(time) for time in handoff_times],
+            "maximum_observer_load": objective_values[1],
+            "transition_cost": objective_values[0],
+            "handoff_events": objective_values[2],
+            "role_changes": objective_values[3],
+            "cell_pair_sequence": [list(pair) for pair in assignments],
         },
     }
     OUTPUT.write_text(json.dumps(output, indent=2) + "\n")

@@ -2,7 +2,7 @@ artifacts = ["/app/output.json"]
 
 [task]
 name = "dynamo/kinetic-visibility-handoffs"
-description = "Derive exact continuous route visibility and the globally optimal legal observer schedule."
+description = "Derive exact route visibility and the globally optimal fault-tolerant observer-pair schedule."
 
 [metadata]
 category = "Mathematics and Formal Reasoning"
@@ -11,21 +11,21 @@ model_tested = "Opus-4.8"
 agent_tested = "Terminus-2"
 task_objective = ["optimize"]
 artifact_type = ["generated_output_artifact"]
-expert_time_estimate_hours = 28.0
-difficulty_explanation = "This synthetic but operationally realistic instance requires a computational-geometry or robotics engineer to reduce continuous visibility along a 23-segment route amid 168 closed boundary edges and 32 restricted observers to an exact minimal arrangement. Collinear walls, vertex grazing, included FOV boundaries, simultaneous events, and singleton visibility make floating-point sampling or interval-only representations wrong. The 76 resulting critical cells then couple to 219 directed, weighted compatibility transitions: an observer must cover each closed cell, both sides must see every handoff instant, and the schedule is optimized by cost, handoffs, a variable-length observer sequence, and finally its exact handoff-time vector. Geometry and optimization errors both yield plausible schedules, so neither half can be approximated independently."
-solution_explanation = "For each observer, intersect every route segment exactly with its FOV boundary lines and with lines through the observer and every polygon vertex. Evaluate visibility using rational orientation predicates at each candidate and one interior point per adjacent open cell, retaining only actual point/side changes. Union observer changes and remove globally irrelevant simultaneous events to obtain the exact minimal decomposition. For each closed cell, intersect its open-interval set with both endpoint sets. Run dynamic programming over these cell layers using allowed directed transitions, carrying total cost, handoff count, compressed observer sequence, and exact handoff-time vector as the ordered objective. Backtrack assignments, merge equal neighbors, and serialize all rational values canonically."
-verification_explanation = "The verifier confirms /app/input/facility.json is byte-identical, checks /app/output.json and every nested record against the documented schema, parses every rational into reduced canonical form, validates the complete ordered point/open partition and critical-time minimality, checks sorted observer sets, proves the submitted closed ranges cover the domain using only reported visibility, validates each directed handoff and recomputes its cost, reconciles the normalized sequence and exact handoff-time vector, checks all four objective components against a readable verifier-only reference, and compares the complete structure field by field while reporting the first differing section or array index."
+expert_time_estimate_hours = 40.0
+difficulty_explanation = "This synthetic but operationally realistic instance requires a computational-geometry or robotics engineer to reduce continuous visibility along a 23-segment route amid 168 closed boundary edges and 56 restricted observers to an exact minimal arrangement. Collinear walls, vertex grazing, included FOV boundaries, simultaneous events, and singleton visibility make floating-point sampling wrong. Scheduling is no longer an ordinary shortest path: every closed cell needs an ordered visible primary/backup pair from different failure domains, each observer obeys a sliding fatigue limit, and two directed transition streams interact with a global load-balancing objective. The five-level optimum fixes transition cost before peak load, pair-handoff events, role changes, and a full variable-domain cell-pair vector. Keeping only one best prefix per current pair is unsound because different fatigue/load histories have different futures; locally optimizing either role or each objective independently also fails."
+solution_explanation = "Construct every observer's exact visibility profile from route intersections with FOV boundary lines and observer-vertex lines, evaluate rational point and open-cell predicates, and retain only genuine global changes. Intersect each open set with both endpoint sets to obtain closed-cell availability. Enumerate ordered visible pairs with distinct failure domains. A CP-SAT model chooses one pair per cell, applies sliding-window fatigue constraints, tabulates legal/costed transitions for both roles, and bounds every observer load by a shared maximum. Encode the first four bounded priorities into one dominance-weighted integer whose coefficients make lower levels incapable of offsetting one unit at a higher level. Fix those optima, then minimize each chronological pair code with the proven prefix fixed to obtain the unique fifth-level vector. Merge adjacent equal pairs for the schedule and serialize exact rationals."
+verification_explanation = "The verifier pins the generated facility bytes, validates the exact schema and canonical rational partition, checks every point/open visibility set against the readable verifier-only reference, and proves the submitted paired ranges cover the domain. It independently checks both observers' closed-range visibility, distinct failure domains, every changed role's directed transition and cost, maximal merging, closed-cell loads, all sliding fatigue windows, handoff-event and role-change totals, and the full cell-pair sequence. Each of the five objective components is compared to the readable expected fixture, followed by a localized field-by-field comparison of the complete artifact."
 
 [verifier]
 timeout_sec = 180.0
 
 [agent]
-timeout_sec = 3600.0
+timeout_sec = 7200.0
 
 [environment]
 build_timeout_sec = 600.0
-cpus = 2
-memory_mb = 4096
+cpus = 4
+memory_mb = 6144
 storage_mb = 10240
 gpus = 0
 allow_internet = true

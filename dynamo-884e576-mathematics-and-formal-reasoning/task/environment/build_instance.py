@@ -101,6 +101,26 @@ def build(root: Path) -> None:
                 "observer_id": f"O{index:02d}",
                 "position": position,
                 "fov_halfplanes": halfplanes,
+                "roles": ["primary"],
+                "failure_domain": f"GRID-{index % 7}",
+                "maximum_consecutive_cells": 6 + index % 4,
+            }
+        )
+
+    # Every route observer has an independently powered, geometrically
+    # co-located replica.  The identical visibility profile guarantees
+    # two-observer coverage at the narrow route ends, while different fatigue
+    # limits, failure domains, and transition arcs prevent a trivial pairing.
+    route_observers = list(observers)
+    for index, original in enumerate(route_observers):
+        observers.append(
+            {
+                "observer_id": f"R{index:02d}",
+                "position": original["position"],
+                "fov_halfplanes": original["fov_halfplanes"],
+                "roles": ["backup"],
+                "failure_domain": f"GRID-{(index * 3 + 5) % 7}",
+                "maximum_consecutive_cells": 7 + (index * 5) % 4,
             }
         )
 
@@ -118,6 +138,9 @@ def build(root: Path) -> None:
                 "observer_id": f"AUX{index:02d}",
                 "position": position,
                 "fov_halfplanes": [{"a": left[0], "b": left[1]}, {"a": right[0], "b": right[1]}],
+                "roles": ["primary"] if index % 2 == 0 else ["backup"],
+                "failure_domain": f"GRID-{(index * 2 + 3) % 7}",
+                "maximum_consecutive_cells": 5 + index % 4,
             }
         )
 
@@ -131,6 +154,8 @@ def build(root: Path) -> None:
     for index in range(len(route) - 1):
         add(f"O{index:02d}", f"O{index + 1:02d}", 1 + (index * 7) % 11)
         add(f"O{index + 1:02d}", f"O{index:02d}", 2 + (index * 5) % 13)
+        add(f"R{index:02d}", f"R{index + 1:02d}", 2 + (index * 11) % 13)
+        add(f"R{index + 1:02d}", f"R{index:02d}", 3 + (index * 7) % 11)
     for i in range(len(route)):
         for jump in (2, 3, 5):
             j = i + jump
@@ -140,6 +165,15 @@ def build(root: Path) -> None:
                     add(f"O{i:02d}", f"O{j:02d}", 3 + token[1] % 15)
                 if token[2] % 4 == 0:
                     add(f"O{j:02d}", f"O{i:02d}", 4 + token[3] % 17)
+                if token[4] % 3:
+                    add(f"R{i:02d}", f"R{j:02d}", 4 + token[5] % 16)
+                if token[6] % 4 == 0:
+                    add(f"R{j:02d}", f"R{i:02d}", 5 + token[7] % 18)
+        for offset in (-2, -1, 0, 1, 2):
+            j = i + offset
+            if 0 <= j < len(route):
+                add(f"O{i:02d}", f"R{j:02d}", 2 + (i * 7 + j * 3) % 15)
+                add(f"R{i:02d}", f"O{j:02d}", 3 + (i * 5 + j * 11) % 14)
     for aux in range(8):
         anchor = 1 + aux * 3
         aid = f"AUX{aux:02d}"
@@ -147,8 +181,11 @@ def build(root: Path) -> None:
             route_index = anchor + offset
             if 0 <= route_index < len(route):
                 oid = f"O{route_index:02d}"
+                rid = f"R{route_index:02d}"
                 add(oid, aid, 2 + (aux * 3 + route_index) % 12)
                 add(aid, oid, 1 + (aux * 5 + route_index) % 14)
+                add(rid, aid, 3 + (aux * 7 + route_index) % 11)
+                add(aid, rid, 2 + (aux * 11 + route_index) % 13)
         if aux + 1 < 8:
             add(aid, f"AUX{aux + 1:02d}", 2 + (aux * 7) % 9)
             add(f"AUX{aux + 1:02d}", aid, 3 + (aux * 5) % 10)
@@ -182,17 +219,23 @@ def build(root: Path) -> None:
             "event_visibility": "visibility at each critical time itself",
         },
         "schedule_rules": {
-            "segments": "non-empty closed ranges whose union is the route domain and whose interiors do not overlap",
+            "segments": "non-empty closed ranges labelled by an ordered (primary,backup) pair; their union is the route domain and interiors do not overlap",
             "handoff_times": "critical times only",
-            "visibility": "the assigned observer must be visible at every point of its closed range",
-            "handoff": "adjacent ranges meet at one time; both observers must be visible there; a changed observer requires the directed transition",
-            "same_observer": "adjacent equal assignments must be merged and incur no transition",
-            "handoff_time_vector": "the handoff times in chronological schedule order; compare equal-length vectors lexicographically by exact rational value",
+            "closed_cells": "cell j is the closed range from critical_times[j] through critical_times[j+1]",
+            "visibility": "both assigned observers must be visible at every point of every closed cell they cover",
+            "separation": "primary and backup must have different observer IDs and different failure_domain values",
+            "role_eligibility": "an observer may serve only a role listed in its roles array",
+            "handoff": "adjacent ranges meet at one critical time; each changed role separately requires its directed transition and pays that cost",
+            "same_pair": "adjacent equal ordered pairs must be merged",
+            "observer_load": "the number of closed cells on which the observer serves in either role",
+            "fatigue": "in every window of maximum_consecutive_cells+1 closed cells, an observer must be absent from at least one cell",
+            "cell_pair_sequence": "one [primary,backup] pair per closed cell; compare sequences lexicographically by primary ID then backup ID at the first differing cell",
             "objective": [
-                "minimum total directed transition cost",
-                "minimum number of handoffs",
-                "lexicographically smallest compressed observer_id sequence",
-                "lexicographically smallest handoff-time vector",
+                "minimum total directed transition cost across both roles",
+                "minimum maximum observer_load",
+                "minimum number of pair-handoff events",
+                "minimum number of individual role changes",
+                "lexicographically smallest cell_pair_sequence",
             ],
         },
         "outer_boundary": outer,
