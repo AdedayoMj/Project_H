@@ -9,12 +9,11 @@ Pipeline per trip:
   2. Per-diem reconstructed day-by-day, then REDUCED per day by the reimbursed
      meals dated that day (anti-double-dip), floored at zero.
   3. Approval disposition (per-line threshold + running category-aggregate).
-  4. Trip-budget optimization: if per-diem + all reimbursable line amounts
-     exceeds the trip cap, defer a subset of lines satisfying overlapping
-     weighted portfolios and bounded conditional commitments. Maximize,
-     lexicographically, retained priority weight, realized threshold-coverage
-     bonus points, retained amount, then the line-id-lexicographic retention
-     vector (a total order -> unique).
+  4. Robust trip-budget optimization: choose a primary retained set and, for
+     each disclosed post-close rejection scenario, a limited recovery from the
+     primary-deferred claims. Every primary/recovery set obeys the cap,
+     portfolios, commitments, and coverage rules. Seven objective levels and
+     a primary-then-recovery canonical walk make the joint solution unique.
 All money is integer home-currency cents.
 """
 from __future__ import annotations
@@ -137,14 +136,11 @@ def solve_budget_knapsack(
     retention_portfolios,
     retention_commitments,
     retention_coverage_bonuses,
+    retention_recovery_scenarios,
+    retention_recovery_reserve,
     tie_break,
 ):
-    """reimb_lines: list of dicts {line_id, date, amount, weight}. Choose a
-    RETAINED subset maximizing (sum weight, then sum amount, then line-id
-    lexicographic retention) s.t. per_diem_total + sum retained amount <= cap.
-    The retained subset must also satisfy every weighted portfolio and bounded
-    conditional commitment. Returns (DEFERRED line_ids, realized coverage
-    bonus points); constraints do not activate when everything fits."""
+    """Jointly optimize the primary closeout and every rejection recovery."""
     budget = cap - per_diem_total
 
     def coverage_score(retained):
@@ -154,15 +150,15 @@ def solve_budget_knapsack(
             if len(retained.intersection(rule["line_ids"])) >= rule["minimum_retained"]
         )
 
-    if sum(l["amount"] for l in reimb_lines) <= budget:
-        retained = {line["line_id"] for line in reimb_lines}
-        return set(), coverage_score(retained)
-    # policy fixes the tie-break walk order, so the lexicographic step is well-defined
     sort_keys = tuple(tie_break["sort_keys"])
     order = sorted(
         reimb_lines,
         key=lambda l: tuple(l[k] for k in sort_keys),
         reverse=tie_break["direction"] == "descending",
+    )
+    scenarios = sorted(
+        retention_recovery_scenarios,
+        key=lambda scenario: scenario["scenario_id"],
     )
     known_line_ids = {line["line_id"] for line in order}
     referenced_line_ids = {
@@ -180,80 +176,249 @@ def solve_budget_knapsack(
         for rule in retention_coverage_bonuses
         for line_id in rule["line_ids"]
     )
+    referenced_line_ids.update(
+        line_id
+        for scenario in scenarios
+        for line_id in scenario["unavailable_line_ids"]
+    )
     assert referenced_line_ids <= known_line_ids, (
         "retention rules may reference only surviving reimbursable lines"
     )
+    assert len({scenario["scenario_id"] for scenario in scenarios}) == len(scenarios)
+    line_by_id = {line["line_id"]: line for line in order}
+    max_weight = sum(line["weight"] for line in order)
+    max_bonus = sum(rule["bonus_points"] for rule in retention_coverage_bonuses)
+    max_amount = sum(line["amount"] for line in order)
 
-    def solve(fix_weight=None, fix_bonus=None, fix_amount=None, forced=None):
-        m = cp_model.CpModel()
-        x = {l["line_id"]: m.NewBoolVar(l["line_id"]) for l in order}  # 1 = retained
-        m.Add(sum(x[l["line_id"]] * l["amount"] for l in order) <= budget)
-        W = sum(x[l["line_id"]] * l["weight"] for l in order)
-        A = sum(x[l["line_id"]] * l["amount"] for l in order)
-        bonus_vars = {}
-        for rule in retention_coverage_bonuses:
-            met = m.NewBoolVar(rule["bonus_id"])
-            count = sum(x[line_id] for line_id in rule["line_ids"])
-            m.Add(count >= rule["minimum_retained"]).OnlyEnforceIf(met)
-            m.Add(count <= rule["minimum_retained"] - 1).OnlyEnforceIf(met.Not())
-            bonus_vars[rule["bonus_id"]] = met
-        B = sum(
-            rule["bonus_points"] * bonus_vars[rule["bonus_id"]]
-            for rule in retention_coverage_bonuses
+    def add_admissibility(model, selected, scenario=None):
+        reduction = 0 if scenario is None else scenario["additional_cap_reduction_cents"]
+        model.Add(
+            sum(selected[line["line_id"]] * line["amount"] for line in order)
+            <= budget - reduction
         )
-        if fix_weight is not None:
-            m.Add(W == fix_weight)
-        if fix_bonus is not None:
-            m.Add(B == fix_bonus)
-        if fix_amount is not None:
-            m.Add(A == fix_amount)
+        unavailable = set() if scenario is None else set(scenario["unavailable_line_ids"])
         for rule in retention_portfolios:
             units = sum(
-                unit * x[line_id]
+                unit * selected[line_id]
                 for line_id, unit in rule["line_units"].items()
             )
-            m.Add(units >= rule["minimum_retained_units"])
-            m.Add(units <= rule["maximum_retained_units"])
+            waived_units = sum(
+                rule["line_units"].get(line_id, 0) for line_id in unavailable
+            )
+            minimum = max(0, rule["minimum_retained_units"] - waived_units)
+            model.Add(units >= minimum)
+            model.Add(units <= rule["maximum_retained_units"])
         for rule in retention_commitments:
-            companion_count = sum(x[line_id] for line_id in rule["then_line_ids"])
-            trigger = x[rule["if_retained_line_id"]]
-            m.Add(companion_count >= rule["minimum_then_retained"]).OnlyEnforceIf(trigger)
-            m.Add(companion_count <= rule["maximum_then_retained"]).OnlyEnforceIf(trigger)
-        for lid, val in (forced or {}).items():
+            companion_count = sum(selected[line_id] for line_id in rule["then_line_ids"])
+            trigger = selected[rule["if_retained_line_id"]]
+            model.Add(
+                companion_count >= rule["minimum_then_retained"]
+            ).OnlyEnforceIf(trigger)
+            model.Add(
+                companion_count <= rule["maximum_then_retained"]
+            ).OnlyEnforceIf(trigger)
+
+    def add_coverage(model, selected, name):
+        earned = []
+        for rule in retention_coverage_bonuses:
+            met = model.NewBoolVar(f"{name}__{rule['bonus_id']}")
+            count = sum(selected[line_id] for line_id in rule["line_ids"])
+            model.Add(count >= rule["minimum_retained"]).OnlyEnforceIf(met)
+            model.Add(count <= rule["minimum_retained"] - 1).OnlyEnforceIf(met.Not())
+            earned.append(rule["bonus_points"] * met)
+        return sum(earned)
+
+    def build(fixed=None, primary_forced=None, recovery_forced=None):
+        m = cp_model.CpModel()
+        x = {
+            line["line_id"]: m.NewBoolVar(f"primary__{line['line_id']}")
+            for line in order
+        }
+        add_admissibility(m, x)
+        primary_w = sum(x[line["line_id"]] * line["weight"] for line in order)
+        primary_b = add_coverage(m, x, "primary")
+        primary_a = sum(x[line["line_id"]] * line["amount"] for line in order)
+
+        recovery_x = {}
+        recovery_w = {}
+        recovery_b = {}
+        recovery_a = {}
+        activation_by_line = {line["line_id"]: [] for line in order}
+        for scenario in scenarios:
+            sid = scenario["scenario_id"]
+            unavailable = set(scenario["unavailable_line_ids"])
+            for line_id in unavailable:
+                m.Add(x[line_id] == 1)
+            selected = {
+                line["line_id"]: m.NewBoolVar(f"{sid}__{line['line_id']}")
+                for line in order
+            }
+            activations = []
+            for line in order:
+                line_id = line["line_id"]
+                if line_id in unavailable:
+                    m.Add(selected[line_id] == 0)
+                else:
+                    m.Add(selected[line_id] >= x[line_id])
+                    activation = selected[line_id] - x[line_id]
+                    activations.append(activation)
+                    activation_by_line[line_id].append(activation)
+            m.Add(sum(activations) <= scenario["maximum_reactivated_lines"])
+            add_admissibility(m, selected, scenario)
+            recovery_x[sid] = selected
+            recovery_w[sid] = sum(
+                selected[line["line_id"]] * line["weight"] for line in order
+            )
+            recovery_b[sid] = add_coverage(m, selected, sid)
+            recovery_a[sid] = sum(
+                selected[line["line_id"]] * line["amount"] for line in order
+            )
+
+        reserve = {}
+        for line in order:
+            lid = line["line_id"]
+            reserve[lid] = m.NewBoolVar(f"reserve__{lid}")
+            m.Add(reserve[lid] <= 1 - x[lid])
+            for activation in activation_by_line[lid]:
+                m.Add(reserve[lid] >= activation)
+            m.Add(reserve[lid] <= sum(activation_by_line[lid]))
+        m.Add(
+            sum(reserve.values())
+            <= retention_recovery_reserve["maximum_reserved_lines"]
+        )
+        category_units = retention_recovery_reserve["category_certification_units"]
+        m.Add(
+            sum(
+                reserve[line["line_id"]] * category_units[line["category"]]
+                for line in order
+            )
+            <= retention_recovery_reserve["maximum_certification_units"]
+        )
+
+        worst_w = m.NewIntVar(0, max_weight, "worst_recovery_priority_weight")
+        worst_b = m.NewIntVar(0, max_bonus, "worst_recovery_coverage_bonus")
+        worst_a = m.NewIntVar(0, max_amount, "worst_recovery_amount")
+        for scenario in scenarios:
+            sid = scenario["scenario_id"]
+            m.Add(worst_w <= recovery_w[sid])
+            m.Add(worst_b <= recovery_b[sid])
+            m.Add(worst_a <= recovery_a[sid])
+        total_b = sum(recovery_b.values())
+        objectives = {
+            "worst_recovery_priority_weight": worst_w,
+            "primary_priority_weight": primary_w,
+            "worst_recovery_coverage_bonus_points": worst_b,
+            "total_recovery_coverage_bonus_points": total_b,
+            "primary_coverage_bonus_points": primary_b,
+            "worst_recovery_amount": worst_a,
+            "primary_retained_amount": primary_a,
+        }
+        for key, value in (fixed or {}).items():
+            m.Add(objectives[key] == value)
+        for lid, val in (primary_forced or {}).items():
             m.Add(x[lid] == val)
-        return m, x, W, B, A
+        for (sid, lid), val in (recovery_forced or {}).items():
+            m.Add(recovery_x[sid][lid] == val)
+        return m, x, recovery_x, objectives
 
     s = cp_model.CpSolver()
     s.parameters.num_search_workers = 4
+    objective_order = list(tie_break["applies_after"])
+    fixed = {}
+    for key in objective_order:
+        m, x, recovery_x, objectives = build(fixed=fixed)
+        m.Maximize(objectives[key])
+        assert s.Solve(m) == cp_model.OPTIMAL
+        fixed[key] = int(s.Value(objectives[key]))
 
-    m, x, W, B, A = solve()
-    m.Maximize(W)
-    assert s.Solve(m) == cp_model.OPTIMAL
-    best_w = int(s.Value(W))
-
-    m, x, W, B, A = solve(fix_weight=best_w)
-    m.Maximize(B)
-    assert s.Solve(m) == cp_model.OPTIMAL
-    best_b = int(s.Value(B))
-
-    m, x, W, B, A = solve(fix_weight=best_w, fix_bonus=best_b)
-    m.Maximize(A)
-    assert s.Solve(m) == cp_model.OPTIMAL
-    best_a = int(s.Value(A))
-
-    # Iterative lexicographic tie-break: retain earlier line_ids preferentially.
-    forced = {}
-    for l in order:
-        trial = dict(forced)
-        trial[l["line_id"]] = 1
-        m, x, W, B, A = solve(
-            fix_weight=best_w,
-            fix_bonus=best_b,
-            fix_amount=best_a,
-            forced=trial,
+    primary_forced = {}
+    for line in order:
+        lid = line["line_id"]
+        trial = {**primary_forced, lid: 1}
+        m, x, recovery_x, objectives = build(
+            fixed=fixed,
+            primary_forced=trial,
         )
-        forced[l["line_id"]] = 1 if s.Solve(m) in (cp_model.OPTIMAL, cp_model.FEASIBLE) else 0
-    return {lid for lid, v in forced.items() if v == 0}, best_b
+        status = s.Solve(m)
+        primary_forced[lid] = 1 if status in (cp_model.OPTIMAL, cp_model.FEASIBLE) else 0
+
+    recovery_forced = {}
+    for scenario in scenarios:
+        sid = scenario["scenario_id"]
+        unavailable = set(scenario["unavailable_line_ids"])
+        for line in order:
+            lid = line["line_id"]
+            if lid in unavailable or primary_forced[lid]:
+                continue
+            trial = {**recovery_forced, (sid, lid): 1}
+            m, x, recovery_x, objectives = build(
+                fixed=fixed,
+                primary_forced=primary_forced,
+                recovery_forced=trial,
+            )
+            status = s.Solve(m)
+            recovery_forced[(sid, lid)] = (
+                1 if status in (cp_model.OPTIMAL, cp_model.FEASIBLE) else 0
+            )
+
+    m, x, recovery_x, objectives = build(
+        fixed=fixed,
+        primary_forced=primary_forced,
+        recovery_forced=recovery_forced,
+    )
+    assert s.Solve(m) in (cp_model.OPTIMAL, cp_model.FEASIBLE)
+    primary_retained = {lid for lid, val in primary_forced.items() if val}
+    recovery_results = []
+    recovery_weights = []
+    recovery_bonuses = []
+    recovery_amounts = []
+    for scenario in scenarios:
+        sid = scenario["scenario_id"]
+        recovered = {
+            lid for lid in known_line_ids if s.Value(recovery_x[sid][lid])
+        }
+        reactivated = recovered - primary_retained
+        weight = sum(line_by_id[lid]["weight"] for lid in recovered)
+        bonus = coverage_score(recovered)
+        amount = sum(line_by_id[lid]["amount"] for lid in recovered)
+        recovery_weights.append(weight)
+        recovery_bonuses.append(bonus)
+        recovery_amounts.append(amount)
+        recovery_results.append(
+            {
+                "scenario_id": sid,
+                "unavailable_line_ids": sorted(scenario["unavailable_line_ids"]),
+                "reactivated_line_ids": sorted(reactivated),
+                "retained_priority_weight": weight,
+                "retained_coverage_bonus_points": bonus,
+                "final_reimbursable_cents": per_diem_total + amount,
+            }
+        )
+    metrics = {
+        "retained_priority_weight": sum(
+            line_by_id[lid]["weight"] for lid in primary_retained
+        ),
+        "retained_coverage_bonus_points": coverage_score(primary_retained),
+        "worst_case_recovery_priority_weight": min(recovery_weights),
+        "worst_case_recovery_coverage_bonus_points": min(recovery_bonuses),
+        "total_recovery_coverage_bonus_points": sum(recovery_bonuses),
+        "worst_case_recovery_final_reimbursable_cents": (
+            per_diem_total + min(recovery_amounts)
+        ),
+        "recovery_reserve_line_ids": sorted(
+            set().union(
+                *(set(result["reactivated_line_ids"]) for result in recovery_results)
+            )
+        ),
+        "retention_recovery_scenarios": recovery_results,
+    }
+    metrics["recovery_reserve_certification_units"] = sum(
+        retention_recovery_reserve["category_certification_units"][
+            line_by_id[line_id]["category"]
+        ]
+        for line_id in metrics["recovery_reserve_line_ids"]
+    )
+    return known_line_ids - primary_retained, metrics
 
 
 def main():
@@ -317,15 +482,25 @@ def main():
             needs_appr.add(lid)
 
     # ---- phase 4: trip-budget knapsack ----
-    knap_lines = [{"line_id": l["line_id"], "date": l["date"], "amount": computed[l["line_id"]],
-                   "weight": 6 - int(l["priority"])} for l in reimb]
-    deferred, retained_coverage_bonus = solve_budget_knapsack(
+    knap_lines = [
+        {
+            "line_id": line["line_id"],
+            "date": line["date"],
+            "category": line["category"],
+            "amount": computed[line["line_id"]],
+            "weight": 6 - int(line["priority"]),
+        }
+        for line in reimb
+    ]
+    deferred, retention_metrics = solve_budget_knapsack(
         knap_lines,
         total_per_diem,
         policy["trip_reimbursement_cap_cents"],
         policy.get("retention_portfolios", []),
         policy.get("retention_commitments", []),
         policy.get("retention_coverage_bonuses", []),
+        policy.get("retention_recovery_scenarios", []),
+        policy["retention_recovery_reserve"],
         policy["retention_tie_break"],
     )
 
@@ -362,10 +537,10 @@ def main():
             "gross_reimbursable_cents": gross,
             "trip_budget_cap_cents": policy["trip_reimbursement_cap_cents"],
             "final_reimbursable_cents": final,
-            "retained_coverage_bonus_points": retained_coverage_bonus,
             "deferred_over_budget_line_ids": sorted(deferred),
             "total_flagged_for_approval_cents": total_flagged,
             "category_breakdown": cat_break,
+            **retention_metrics,
         },
     }
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)

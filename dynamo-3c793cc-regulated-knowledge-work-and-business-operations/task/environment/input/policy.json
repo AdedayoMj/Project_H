@@ -171,10 +171,90 @@
     {"bonus_id": "daily-meal-sampling", "line_ids": ["E07", "E15", "E19", "E41", "E58", "E64"], "minimum_retained": 5, "bonus_points": 71},
     {"bonus_id": "working-meal-sampling", "line_ids": ["E08", "E16", "E25", "E35", "E47", "E60"], "minimum_retained": 5, "bonus_points": 73}
   ],
+  "retention_recovery_scenarios": [
+    {
+      "scenario_id": "atlantic-vendor-rejection",
+      "unavailable_line_ids": ["E09", "E65"],
+      "additional_cap_reduction_cents": 9000,
+      "maximum_reactivated_lines": 3
+    },
+    {
+      "scenario_id": "client-attestation-rejection",
+      "unavailable_line_ids": ["E28", "E48"],
+      "additional_cap_reduction_cents": 11000,
+      "maximum_reactivated_lines": 3
+    },
+    {
+      "scenario_id": "delegation-evidence-rejection",
+      "unavailable_line_ids": ["E38", "E44"],
+      "additional_cap_reduction_cents": 18000,
+      "maximum_reactivated_lines": 3
+    },
+    {
+      "scenario_id": "executive-review-rejection",
+      "unavailable_line_ids": ["E01", "E42"],
+      "additional_cap_reduction_cents": 7000,
+      "maximum_reactivated_lines": 2
+    },
+    {
+      "scenario_id": "home-office-rejection",
+      "unavailable_line_ids": ["E08", "E21"],
+      "additional_cap_reduction_cents": 2500,
+      "maximum_reactivated_lines": 2
+    },
+    {
+      "scenario_id": "mileage-ledger-rejection",
+      "unavailable_line_ids": ["E59", "M02"],
+      "additional_cap_reduction_cents": 3500,
+      "maximum_reactivated_lines": 2
+    },
+    {
+      "scenario_id": "paris-connection-rejection",
+      "unavailable_line_ids": ["E54", "E71"],
+      "additional_cap_reduction_cents": 32000,
+      "maximum_reactivated_lines": 3
+    },
+    {
+      "scenario_id": "program-owner-rejection",
+      "unavailable_line_ids": ["E11", "E53"],
+      "additional_cap_reduction_cents": 6000,
+      "maximum_reactivated_lines": 2
+    },
+    {
+      "scenario_id": "regional-vendor-rejection",
+      "unavailable_line_ids": ["E36", "E70"],
+      "additional_cap_reduction_cents": 27000,
+      "maximum_reactivated_lines": 3
+    },
+    {
+      "scenario_id": "working-meal-rejection",
+      "unavailable_line_ids": ["E26", "E64"],
+      "additional_cap_reduction_cents": 5000,
+      "maximum_reactivated_lines": 2
+    }
+  ],
+  "retention_recovery_reserve": {
+    "maximum_reserved_lines": 8,
+    "maximum_certification_units": 29,
+    "category_certification_units": {
+      "MEALS": 3,
+      "AIRFARE": 8,
+      "MILEAGE": 2
+    }
+  },
   "retention_tie_break": {
-    "applies_after": ["retained_priority_weight", "retained_coverage_bonus_points", "retained_amount"],
+    "applies_after": [
+      "worst_recovery_priority_weight",
+      "primary_priority_weight",
+      "worst_recovery_coverage_bonus_points",
+      "total_recovery_coverage_bonus_points",
+      "primary_coverage_bonus_points",
+      "worst_recovery_amount",
+      "primary_retained_amount"
+    ],
     "sort_keys": ["date", "line_id"],
     "direction": "ascending",
-    "preference": "retain_earlier"
+    "preference": "retain_earlier",
+    "recovery_scenario_order": "scenario_id_ascending"
   }
 }

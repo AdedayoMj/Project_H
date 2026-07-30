@@ -22,8 +22,8 @@
     },
     {
       "line_id": "E05",
-      "reimbursable_cents": 3960,
-      "status": "NEEDS_MANAGER_APPROVAL"
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
     },
     {
       "line_id": "E06",
@@ -177,8 +177,8 @@
     },
     {
       "line_id": "E33",
-      "reimbursable_cents": 0,
-      "status": "DEFERRED_OVER_BUDGET"
+      "reimbursable_cents": 21947,
+      "status": "APPROVED"
     },
     {
       "line_id": "E34",
@@ -217,8 +217,8 @@
     },
     {
       "line_id": "E41",
-      "reimbursable_cents": 6000,
-      "status": "NEEDS_MANAGER_APPROVAL"
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
     },
     {
       "line_id": "E42",
@@ -242,8 +242,8 @@
     },
     {
       "line_id": "E46",
-      "reimbursable_cents": 5279,
-      "status": "NEEDS_MANAGER_APPROVAL"
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
     },
     {
       "line_id": "E47",
@@ -322,8 +322,8 @@
     },
     {
       "line_id": "E62",
-      "reimbursable_cents": 18317,
-      "status": "NEEDS_MANAGER_APPROVAL"
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
     },
     {
       "line_id": "E63",
@@ -352,13 +352,13 @@
     },
     {
       "line_id": "E68",
-      "reimbursable_cents": 64683,
-      "status": "NEEDS_MANAGER_APPROVAL"
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
     },
     {
       "line_id": "E69",
-      "reimbursable_cents": 75941,
-      "status": "NEEDS_MANAGER_APPROVAL"
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
     },
     {
       "line_id": "E70",
@@ -377,13 +377,13 @@
     },
     {
       "line_id": "E73",
-      "reimbursable_cents": 0,
-      "status": "DEFERRED_OVER_BUDGET"
+      "reimbursable_cents": 119437,
+      "status": "NEEDS_MANAGER_APPROVAL"
     },
     {
       "line_id": "E74",
-      "reimbursable_cents": 132353,
-      "status": "NEEDS_MANAGER_APPROVAL"
+      "reimbursable_cents": 0,
+      "status": "DEFERRED_OVER_BUDGET"
     },
     {
       "line_id": "E75",
@@ -392,19 +392,19 @@
     },
     {
       "line_id": "E76",
-      "reimbursable_cents": 0,
-      "status": "DEFERRED_OVER_BUDGET"
+      "reimbursable_cents": 132353,
+      "status": "NEEDS_MANAGER_APPROVAL"
     }
   ],
   "trip_summary": {
     "category_breakdown": {
       "AIRFARE": {
-        "flagged_for_approval_cents": 519338,
-        "reimbursable_cents": 550881
+        "flagged_for_approval_cents": 498151,
+        "reimbursable_cents": 529694
       },
       "MEALS": {
-        "flagged_for_approval_cents": 414814,
-        "reimbursable_cents": 466219
+        "flagged_for_approval_cents": 381258,
+        "reimbursable_cents": 454610
       },
       "MILEAGE": {
         "flagged_for_approval_cents": 1866,
@@ -412,26 +412,191 @@
       }
     },
     "deferred_over_budget_line_ids": [
+      "E05",
       "E12",
       "E17",
       "E24",
-      "E33",
       "E39",
+      "E41",
       "E45",
+      "E46",
       "E50",
       "E55",
       "E57",
+      "E62",
       "E66",
+      "E68",
+      "E69",
       "E72",
-      "E73",
-      "E75",
-      "E76"
+      "E74",
+      "E75"
     ],
-    "final_reimbursable_cents": 1034933,
+    "final_reimbursable_cents": 1002137,
     "gross_reimbursable_cents": 1945718,
-    "retained_coverage_bonus_points": 517,
-    "total_flagged_for_approval_cents": 936018,
+    "recovery_reserve_certification_units": 29,
+    "recovery_reserve_line_ids": [
+      "E05",
+      "E17",
+      "E39",
+      "E41",
+      "E46",
+      "E50",
+      "E55",
+      "E68"
+    ],
+    "retained_coverage_bonus_points": 384,
+    "retained_priority_weight": 191,
+    "retention_recovery_scenarios": [
+      {
+        "final_reimbursable_cents": 1031077,
+        "reactivated_line_ids": [
+          "E68"
+        ],
+        "retained_coverage_bonus_points": 384,
+        "retained_priority_weight": 184,
+        "scenario_id": "atlantic-vendor-rejection",
+        "unavailable_line_ids": [
+          "E09",
+          "E65"
+        ]
+      },
+      {
+        "final_reimbursable_cents": 994913,
+        "reactivated_line_ids": [
+          "E05",
+          "E41",
+          "E46"
+        ],
+        "retained_coverage_bonus_points": 422,
+        "retained_priority_weight": 184,
+        "scenario_id": "client-attestation-rejection",
+        "unavailable_line_ids": [
+          "E28",
+          "E48"
+        ]
+      },
+      {
+        "final_reimbursable_cents": 993226,
+        "reactivated_line_ids": [
+          "E05",
+          "E41",
+          "E55"
+        ],
+        "retained_coverage_bonus_points": 445,
+        "retained_priority_weight": 189,
+        "scenario_id": "delegation-evidence-rejection",
+        "unavailable_line_ids": [
+          "E38",
+          "E44"
+        ]
+      },
+      {
+        "final_reimbursable_cents": 1009229,
+        "reactivated_line_ids": [
+          "E05",
+          "E39"
+        ],
+        "retained_coverage_bonus_points": 492,
+        "retained_priority_weight": 184,
+        "scenario_id": "executive-review-rejection",
+        "unavailable_line_ids": [
+          "E01",
+          "E42"
+        ]
+      },
+      {
+        "final_reimbursable_cents": 1013911,
+        "reactivated_line_ids": [
+          "E17",
+          "E41"
+        ],
+        "retained_coverage_bonus_points": 445,
+        "retained_priority_weight": 184,
+        "scenario_id": "home-office-rejection",
+        "unavailable_line_ids": [
+          "E08",
+          "E21"
+        ]
+      },
+      {
+        "final_reimbursable_cents": 1008234,
+        "reactivated_line_ids": [
+          "E05",
+          "E17"
+        ],
+        "retained_coverage_bonus_points": 445,
+        "retained_priority_weight": 184,
+        "scenario_id": "mileage-ledger-rejection",
+        "unavailable_line_ids": [
+          "E59",
+          "M02"
+        ]
+      },
+      {
+        "final_reimbursable_cents": 979073,
+        "reactivated_line_ids": [
+          "E05",
+          "E50",
+          "E68"
+        ],
+        "retained_coverage_bonus_points": 450,
+        "retained_priority_weight": 189,
+        "scenario_id": "paris-connection-rejection",
+        "unavailable_line_ids": [
+          "E54",
+          "E71"
+        ]
+      },
+      {
+        "final_reimbursable_cents": 1003238,
+        "reactivated_line_ids": [
+          "E05",
+          "E17"
+        ],
+        "retained_coverage_bonus_points": 445,
+        "retained_priority_weight": 184,
+        "scenario_id": "program-owner-rejection",
+        "unavailable_line_ids": [
+          "E11",
+          "E53"
+        ]
+      },
+      {
+        "final_reimbursable_cents": 937266,
+        "reactivated_line_ids": [
+          "E17",
+          "E41",
+          "E55"
+        ],
+        "retained_coverage_bonus_points": 445,
+        "retained_priority_weight": 185,
+        "scenario_id": "regional-vendor-rejection",
+        "unavailable_line_ids": [
+          "E36",
+          "E70"
+        ]
+      },
+      {
+        "final_reimbursable_cents": 998097,
+        "reactivated_line_ids": [
+          "E05",
+          "E41"
+        ],
+        "retained_coverage_bonus_points": 445,
+        "retained_priority_weight": 185,
+        "scenario_id": "working-meal-rejection",
+        "unavailable_line_ids": [
+          "E26",
+          "E64"
+        ]
+      }
+    ],
+    "total_flagged_for_approval_cents": 881275,
     "total_per_diem_cents": 14400,
-    "trip_budget_cap_cents": 1040200
+    "total_recovery_coverage_bonus_points": 4418,
+    "trip_budget_cap_cents": 1040200,
+    "worst_case_recovery_coverage_bonus_points": 384,
+    "worst_case_recovery_final_reimbursable_cents": 937266,
+    "worst_case_recovery_priority_weight": 184
   }
 }

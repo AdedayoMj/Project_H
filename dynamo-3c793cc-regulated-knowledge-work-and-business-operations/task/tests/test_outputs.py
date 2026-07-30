@@ -24,10 +24,26 @@ TRIP_SUMMARY_KEYS = {
     "gross_reimbursable_cents",
     "trip_budget_cap_cents",
     "final_reimbursable_cents",
+    "retained_priority_weight",
     "retained_coverage_bonus_points",
+    "worst_case_recovery_priority_weight",
+    "worst_case_recovery_coverage_bonus_points",
+    "total_recovery_coverage_bonus_points",
+    "worst_case_recovery_final_reimbursable_cents",
+    "recovery_reserve_line_ids",
+    "recovery_reserve_certification_units",
+    "retention_recovery_scenarios",
     "deferred_over_budget_line_ids",
     "total_flagged_for_approval_cents",
     "category_breakdown",
+}
+RECOVERY_KEYS = {
+    "scenario_id",
+    "unavailable_line_ids",
+    "reactivated_line_ids",
+    "retained_priority_weight",
+    "retained_coverage_bonus_points",
+    "final_reimbursable_cents",
 }
 
 
@@ -104,13 +120,46 @@ def test_trip_summary_well_formed():
         "gross_reimbursable_cents",
         "trip_budget_cap_cents",
         "final_reimbursable_cents",
+        "retained_priority_weight",
         "retained_coverage_bonus_points",
+        "worst_case_recovery_priority_weight",
+        "worst_case_recovery_coverage_bonus_points",
+        "total_recovery_coverage_bonus_points",
+        "worst_case_recovery_final_reimbursable_cents",
+        "recovery_reserve_certification_units",
         "total_flagged_for_approval_cents",
     ):
         assert isinstance(summary[key], int) and not isinstance(summary[key], bool)
         assert summary[key] >= 0
     assert isinstance(summary["deferred_over_budget_line_ids"], list)
     assert all(isinstance(x, str) for x in summary["deferred_over_budget_line_ids"])
+    assert isinstance(summary["retention_recovery_scenarios"], list)
+    assert isinstance(summary["recovery_reserve_line_ids"], list)
+    assert all(
+        isinstance(line_id, str)
+        for line_id in summary["recovery_reserve_line_ids"]
+    )
+    assert summary["recovery_reserve_line_ids"] == sorted(
+        summary["recovery_reserve_line_ids"]
+    )
+    assert len(summary["recovery_reserve_line_ids"]) == len(
+        set(summary["recovery_reserve_line_ids"])
+    )
+    for scenario in summary["retention_recovery_scenarios"]:
+        assert set(scenario) == RECOVERY_KEYS
+        assert isinstance(scenario["scenario_id"], str)
+        for key in ("unavailable_line_ids", "reactivated_line_ids"):
+            assert isinstance(scenario[key], list)
+            assert all(isinstance(line_id, str) for line_id in scenario[key])
+            assert scenario[key] == sorted(scenario[key])
+            assert len(scenario[key]) == len(set(scenario[key]))
+        for key in (
+            "retained_priority_weight",
+            "retained_coverage_bonus_points",
+            "final_reimbursable_cents",
+        ):
+            assert isinstance(scenario[key], int) and not isinstance(scenario[key], bool)
+            assert scenario[key] >= 0
     assert set(summary["category_breakdown"]) == CATEGORIES
     for entry in summary["category_breakdown"].values():
         assert set(entry) == {"reimbursable_cents", "flagged_for_approval_cents"}
@@ -221,6 +270,106 @@ def test_retention_rules_and_coverage_score_satisfied():
         if len(retained.intersection(rule["line_ids"])) >= rule["minimum_retained"]
     )
     assert data["trip_summary"]["retained_coverage_bonus_points"] == coverage_score
+
+
+def test_recovery_scenarios_are_feasible_and_reconciled():
+    """Every disclosed rejection recovery obeys coupling, cap, adjusted portfolios, commitments, and scores."""
+    data = _load_output()
+    summary = data["trip_summary"]
+    policy = json.loads((INPUT_PATH / "policy.json").read_text())
+    rows = _golden_expense_rows()
+    row_by_id = {row["line_id"]: row for row in rows}
+    expected = sorted(
+        policy["retention_recovery_scenarios"],
+        key=lambda scenario: scenario["scenario_id"],
+    )
+    actual = summary["retention_recovery_scenarios"]
+    assert [scenario["scenario_id"] for scenario in actual] == [
+        scenario["scenario_id"] for scenario in expected
+    ]
+
+    primary = {
+        item["line_id"]
+        for item in data["line_items"]
+        if item["status"] not in {
+            "DEFERRED_OVER_BUDGET",
+            "DUPLICATE_EXCLUDED",
+            "NON_REIMBURSABLE",
+        }
+    }
+    primary_deferred = {
+        item["line_id"]
+        for item in data["line_items"]
+        if item["status"] == "DEFERRED_OVER_BUDGET"
+    }
+    recovery_weights = []
+    recovery_bonuses = []
+    recovery_finals = []
+    for rule, reported in zip(expected, actual):
+        unavailable = set(rule["unavailable_line_ids"])
+        reactivated = set(reported["reactivated_line_ids"])
+        assert reported["unavailable_line_ids"] == sorted(unavailable)
+        assert unavailable <= primary
+        assert reactivated <= primary_deferred
+        assert reactivated.isdisjoint(unavailable)
+        assert len(reactivated) <= rule["maximum_reactivated_lines"]
+        recovered = (primary - unavailable) | reactivated
+
+        final = reported["final_reimbursable_cents"]
+        assert final >= summary["total_per_diem_cents"]
+        assert final <= (
+            policy["trip_reimbursement_cap_cents"]
+            - rule["additional_cap_reduction_cents"]
+        )
+
+        for portfolio in policy["retention_portfolios"]:
+            units = sum(
+                unit for line_id, unit in portfolio["line_units"].items()
+                if line_id in recovered
+            )
+            waived = sum(
+                portfolio["line_units"].get(line_id, 0)
+                for line_id in unavailable
+            )
+            minimum = max(0, portfolio["minimum_retained_units"] - waived)
+            assert minimum <= units <= portfolio["maximum_retained_units"]
+        for commitment in policy["retention_commitments"]:
+            if commitment["if_retained_line_id"] in recovered:
+                count = len(recovered.intersection(commitment["then_line_ids"]))
+                assert commitment["minimum_then_retained"] <= count
+                assert count <= commitment["maximum_then_retained"]
+
+        weight = sum(6 - int(row_by_id[line_id]["priority"]) for line_id in recovered)
+        bonus = sum(
+            coverage["bonus_points"]
+            for coverage in policy["retention_coverage_bonuses"]
+            if len(recovered.intersection(coverage["line_ids"]))
+            >= coverage["minimum_retained"]
+        )
+        assert reported["retained_priority_weight"] == weight
+        assert reported["retained_coverage_bonus_points"] == bonus
+        recovery_weights.append(weight)
+        recovery_bonuses.append(bonus)
+        recovery_finals.append(final)
+
+    primary_weight = sum(6 - int(row_by_id[line_id]["priority"]) for line_id in primary)
+    assert summary["retained_priority_weight"] == primary_weight
+    assert summary["worst_case_recovery_priority_weight"] == min(recovery_weights)
+    assert summary["worst_case_recovery_coverage_bonus_points"] == min(recovery_bonuses)
+    assert summary["total_recovery_coverage_bonus_points"] == sum(recovery_bonuses)
+    assert summary["worst_case_recovery_final_reimbursable_cents"] == min(recovery_finals)
+    reserve = set(summary["recovery_reserve_line_ids"])
+    assert reserve == set().union(
+        *(set(scenario["reactivated_line_ids"]) for scenario in actual)
+    )
+    reserve_policy = policy["retention_recovery_reserve"]
+    assert len(reserve) <= reserve_policy["maximum_reserved_lines"]
+    units = sum(
+        reserve_policy["category_certification_units"][row_by_id[line_id]["category"]]
+        for line_id in reserve
+    )
+    assert units == summary["recovery_reserve_certification_units"]
+    assert units <= reserve_policy["maximum_certification_units"]
 
 
 def test_line_items_match_reference():

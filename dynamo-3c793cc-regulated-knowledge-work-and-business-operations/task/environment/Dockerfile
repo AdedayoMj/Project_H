@@ -3,8 +3,8 @@
 # image — Harbor overlays tests/ at /tests only at verify time, so ground truth stays out
 # of the agent's reach.
 #
-# ortools backs the CP-SAT search the reference solver uses for the trip-budget
-# knapsack; the rest of the pipeline is Python standard library (csv/json/decimal).
+# ortools backs the joint primary/recovery CP-SAT search; the audit pipeline is
+# otherwise Python standard library (csv/json/decimal).
 FROM public.ecr.aws/docker/library/ubuntu:24.04@sha256:0d39fcc8335d6d74d5502f6df2d30119ff4790ebbb60b364818d5112d9e3e932
 
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip \
