@@ -1,0 +1,32 @@
+artifacts = ["/app/package.tar", "/app/selection.json", "/app/provenance.json", "/app/exclusions.json", "/app/validation.json"]
+
+[task]
+name = "dynamo/vfx-preservation-cull"
+description = "Recover the minimal reproducible asset package for a locked VFX sequence."
+
+[metadata]
+category = "File and Media Operations"
+subcategory = "File search and filtering"
+model_tested = "Opus-4.8"
+agent_tested = "Terminus-2"
+task_objective = ["analyze", "compare_or_select", "build_or_package"]
+artifact_type = ["archive_or_compressed_artifact", "document_or_report", "generated_output_artifact"]
+expert_time_estimate_hours = 18.0
+difficulty_explanation = "A senior VFX pipeline TD or digital-preservation engineer must recover a reproducible locked cut from a deterministic synthetic studio migration containing 10,051 entries. The professional value is avoiding both irreproducible under-collection and costly retention of rejected production data. Difficulty comes from the interaction of 29.97 drop-frame edit intervals, exact audio-sample boundaries, time- and variant-dependent layered composition, cycles, frame and UDIM expansion, signed fixity evidence, revocations, path-scoped rename ancestry, conflicting attestations, content equivalence, and atomic revision rollback across incomplete sequence groups. Trusting extensions, embedded hints, newest revisions, all references, or global hashes independently produces a plausible but wrong package."
+solution_explanation = "Inventory with lstat and classify regular files by the policy signatures, hashing exact bytes. Validate fixity records against the lock and revocations; extend path-scoped records only through trusted hash-preserving journal chains; elect one identity per physical candidate and one content hash per logical revision. Convert cut timecodes to absolute frames, map source frames, evaluate composition rules per frame/variant/slot, preserve effective cycle edges while bounding traversal, and union/coalesce logical and edge usage. Compute audio sample boundaries with exact rational ties-to-even rounding. After closure, elect the greatest complete revision for every active group while honoring pins, choose any allowed equivalent source, classify all other inventory entries by precedence, package canonical bytes, and emit the four reconciled reports."
+verification_explanation = "The verifier fingerprints every input byte plus repository path, type, symlink target, size, and content before examining outputs. Atomic tests enforce each documented JSON schema, ordering, canonical field/range types, complete physical partition, equivalence pointers, provenance termination, counter and audio reconciliation, and empty unresolved/missing/unsafe issue arrays. TAR parsing rejects traversal, links, devices, duplicates, and undeclared entries, then checks each canonical entry's exact size and SHA-256 against selection. Finally, a canonical digest of all four reports is compared with the independently derived hidden production graph after normalizing only the policy-permitted byte-identical source representative; TAR metadata is deliberately ignored because it has no preservation-semantic effect. No numeric tolerance is used."
+
+[verifier]
+timeout_sec = 240.0
+
+[agent]
+timeout_sec = 3600.0
+
+[environment]
+build_timeout_sec = 600.0
+cpus = 2
+memory_mb = 4096
+storage_mb = 10240
+gpus = 0
+allow_internet = true
+mcp_servers = []
