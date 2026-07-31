@@ -1,17 +1,17 @@
 FROM public.ecr.aws/docker/library/ubuntu:24.04@sha256:0d39fcc8335d6d74d5502f6df2d30119ff4790ebbb60b364818d5112d9e3e932
 
+COPY assets/DejaVuSans.ttf /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+COPY assets/DejaVuSans-Bold.ttf /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
+COPY assets/default_cmyk.icc /usr/share/color/icc/ghostscript/default_cmyk.icc
 COPY asset-sha256.txt /tmp/asset-sha256.txt
 
-RUN apt-get update \
+RUN sha256sum --check /tmp/asset-sha256.txt \
+    && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        fonts-dejavu-core=2.37-8 \
-        ghostscript=10.02.1~dfsg1-0ubuntu7.8 \
-        libgs-common=10.02.1~dfsg1-0ubuntu7.8 \
         libglib2.0-0 \
         libgl1 \
         python3 \
         python3-pip \
-    && sha256sum --check /tmp/asset-sha256.txt \
     && pip install --no-cache-dir --break-system-packages \
         numpy==2.2.6 \
         opencv-python-headless==4.12.0.88 \
