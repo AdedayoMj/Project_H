@@ -427,6 +427,12 @@ def test_tar_is_safe_and_exactly_contains_selected_canonical_bytes():
 
 
 def test_complete_reports_match_the_hidden_production_graph():
-    """After the documented source-copy equivalence, all exact decisions match the hidden reference result."""
+    """After the documented source-copy equivalence, all exact decisions match the hidden reference result.
+
+    This is a whole-output pin and reports no location on mismatch. To localise a failure,
+    read the structural tests first: selection schema/hashes, provenance closure, the
+    exclusions partition, and the validation reconciliation each re-derive their subject
+    from the inputs and fail with the offending field.
+    """
     normalized = normalize_equivalent_sources(load_reports())
     assert canonical_digest(normalized) == EXPECTED_REPORTS_SHA256
