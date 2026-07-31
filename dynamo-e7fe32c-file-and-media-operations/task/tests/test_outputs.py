@@ -177,6 +177,7 @@ def test_manifest_is_complete_and_recovers_hidden_design_and_capture_state():
     schema = spec["manifest_schema"]
     manifest = json.loads((OUTPUT / "manifest.json").read_text())
     assert set(manifest) == set(schema["top_level_exact_keys"])
+    assert manifest["schema_version"] == spec["schema_version"]
     assert set(manifest["family"]) == set(schema["family_exact_keys"])
     assert manifest["family"] == {
         "name": spec["font_contract"]["family_name"],
