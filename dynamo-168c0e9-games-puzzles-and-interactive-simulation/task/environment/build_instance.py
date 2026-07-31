@@ -31,7 +31,7 @@ MIN_EXPANSIONS = 2_500
 INTERIOR_MIN = 10
 INTERIOR_MAX = 16
 BOX_MIN = 4
-BOX_MAX = 6
+BOX_MAX = 5
 
 OPPOSITE = {"U": "D", "D": "U", "L": "R", "R": "L"}
 
