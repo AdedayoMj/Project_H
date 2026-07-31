@@ -25,7 +25,7 @@ INPUT = APP / "input"
 EVIDENCE = APP / "evidence"
 OUTPUT = APP / "output"
 REFERENCE = Path("/tests/reference_master.npz")
-EXPECTED_SOURCE_SHA256 = "aaffcf531de4e9532ef28f96ac4616bfefdb9b2ead97a2b862230b3afc320084"
+EXPECTED_SOURCE_SHA256 = "011e81ef029f0e28551aea40b8411aea38107bf964dae5e0cc7b017a1e4636c0"
 REQUIRED_FILES = {
     "plates.npz",
     "proof.png",
@@ -320,10 +320,13 @@ def test_svg_uses_semantic_equivalence_and_preserves_live_objects():
     roles = {element.attrib["data-role"] for element in elements if "data-role" in element.attrib}
     assert set(spec["svg_contract"]["required_data_roles"]).issubset(roles)
 
+    text_id_attribute = spec["svg_contract"]["text_id_attribute"]
+    payload_attribute = spec["svg_contract"]["barcode_payload_attribute"]
+    module_attribute = spec["svg_contract"]["barcode_module_attribute"]
     submitted_text = {}
     for element in elements:
-        if element.tag.endswith("text") and "data-id" in element.attrib:
-            submitted_text[element.attrib["data-id"]] = element
+        if element.tag.endswith("text") and text_id_attribute in element.attrib:
+            submitted_text[element.attrib[text_id_attribute]] = element
     assert set(submitted_text) == set(EXPECTED_TEXT)
     specs = {row["id"]: row for row in spec["fonts"]["text_objects"]}
     tolerance = spec["svg_contract"]["text_position_tolerance_mm"]
@@ -335,21 +338,21 @@ def test_svg_uses_semantic_equivalence_and_preserves_live_objects():
         assert abs(float(element.attrib["y"]) - specs[text_id]["y_mm"]) <= tolerance
 
     barcode_group = next(element for element in elements if element.attrib.get("data-role") == "barcode")
-    assert barcode_group.attrib["data-payload"] == EXPECTED_BARCODE
+    assert barcode_group.attrib[payload_attribute] == EXPECTED_BARCODE
     expected_modules = qr_modules(EXPECTED_BARCODE, spec)
     submitted_modules = {
-        tuple(int(value) for value in element.attrib["data-module"].split(":"))
+        tuple(int(value) for value in element.attrib[module_attribute].split(":"))
         for element in barcode_group
-        if element.tag.endswith("rect") and "data-module" in element.attrib
+        if element.tag.endswith("rect") and module_attribute in element.attrib
     }
     assert submitted_modules == expected_modules
     matrix_size = max(max(row, col) for row, col in expected_modules) + 1
     module_size = spec["barcode"]["size_mm"] / matrix_size
     geometry_tolerance = spec["svg_contract"]["barcode_module_geometry_tolerance_mm"]
     for element in barcode_group:
-        if not element.tag.endswith("rect") or "data-module" not in element.attrib:
+        if not element.tag.endswith("rect") or module_attribute not in element.attrib:
             continue
-        row, col = (int(value) for value in element.attrib["data-module"].split(":"))
+        row, col = (int(value) for value in element.attrib[module_attribute].split(":"))
         assert abs(float(element.attrib["x"]) - (spec["barcode"]["x_mm"] + col * module_size)) <= geometry_tolerance
         assert abs(float(element.attrib["y"]) - (spec["barcode"]["y_mm"] + row * module_size)) <= geometry_tolerance
         assert abs(float(element.attrib["width"]) - module_size) <= geometry_tolerance
@@ -395,12 +398,15 @@ def test_pdf_has_functional_production_structure_and_matching_render():
         assert np.allclose([float(value) for value in page.TrimBox], expected_trim, atol=0.01)
         assert np.allclose([float(value) for value in page.BleedBox], expected_media, atol=0.01)
 
+        # Colour-space resource keys are arbitrary internal names; the colorant name is
+        # the real requirement, so locate each /Separation by the name it declares.
         color_spaces = page.Resources["/ColorSpace"]
+        separation_names = set()
+        for _, value in color_spaces.items():
+            if len(value) >= 2 and str(value[0]) == "/Separation":
+                separation_names.add(str(value[1]))
         for plate_id in ("SC", "OW", "V"):
-            separation = color_spaces[f"/CS_{plate_id}"]
-            assert str(separation[0]) == "/Separation"
-            expected_name = "/" + spec["plate_registry"][plate_id]["canonical_name"]
-            assert str(separation[1]) == expected_name
+            assert "/" + spec["plate_registry"][plate_id]["canonical_name"] in separation_names
         ocg_names = {str(item["/Name"]) for item in pdf.Root["/OCProperties"]["/OCGs"]}
         assert set(spec["svg_contract"]["required_data_roles"]).issubset(ocg_names)
 
