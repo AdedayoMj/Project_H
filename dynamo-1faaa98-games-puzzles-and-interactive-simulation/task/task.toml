@@ -1,0 +1,36 @@
+artifacts = [
+  "/app/output/prescription.geojson",
+  "/app/output/units.csv",
+  "/app/output/summary.json",
+]
+
+[task]
+name = "dynamo/irrigation-world-model"
+description = "Reconstruct spatially heterogeneous crop-water state and issue a deterministic variable-rate irrigation prescription."
+
+[metadata]
+category = "Games Puzzles and Interactive Simulation"
+subcategory = "World simulation"
+model_tested = "Opus-4.8"
+agent_tested = "Terminus-2"
+task_objective = ["analyze", "generate"]
+artifact_type = ["mathematical_or_scientific_model", "dataset_or_tabular_file", "generated_output_artifact"]
+expert_time_estimate_hours = 28.0
+difficulty_explanation = "A precision-agriculture or geospatial modelling engineer must reconstruct four synthetic-but-operationally-realistic field seasons containing thousands of clipped grid cells. The result couples polygon overlays against irregular boundaries and soil partitions, depth integration across heterogeneous horizons, irregular satellite time-series interpolation, fractional coverage from overlapping irrigation footprints, and a stress-feedback FAO-56 daily recurrence. Errors cascade: a small soil-overlay error changes TAW and RAW, which changes the first stressed day, subsequent evapotranspiration, final depletion, irrigation rate, management zone, and field volume. Centroid sampling, raster inclusion, uniform soil assumptions, dual-Kc equations, event-centre assignment, rounding daily state, or independent zone clustering all yield credible but wrong prescriptions. The work is valuable to irrigation engineers because these are the same interactions that determine pump demand and spatial over- or under-watering in a variable-rate system."
+solution_explanation = "Construct the exact job-ticket grid and clip its nonempty cells to each field. Integrate every map unit's horizon storage to the fixed root depth, then area-weight those storages by true cell/soil intersection. Interpolate each cell's vegetation series on ordinal dates, transform it to bounded Kc, area-weight every dated irrigation footprint over the clipped cell, and advance the prescribed single-Kc stress-coupled depletion balance without intermediate rounding while accumulating audit totals. Convert terminal depletion to a capacity-limited gross rate, apply the fixed half-open zone bands, preserve the clipped geometry, and aggregate all requested areas, depths, volumes, and zone fractions."
+verification_explanation = "The verifier first fingerprints the complete generated input tree so agents cannot alter the simulated world. An independently structured verifier-side model reconstructs the grid, soil storage, satellite interpolation, fractional irrigation coverage, and daily FAO-56 state without importing solution code. Atomic tests enforce the exact three output schemas and ordering; compare identities, rows, columns, clipped geometries and areas; separately compare soil capacities, dynamic state and audit quantities, prescriptions and zones; reconcile CSV records with GeoJSON; and independently recompute every field and zone aggregate. Calibration across all 6,573 units found a maximum relative disagreement of 2.56e-14 and maximum absolute disagreement of 1.43e-13 between the loop-oriented oracle and independently organized reference. The larger mixed absolute/0.5% bands therefore leave ample headroom for valid float64 summation order, standards-compliant overlay engines, and decimal serialization, while per-unit categorical and state checks still reject centroid soil assignment, snapshot balances, dual-Kc equations, unweighted irrigation footprints, and alternative zone rules."
+
+[verifier]
+timeout_sec = 300.0
+
+[agent]
+timeout_sec = 3600.0
+
+[environment]
+build_timeout_sec = 900.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 10240
+gpus = 0
+allow_internet = true
+mcp_servers = []
