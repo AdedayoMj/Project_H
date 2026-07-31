@@ -111,6 +111,7 @@ class Candidate:
     size: int
     regular: bool
     evidence: dict | None = None
+    symlink: bool = False
 
 
 def main() -> None:
@@ -141,7 +142,9 @@ def main() -> None:
             continue
         rel = path.relative_to(REPOSITORY).as_posix()
         if not stat.S_ISREG(info.st_mode):
-            candidates[rel] = Candidate(rel, None, None, info.st_size, False)
+            candidates[rel] = Candidate(
+                rel, None, None, info.st_size, False, symlink=stat.S_ISLNK(info.st_mode)
+            )
             continue
         data = path.read_bytes()
         digest = hashlib.sha256(data).hexdigest()
@@ -352,11 +355,34 @@ def main() -> None:
             )
 
     # Elect one coherent revision for every active group.
+    # A reached target carrying no catalog row at any revision cannot be resolved to an
+    # asset. Report the edges that reach it; it is never elected and never packaged.
+    catalogued = {logical for logical, _ in catalog}
+    unresolved_logical = {
+        logical_id for logical_id in usage if logical_id not in catalogued
+    }
+    unresolved_dependencies = [
+        {
+            "rule_id": rule_id,
+            "from_logical_id": from_logical_id,
+            "to_logical_id": to_logical_id,
+            "relation": relation,
+        }
+        for rule_id, from_logical_id, to_logical_id, relation in edge_usage
+        if to_logical_id in unresolved_logical
+    ]
+    unresolved_dependencies.sort(
+        key=lambda row: tuple(
+            byte_key(row[field])
+            for field in ("rule_id", "from_logical_id", "to_logical_id", "relation")
+        )
+    )
+    for logical_id in unresolved_logical:
+        del usage[logical_id]
+
     active_by_group: dict[str, set[str]] = defaultdict(set)
     for logical_id in usage:
         rows = [row for (logical, _), row in catalog.items() if logical == logical_id]
-        if not rows:
-            raise RuntimeError(f"unresolved logical dependency: {logical_id}")
         group_ids = {row["group_id"] for row in rows}
         if len(group_ids) != 1:
             raise RuntimeError(f"inconsistent group for {logical_id}")
@@ -399,6 +425,34 @@ def main() -> None:
             revision = available[-1]
         for member in members:
             selected_revision[member] = revision
+
+    # Members absent from a revision strictly newer than the elected one are exactly why
+    # that newer revision was not electable for the group.
+    missing_sequence_members = [
+        {"group_id": group_id, "revision": revision, "logical_id": member}
+        for group_id, members in active_by_group.items()
+        for revision in revision_order
+        if revision_rank[revision]
+        > revision_rank[selected_revision[next(iter(members))]]
+        for member in members
+        if (member, revision) not in catalog
+    ]
+    missing_sequence_members.sort(
+        key=lambda row: tuple(
+            byte_key(row[field]) for field in ("group_id", "revision", "logical_id")
+        )
+    )
+
+    # Non-regular inventory entries can never be package members.
+    unsafe_archive_entries = [
+        {
+            "source_path": candidate.path,
+            "entry_type": "symlink" if candidate.symlink else "other",
+        }
+        for candidate in candidates.values()
+        if not candidate.regular
+    ]
+    unsafe_archive_entries.sort(key=lambda row: byte_key(row["source_path"]))
 
     selected_source: dict[str, str] = {}
     selection_entries: list[dict] = []
@@ -554,9 +608,9 @@ def main() -> None:
         "excluded_sources": len(exclusion_entries),
         "archive_entries": len(selection_entries),
         "archive_bytes": total_bytes,
-        "unresolved_dependencies": [],
-        "missing_sequence_members": [],
-        "unsafe_archive_entries": [],
+        "unresolved_dependencies": unresolved_dependencies,
+        "missing_sequence_members": missing_sequence_members,
+        "unsafe_archive_entries": unsafe_archive_entries,
     }
 
     for path, report in (

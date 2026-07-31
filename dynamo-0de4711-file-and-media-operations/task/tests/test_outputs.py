@@ -6,7 +6,7 @@ import json
 import os
 import stat
 import tarfile
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path, PurePosixPath
 
 
@@ -20,14 +20,14 @@ VALIDATION = APP / "validation.json"
 PACKAGE = APP / "package.tar"
 
 EXPECTED_REPOSITORY_SHA256 = "a7aa53d42621481957ef438cda569121f7cd49dc90cd511ffdd2e4e3711d648b"
-EXPECTED_REPORTS_SHA256 = "5d934b27eae1127a9dddf62ab7c37f2845197300e15d16dac8c63fe78aeb22a6"
+EXPECTED_REPORTS_SHA256 = "0857dd16a09504b86f01ba1fd0afa19a08edace1ff9abc93946bd0329201aec0"
 EXPECTED_INPUT_SHA256 = {
-    "catalog.jsonl": "b08f499ba8f62edd42bb54d35587646a1f7b9a7dd5f3b7321d4ea86e20165cc4",
+    "catalog.jsonl": "0db8570240b6c7d3943a14be153608c6e926d9be122fdeae800f5a055c5d2c1b",
     "cut.json": "972b2c599b2d80742860d3f9921ecf9e32cd018f8e5cbcfb3eed8ea0c881c034",
-    "dependencies.jsonl": "d4453a71288663c29a470074ce730e3b2721b2ef310ea78ef3d4268b605921ef",
+    "dependencies.jsonl": "b4e7dedbe7d278c2414ca6fa577a4453fde187f8309f5e5b60e401b8b8e70644",
     "fixity.jsonl": "47dd21d5f943285ed00c9effafdb6050c2adf8028999e8bcd35ac9d07c18c9ac",
     "journal.jsonl": "3b2128566e7dde6cc89d4b2998728c641f0ee68a84a749c621b54a9aef75573e",
-    "policy.json": "d1e65d467af46a3f6c23867d2a6b3e48864faa6f6059f26063e4e4973c5a798d",
+    "policy.json": "6558fd1bb0ea396a52e16f788fad9a09f72e85b2856c5a78436717d51e1a6700",
     "revocations.json": "d3a39a6b51e7947cd08ebdfc6c8ba805338ffc6c45b01b54374ffc8b0153b5cc",
 }
 
@@ -234,10 +234,15 @@ def test_provenance_schema_order_and_dependency_closure():
     ]
     assert edge_order == sorted(edge_order)
     assert len(edge_order) == len(set(edge_order))
+    unresolved = {
+        row["to_logical_id"]
+        for row in json.loads(VALIDATION.read_text())["unresolved_dependencies"]
+    }
+    assert unresolved.isdisjoint(selected)
     for row in data["edges"]:
         assert_exact_keys(row, spec["edge_keys"])
         assert row["from_logical_id"] in selected
-        assert row["to_logical_id"] in selected
+        assert row["to_logical_id"] in selected or row["to_logical_id"] in unresolved
         assert_ranges(row["timeline_ranges"], half_open=False)
 
 
@@ -294,7 +299,7 @@ def test_exclusions_exactly_partition_the_physical_inventory():
 
 
 def test_validation_report_reconciles_all_other_outputs():
-    """Validation counts, audio ranges, archive totals, and empty issue lists reconcile with the reports."""
+    """Validation counts, audio ranges, archive totals, and derived issue lists reconcile with the inputs."""
     policy = json.loads((INPUT / "policy.json").read_text())
     selection = json.loads(SELECTION.read_text())
     provenance = json.loads(PROVENANCE.read_text())
@@ -320,9 +325,82 @@ def test_validation_report_reconciles_all_other_outputs():
     assert data["excluded_sources"] == len(exclusions["entries"])
     assert data["archive_entries"] == len(selection["entries"])
     assert data["archive_bytes"] == selection["totals"]["archive_bytes"]
-    assert data["unresolved_dependencies"] == []
-    assert data["missing_sequence_members"] == []
-    assert data["unsafe_archive_entries"] == []
+    catalog = [json.loads(line) for line in (INPUT / "catalog.jsonl").read_text().splitlines() if line]
+    catalogued = {row["logical_id"] for row in catalog}
+    group_of = {row["logical_id"]: row["group_id"] for row in catalog}
+    revisions_of = defaultdict(set)
+    for row in catalog:
+        revisions_of[row["logical_id"]].add(row["revision"])
+    revision_order = policy["versions"]["revision_order_ascending"]
+    rank = {revision: index for index, revision in enumerate(revision_order)}
+
+    # Every edge reaching an uncatalogued target must be reported, and only those.
+    expected_unresolved = [
+        {field: edge[field] for field in spec["unresolved_entry_keys"]}
+        for edge in provenance["edges"]
+        if edge["to_logical_id"] not in catalogued
+    ]
+    expected_unresolved.sort(
+        key=lambda row: tuple(
+            byte_key(row[field])
+            for field in ("rule_id", "from_logical_id", "to_logical_id", "relation")
+        )
+    )
+    assert expected_unresolved
+    assert data["unresolved_dependencies"] == expected_unresolved
+    packaged = {row["logical_id"] for row in selection["entries"]}
+    assert packaged.isdisjoint(row["to_logical_id"] for row in expected_unresolved)
+
+    # Members absent above the elected revision must be reported, and only those.
+    elected = {row["logical_id"]: row["revision"] for row in selection["entries"]}
+    members_by_group = defaultdict(set)
+    for logical_id in elected:
+        members_by_group[group_of[logical_id]].add(logical_id)
+    expected_missing = [
+        {"group_id": group_id, "revision": revision, "logical_id": member}
+        for group_id, members in members_by_group.items()
+        for revision in revision_order
+        if rank[revision] > rank[elected[next(iter(members))]]
+        for member in members
+        if revision not in revisions_of[member]
+    ]
+    expected_missing.sort(
+        key=lambda row: tuple(
+            byte_key(row[field]) for field in ("group_id", "revision", "logical_id")
+        )
+    )
+    assert expected_missing
+    assert data["missing_sequence_members"] == expected_missing
+    assert all(
+        len({elected[member] for member in members}) == 1
+        for members in members_by_group.values()
+    )
+
+    # Every non-regular inventory entry must be reported, and none of them packaged.
+    expected_unsafe = []
+    for path in REPOSITORY.rglob("*"):
+        info = path.lstat()
+        if stat.S_ISDIR(info.st_mode):
+            continue
+        if stat.S_ISREG(info.st_mode):
+            continue
+        expected_unsafe.append(
+            {
+                "source_path": path.relative_to(REPOSITORY).as_posix(),
+                "entry_type": "symlink" if stat.S_ISLNK(info.st_mode) else "other",
+            }
+        )
+    expected_unsafe.sort(key=lambda row: byte_key(row["source_path"]))
+    assert expected_unsafe
+    assert data["unsafe_archive_entries"] == expected_unsafe
+
+    for key, entry_keys in (
+        ("unresolved_dependencies", "unresolved_entry_keys"),
+        ("missing_sequence_members", "missing_member_entry_keys"),
+        ("unsafe_archive_entries", "unsafe_entry_keys"),
+    ):
+        for row in data[key]:
+            assert_exact_keys(row, spec[entry_keys])
 
 
 def test_tar_is_safe_and_exactly_contains_selected_canonical_bytes():

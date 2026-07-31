@@ -6,6 +6,6 @@ Write all five artifacts required by the policy:
 - `/app/selection.json`, containing every and only selected logical asset with its elected revision, content, source representative, and coalesced active ranges.
 - `/app/provenance.json`, containing all cut roots and every effective dependency edge with coalesced record-frame ranges.
 - `/app/exclusions.json`, accounting exactly once for every inventoried non-selected repository entry under the policy's disposition precedence.
-- `/app/validation.json`, reconciling the cut, audio ranges, selection, exclusions, dependency completeness, and archive.
+- `/app/validation.json`, reconciling the cut, audio ranges, selection, exclusions, and archive, and enumerating the unresolvable dependency edges, the sequence members missing above each elected revision, and the inventoried entries that are unsafe to archive.
 
 All JSON schemas and array ordering are exact as specified in `/app/input/policy.json`; do not add fields. JSON object-key order and whitespace are immaterial. A permitted byte-identical source representative is an equivalence choice, but every other selection, range, edge, revision, disposition, canonical path, and packaged byte is exact.

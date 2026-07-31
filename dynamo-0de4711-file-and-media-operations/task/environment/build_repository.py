@@ -188,7 +188,7 @@ def build_policy(pins: dict[str, str]) -> dict:
             "mute": "An elected mode=mute rule creates no dependency. An elected mode=include rule expands target_template once, or once per listed tile, using the current source frame and tile.",
             "template_expansion": "The only placeholders are {frame:04d}, replaced by the current source frame as zero-padded four-digit decimal, and {tile}, replaced by the listed tile as unpadded decimal.",
             "closure": "For every cut picture root and record frame, recursively visit elected include targets. Preserve effective edges even when a target was already visited; terminate recursion by logical identity within that frame context.",
-            "usage": "A logical asset is active on every record frame on which it is a root or a reached target. Edge timeline ranges are the coalesced record frames on which that exact rule/from/to/relation edge is effective.",
+            "usage": "A logical asset is active on every record frame on which it is a root or a reached target. Edge timeline ranges are the coalesced record frames on which that exact rule/from/to/relation edge is effective. A reached target with no catalog row at any revision is unresolvable: its edges remain effective and are reported in provenance, but it is never selected, never packaged, and never counted as an active group member.",
         },
         "evidence": {
             "sha256": "lowercase SHA-256 of exact regular-file bytes",
@@ -288,7 +288,15 @@ def build_policy(pins: dict[str, str]) -> dict:
                     "unsafe_archive_entries",
                 ],
                 "audio_entry_keys": ["logical_id", "ranges"],
-                "ordering": "audio_sample_ranges by logical_id UTF-8 bytes; the three issue arrays must be empty",
+                "unresolved_entry_keys": [
+                    "rule_id",
+                    "from_logical_id",
+                    "to_logical_id",
+                    "relation",
+                ],
+                "missing_member_entry_keys": ["group_id", "revision", "logical_id"],
+                "unsafe_entry_keys": ["source_path", "entry_type"],
+                "ordering": "audio_sample_ranges by logical_id UTF-8 bytes; unresolved_dependencies by rule_id, from_logical_id, to_logical_id, relation UTF-8 byte tuples; missing_sequence_members by group_id, revision, logical_id UTF-8 byte tuples; unsafe_archive_entries by source_path UTF-8 bytes",
                 "field_semantics": {
                     "schema_version": "integer 1; cut_id is exact cut cut_id",
                     "record_frame_count": "integer count of distinct approved record frames",
@@ -296,7 +304,9 @@ def build_policy(pins: dict[str, str]) -> dict:
                     "audio_sample_ranges": "one record for each selected asset with nonempty sample_ranges, copied as logical_id/ranges",
                     "selected_assets_excluded_sources": "integer selection entries and exclusion entries counts",
                     "archive_entries_archive_bytes": "integer selected canonical-file count and sum of selected size_bytes",
-                    "issue_arrays": "unresolved_dependencies, missing_sequence_members, and unsafe_archive_entries are exactly [] for a valid package",
+                    "unresolved_dependencies": "one record for each effective expanded edge whose to_logical_id has no catalog row at any revision; such a target is reported, never elected, and never packaged",
+                    "missing_sequence_members": "one record for each active group member carrying no catalog row at a revision strictly newer than the group's elected revision, which is why that newer revision was not electable",
+                    "unsafe_archive_entries": "one record for each inventoried non-regular entry, which can never be a package member; entry_type is symlink or other",
                 },
             },
             "archive": {
@@ -373,6 +383,8 @@ def build(root: Path) -> None:
         add_rule(root_id, "fx-mute", "effects", 40, "mute", None, "cache", all_variants=["nofx"])
         add_rule(root_id, "grade", "grade", 10, "include", grade_id, "look")
         add_rule(root_id, "subtitle", "subtitle", 10, "include", f"subtitle/{shot}/approved", "subtitle")
+        # A retired filmout reference survives in the rules but was never catalogued.
+        add_rule(root_id, "filmout", "filmout", 10, "include", f"legacy/{shot}/filmout", "reference")
 
         add_rule(char_id, "geo", "geometry", 10, "include", f"geometry/{shot}/{{frame:04d}}", "cache")
         add_rule(char_id, "material", "material", 10, "include", material_id, "material")
@@ -524,12 +536,15 @@ def build(root: Path) -> None:
         target.write_bytes(data)
         os.chmod(target, 0o640)
 
+    omitted_keys: set[tuple[str, str]] = set()
     for index, row in enumerate(catalog):
         logical_id = row["logical_id"]
         revision = row["revision"]
         kind = row["kind"]
         is_sequence = row["group_id"] != logical_id
         omitted = revision == "r3" and is_sequence and stable_int(logical_id) % 19 == 0
+        if omitted:
+            omitted_keys.add((logical_id, revision))
         salt = f"primary:{index}:{rng.randrange(1 << 30)}"
         data = payload(kind, logical_id, revision, salt)
         digest = hashlib.sha256(data).hexdigest()
@@ -537,7 +552,8 @@ def build(root: Path) -> None:
         current_path = f"{['depot', 'nearline', 'migration'][index % 3]}/{token('path:' + salt, 2)}/{token(salt, 28)}.{misleading_ext}"
 
         if omitted:
-            # A plausible but unattested member makes the newest sequence revision incomplete.
+            # The member ships on disk but was never catalogued or attested at r3, which
+            # makes the newest sequence revision incomplete for the whole group.
             write_file(current_path, data)
             continue
 
@@ -685,6 +701,9 @@ def build(root: Path) -> None:
     os.chmod(repository, 0o750)
 
     dependencies = sorted(rules, key=lambda row: row["rule_id"].encode())
+    catalog[:] = [
+        row for row in catalog if (row["logical_id"], row["revision"]) not in omitted_keys
+    ]
     catalog.sort(key=lambda row: (row["logical_id"].encode(), REVISION_ORDER.index(row["revision"])))
     fixity.sort(key=lambda row: row["record_id"].encode())
     journal.sort(key=lambda row: row["event_id"].encode())
