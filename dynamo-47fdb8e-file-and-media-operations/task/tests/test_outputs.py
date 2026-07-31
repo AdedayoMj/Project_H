@@ -25,7 +25,7 @@ INPUT = APP / "input"
 EVIDENCE = APP / "evidence"
 OUTPUT = APP / "output"
 REFERENCE = Path("/tests/reference_master.npz")
-EXPECTED_SOURCE_SHA256 = "011e81ef029f0e28551aea40b8411aea38107bf964dae5e0cc7b017a1e4636c0"
+EXPECTED_SOURCE_SHA256 = "8abba79b5859c31fa79ef1d8f8df1547192cea4e8b3179e9b2978c2af2b97515"
 REQUIRED_FILES = {
     "plates.npz",
     "proof.png",
@@ -261,6 +261,33 @@ def test_reconstructed_plate_boundaries_match_as_geometry():
             directed_a = float(distance_to_expected[actual_boundary].max())
             directed_b = float(distance_to_actual[expected_boundary].max())
             assert max(directed_a, directed_b) <= max_pixels, (plate_id, directed_a, directed_b)
+
+
+def test_reconstructed_plate_coverage_and_nominal_tones_match_hidden_master():
+    """Every declared tone region preserves coverage values, including zero-ink backgrounds and localized tints."""
+    spec = ticket()
+    limits = spec["acceptance_tolerances"]
+    submitted = load_plates()
+    with np.load(REFERENCE, allow_pickle=False) as reference:
+        for plate_id in spec["manifest_schema"]["plate_order"]:
+            actual = submitted[plate_id].astype(np.int16)
+            expected = reference[plate_id].astype(np.int16)
+            absolute_error = np.abs(actual - expected)
+            for nominal in spec["plate_registry"][plate_id]["nominal_coverage_levels"]:
+                region = expected == nominal
+                assert np.count_nonzero(region) > 0, (plate_id, nominal)
+                region_error = absolute_error[region]
+                mean_error = float(np.mean(region_error))
+                median_error = float(np.median(region_error))
+                mean_limit = (
+                    limits["plate_background_mean_absolute_coverage_max"]
+                    if nominal == 0
+                    else limits["plate_nominal_region_mean_absolute_coverage_max"]
+                )
+                assert mean_error <= mean_limit, (plate_id, nominal, mean_error)
+                assert median_error <= limits[
+                    "plate_nominal_region_median_absolute_coverage_max"
+                ], (plate_id, nominal, median_error)
 
 
 def test_proof_is_colorimetrically_correct_and_derived_from_submitted_plates():

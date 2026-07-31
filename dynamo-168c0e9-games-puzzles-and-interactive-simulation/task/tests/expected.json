@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "puzzles": [
+    {
+      "puzzle_id": "p01",
+      "optimal_moves": 43,
+      "board_sha256": "70173b4800cec1b72d6ebe82a564e905b1aa68316818be79777168a6766b3265"
+    },
+    {
+      "puzzle_id": "p02",
+      "optimal_moves": 53,
+      "board_sha256": "fc590f5a0f293af70559933187f8a78f05d4952f6ebd5e0232ec4d4f955d255a"
+    },
+    {
+      "puzzle_id": "p03",
+      "optimal_moves": 49,
+      "board_sha256": "2745e1d9212a7ce9287db0477dd39efa130b94d227b4dfeec69a6f4c9c7357ce"
+    },
+    {
+      "puzzle_id": "p04",
+      "optimal_moves": 42,
+      "board_sha256": "06b48b67c13575996142747f3f4e7ecbb0675bf89235725c9042d6cdc5499544"
+    },
+    {
+      "puzzle_id": "p05",
+      "optimal_moves": 82,
+      "board_sha256": "9ef22413804535bd3f758c7fb35e27e1d51d202f155f12d01fd0473095224ca7"
+    },
+    {
+      "puzzle_id": "p06",
+      "optimal_moves": 44,
+      "board_sha256": "5492c8c69f4040d8b9a9644447922a4e48e2cb192d4a9687f148dd8521d39579"
+    },
+    {
+      "puzzle_id": "p07",
+      "optimal_moves": 40,
+      "board_sha256": "d477a2841279387d0d01744ecf73b91ca445e69cc4067cecfd12235cf3e39b43"
+    },
+    {
+      "puzzle_id": "p08",
+      "optimal_moves": 42,
+      "board_sha256": "c635c02e971b6b5b1b55858193f929a1341582c6f5106975cccac2a779fa54da"
+    },
+    {
+      "puzzle_id": "p09",
+      "optimal_moves": 68,
+      "board_sha256": "3f1525ca966063fb93a43da5b1bec32784c2c3d0280ec8c84930bf4d1dbaa2ae"
+    },
+    {
+      "puzzle_id": "p10",
+      "optimal_moves": 45,
+      "board_sha256": "42eaaa361bb35164f68108c0089799af9a42933e793b9222632450bb13c66486"
+    },
+    {
+      "puzzle_id": "p11",
+      "optimal_moves": 43,
+      "board_sha256": "0e93298467d5fe29310c7ca7234fc0f521cddada7c0a1e74e4836edf48149fd8"
+    },
+    {
+      "puzzle_id": "p12",
+      "optimal_moves": 49,
+      "board_sha256": "1e791db0c31007260ba01f64f80852b74e477d09182f96aa328d9a098fa9d3e1"
+    }
+  ],
+  "rules_sha256": "fa787243207bf2f5fd14cb452ae8d9c063cfa0d2f29a22268441a642f5e041fb"
+}

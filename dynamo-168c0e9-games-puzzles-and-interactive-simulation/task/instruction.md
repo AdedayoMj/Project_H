@@ -1,0 +1,9 @@
+Solve every Sokoban instance published under `/app/input/puzzles/` with a provably move-optimal solution. `/app/input/rules.json` is normative: it defines the board glyphs, the move semantics, the scored metric, the instance bounds, and the exact output schema. Do not modify anything under `/app/input/`.
+
+The scored quantity is total player moves — the number of characters in your move string, counting every step whether or not it pushes a box. Push count is not scored and is not a tie-break, so any solution attaining the optimal move count is accepted regardless of how many pushes it uses. A legal solution one move longer than the optimum fails.
+
+Write `/app/output/solutions.json` containing exactly the keys `schema_version` and `solutions`. `schema_version` is the integer 1. `solutions` is an array holding exactly one record per published puzzle, ordered ascending by `puzzle_id`, where each record has exactly the keys `puzzle_id` and `moves`. `moves` is a string over the uppercase characters `U`, `D`, `L`, and `R` with one character per player step and no separators, whitespace, or lowercase.
+
+`U` decreases the row, `D` increases the row, `L` decreases the column, `R` increases the column. Stepping into a box pushes it one cell in the same direction; the destination must be floor or goal and must not hold another box. Walking into a wall, pushing into a wall, pushing into a second box, or leaving the grid is illegal. A puzzle is solved when every box occupies a goal.
+
+Every instance was generated backwards from its solved state, so a legal solution is guaranteed to exist, and the reference solver proved each optimum inside the expansion envelope published in `rules.json`. Verification replays each submitted move string under the rules above and requires that it solves its puzzle in exactly the hidden optimal number of moves; every puzzle must pass.

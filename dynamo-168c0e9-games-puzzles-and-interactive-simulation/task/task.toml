@@ -1,0 +1,32 @@
+artifacts = ["/app/output/solutions.json"]
+
+[task]
+name = "dynamo/sokoban-move-optimal"
+description = "Compute provably move-optimal solutions for a hidden Sokoban benchmark."
+
+[metadata]
+category = "Games Puzzles and Interactive Simulation"
+subcategory = "Board and card games"
+model_tested = "Opus-4.8"
+agent_tested = "Terminus-2"
+task_objective = ["implement", "optimize", "generate"]
+artifact_type = ["generated_output_artifact"]
+expert_time_estimate_hours = 25.0
+difficulty_explanation = "A heuristic-search engineer must build a solver that proves move-optimality rather than merely finding a solution, across twelve synthetic instances with interiors up to 16x16 and four to six boxes. Optimal Sokoban is PSPACE-complete and the reachable configuration space of even these instances runs into many millions of states, so a plain breadth-first search over player steps exhausts memory long before it terminates. The intended insight is that searching pushes while charging each edge the walk that positions the player for it preserves the move metric exactly while collapsing the state space; without it the instances are intractable, and a greedy or beam search returns a legal solution that is one or more moves too long and scores nothing. Correctness further depends on an admissible heuristic, because an overestimating one silently returns suboptimal answers that still look like valid solutions, and on conservative deadlock pruning, because an unsound deadlock rule silently discards the optimal path. Humans cannot substitute for the search: a person can find a legal solution by inspection, but certifying that no shorter one exists demands exhaustive reasoning, and frozen or corralled boxes become unrecoverable many moves before the failure is visible on the board."
+solution_explanation = "Parse each board into walls, goals, boxes, and the player. Precompute, for every goal, the minimum number of pushes needed to bring a lone box to it, by a reverse breadth-first search in which the pusher must be able to stand one cell further along the same axis; cells with no finite distance to any goal are dead squares. Then search a graph whose nodes are the player cell paired with the box set and whose edges are single pushes, giving each edge a cost of the player's walk distance to the required standing square plus one for the push. That cost is exactly the number of player steps, so A* over this graph is move-optimal while never enumerating walk-only states. Use the minimum-cost assignment of boxes to goals over the push-distance tables as an admissible heuristic, prune pushes onto dead squares and pushes that complete a fully blocked two-by-two square holding an off-goal box, and rebuild the move string by replaying each stored walk with a breadth-first path search followed by its push character."
+verification_explanation = "The verifier re-hashes every published board and the normative rules document against digests recorded at build time, so an agent cannot make the task easier by editing its inputs. It then checks the output against the schema in rules.json: exact top-level and per-entry key sets, the schema version, one entry per published puzzle, ascending puzzle_id order, no duplicates, and a moves alphabet restricted to uppercase U, D, L, and R so that solution length is unambiguously the character count. Each move string is replayed by an independent board reader and rule engine that shares no code with the solution, rejecting walks into walls, pushes into walls or into a second box, and any move leaving the grid, and requiring that every box finishes on a goal. Finally each solution's length must equal the optimal move count that the reference solver proved at build time and that ships only with the tests. No tolerance band is used or needed: the metric is an exact integer, a shorter solution cannot exist because the reference is optimal, and a longer one fails. All twelve puzzles must pass."
+
+[verifier]
+timeout_sec = 180.0
+
+[agent]
+timeout_sec = 3600.0
+
+[environment]
+build_timeout_sec = 2700.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 10240
+gpus = 0
+allow_internet = true
+mcp_servers = []
