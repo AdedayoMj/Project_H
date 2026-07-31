@@ -244,6 +244,13 @@ def test_manifest_is_complete_and_recovers_hidden_design_and_capture_state():
         assert capture["layout_id"] == record["layout_id"]
         assert capture["reported_axis_status"] == expected["reported_axis_status"]
         assert set(capture["axis_location"]) == {"wght", "wdth", "opsz"}
+        # The status must also follow from the submitted location, not just match truth.
+        reported = record["reported_axis_untrusted"]
+        agrees = all(
+            abs(float(reported[tag]) - float(capture["axis_location"][tag])) <= axis_limits[tag]
+            for tag in ("wght", "wdth", "opsz")
+        )
+        assert capture["reported_axis_status"] == ("correct" if agrees else "mislabelled")
         for tag, value in expected["axis_location"].items():
             assert abs(float(capture["axis_location"][tag]) - value) <= axis_limits[tag]
         matrix = np.asarray(capture["image_to_page_homography"], dtype=np.float64)
@@ -272,6 +279,18 @@ def test_variable_font_has_real_outline_variation_and_required_open_type_structu
             expected_cmap[codepoint] = glyph["name"]
     assert cmap == expected_cmap
     assert font["head"].unitsPerEm == spec["units_per_em"]
+    # The contract fixes every vertical metric, so grade them rather than trusting them.
+    assert font["hhea"].ascent == spec["ascender"]
+    assert font["hhea"].descent == spec["descender"]
+    assert font["hhea"].lineGap == spec["line_gap"]
+    os2 = font["OS/2"]
+    assert os2.sTypoAscender == spec["ascender"]
+    assert os2.sTypoDescender == spec["descender"]
+    assert os2.sTypoLineGap == spec["line_gap"]
+    assert os2.sxHeight == spec["x_height"]
+    assert os2.sCapHeight == spec["cap_height"]
+    assert os2.usWinAscent == max(0, spec["ascender"])
+    assert os2.usWinDescent == max(0, -spec["descender"])
     assert font["name"].getDebugName(1) == spec["family_name"]
     assert font["name"].getDebugName(6) == f"{spec['postscript_prefix']}-Regular"
     axes = font["fvar"].axes

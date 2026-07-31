@@ -270,12 +270,14 @@ def test_exclusions_exactly_partition_the_physical_inventory():
         assert row["reason"] in reasons
         assert row["source_path"] not in selected_by_path
         excluded_by_path[row["source_path"]] = row
-        if row["reason"] == "UNSAFE_LINK":
-            assert row["sha256"] is None
+        source = REPOSITORY / row["source_path"]
+        source_mode = source.lstat().st_mode
+        if stat.S_ISREG(source_mode):
+            assert row["reason"] != "UNSAFE_LINK"
+            assert hashlib.sha256(source.read_bytes()).hexdigest() == row["sha256"]
         else:
-            source = REPOSITORY / row["source_path"]
-            if source.is_file() and not source.is_symlink():
-                assert hashlib.sha256(source.read_bytes()).hexdigest() == row["sha256"]
+            assert row["reason"] == "UNSAFE_LINK"
+            assert row["sha256"] is None
         if row["reason"] == "EQUIVALENT_COPY":
             assert row["selected_as"] in selected_by_path
             selected = selected_by_path[row["selected_as"]]
