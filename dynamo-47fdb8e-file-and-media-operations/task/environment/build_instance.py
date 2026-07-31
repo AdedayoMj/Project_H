@@ -685,6 +685,7 @@ def build(root: Path) -> None:
         "plate_registry": registry,
         "render_model": {
             "working_space": "linear RGB",
+            "working_precision": "IEEE-754 binary32 (float32) for every linear-light arithmetic operation",
             "substrate_linear_rgb": [0.62, 0.43, 0.24],
             "opaque_white_linear_rgb": [0.96, 0.965, 0.95],
             "plate_order": ["OW", "C", "M", "Y", "K", "SC", "V"],

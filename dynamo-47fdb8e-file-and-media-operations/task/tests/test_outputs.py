@@ -25,7 +25,7 @@ INPUT = APP / "input"
 EVIDENCE = APP / "evidence"
 OUTPUT = APP / "output"
 REFERENCE = Path("/tests/reference_master.npz")
-EXPECTED_SOURCE_SHA256 = "8abba79b5859c31fa79ef1d8f8df1547192cea4e8b3179e9b2978c2af2b97515"
+EXPECTED_SOURCE_SHA256 = "7fb1e21a9074a07a515cac18a70b95d86fe509ffbd922d6b3000bebbb7e3dcf1"
 REQUIRED_FILES = {
     "plates.npz",
     "proof.png",
