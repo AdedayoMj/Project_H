@@ -47,30 +47,46 @@ def clipped_grid(boundary, grid):
     return result
 
 
-def map_unit_storage(path: Path, root_depth_m: float):
+def horizon_rows(path: Path):
+    return [
+        (
+            row["map_unit_id"],
+            float(row["top_cm"]),
+            float(row["bottom_cm"]),
+            float(row["theta_fc"]),
+            float(row["theta_wp"]),
+        )
+        for row in table(path)
+    ]
+
+
+def map_unit_storage(horizons, root_depth_m: float):
     root_cm = 100.0 * root_depth_m
     by_map = defaultdict(float)
-    for horizon in table(path):
-        upper = max(0.0, float(horizon["top_cm"]))
-        lower = min(root_cm, float(horizon["bottom_cm"]))
+    for map_unit_id, top_cm, bottom_cm, theta_fc, theta_wp in horizons:
+        upper = max(0.0, top_cm)
+        lower = min(root_cm, bottom_cm)
         if lower > upper:
-            water_fraction = float(horizon["theta_fc"]) - float(horizon["theta_wp"])
-            by_map[horizon["map_unit_id"]] += (lower - upper) * water_fraction * 10.0
+            by_map[map_unit_id] += (lower - upper) * (theta_fc - theta_wp) * 10.0
     return by_map
 
 
-def capacity_for_cell(cell, survey, storage):
+def survey_weights(cell, survey):
     pieces = []
     for map_unit_id, polygon in survey:
         if not cell.intersects(polygon):
             continue
         area = cell.intersection(polygon).area
         if area:
-            pieces.append((area, storage[map_unit_id]))
-    covered = math.fsum(piece[0] for piece in pieces)
+            pieces.append((map_unit_id, area))
+    covered = math.fsum(piece[1] for piece in pieces)
     if abs(covered - cell.area) > 1e-6:
         raise AssertionError("the published soil partition does not cover a reference cell")
-    return math.fsum(area * capacity for area, capacity in pieces) / cell.area
+    return [(map_unit_id, area / cell.area) for map_unit_id, area in pieces]
+
+
+def capacity_for_cell(weights, storage):
+    return math.fsum(fraction * storage[map_unit_id] for map_unit_id, fraction in weights)
 
 
 def interpolate_series(series, wanted_ordinal):
@@ -101,7 +117,7 @@ def calculate_campaign(campaign):
         (feature["properties"]["map_unit_id"], shape(feature["geometry"]))
         for feature in soil_doc["features"]
     ]
-    storage = map_unit_storage(directory / "soil_horizons.csv", float(ticket["crop"]["root_depth_m"]))
+    horizons = horizon_rows(directory / "soil_horizons.csv")
     start = date.fromisoformat(ticket["simulation"]["start_date"])
     finish = date.fromisoformat(ticket["simulation"]["end_date"])
     calendar = [start + timedelta(days=index) for index in range((finish - start).days + 1)]
@@ -127,7 +143,15 @@ def calculate_campaign(campaign):
         )
 
     crop = ticket["crop"]
-    p = float(crop["depletion_fraction"])
+    root_curve = [
+        (date.fromisoformat(item["date"]).toordinal(), float(item["root_depth_m"]))
+        for item in crop["root_depth_curve"]
+    ]
+    storages = {
+        current: map_unit_storage(horizons, interpolate_series(root_curve, current.toordinal()))
+        for current in calendar
+    }
+    reference_p = float(crop["depletion_fraction"])
     efficiency = float(ticket["irrigation"]["efficiency"])
     maximum = float(ticket["irrigation"]["max_application_mm"])
     edges = [float(value) for value in ticket["management_zone_edges_mm"]]
@@ -135,8 +159,8 @@ def calculate_campaign(campaign):
     for cell in cells:
         geometry = cell["geometry"]
         area = geometry.area
-        taw = capacity_for_cell(geometry, survey, storage)
-        raw = p * taw
+        weights = survey_weights(geometry, survey)
+        taw = capacity_for_cell(weights, storages[start])
         depletion = initial[cell["unit_id"]] * taw
         accumulated_etc = 0.0
         accumulated_irrigation = 0.0
@@ -144,6 +168,7 @@ def calculate_campaign(campaign):
         minimum_stress = 1.0
         stressed = 0
         final_kc = None
+        raw = None
 
         effective_events = defaultdict(float)
         for event_date, footprints in events.items():
@@ -155,12 +180,17 @@ def calculate_campaign(campaign):
             effective_events[event_date] = efficiency * covered_gross
 
         for current in calendar:
+            taw = capacity_for_cell(weights, storages[current])
+            depletion = min(depletion, taw)
             vi = interpolate_series(satellite[cell["unit_id"]], current.toordinal())
             kc = max(float(crop["kc_min"]), min(float(crop["kc_max"]), float(crop["kc_slope"]) * vi + float(crop["kc_intercept"])))
+            eto, rain = weather[current]
+            potential_use = kc * eto
+            p = max(0.1, min(0.8, reference_p + 0.04 * (5.0 - potential_use)))
+            raw = p * taw
             stress = 1.0 if depletion <= raw else max(0.0, min(1.0, (taw - depletion) / (taw - raw)))
             stressed += int(stress < 1.0)
             minimum_stress = min(minimum_stress, stress)
-            eto, rain = weather[current]
             crop_use = stress * kc * eto
             applied = effective_events[current]
             candidate = depletion + crop_use - rain - applied
@@ -196,7 +226,7 @@ def calculate_campaign(campaign):
         )
 
     zone_rows = []
-    for number in range(4):
+    for number in range(len(edges)):
         zone_id = f"Z{number}"
         members = [row for row in results if row["zone_id"] == zone_id]
         area = math.fsum(row["clipped_area_m2"] for row in members)

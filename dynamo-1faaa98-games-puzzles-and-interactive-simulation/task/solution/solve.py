@@ -78,21 +78,34 @@ def make_units(field, grid: dict) -> list[dict]:
     return units
 
 
-def soil_storages(directory: Path, root_depth_m: float) -> dict[str, float]:
+def soil_horizons(directory: Path) -> list[dict]:
+    return [
+        {
+            "map_unit_id": record["map_unit_id"],
+            "top_cm": float(record["top_cm"]),
+            "bottom_cm": float(record["bottom_cm"]),
+            "theta_fc": float(record["theta_fc"]),
+            "theta_wp": float(record["theta_wp"]),
+        }
+        for record in read_csv(directory / "soil_horizons.csv")
+    ]
+
+
+def soil_storages(horizons: list[dict], root_depth_m: float) -> dict[str, float]:
     root_bottom_cm = root_depth_m * 100.0
     result: dict[str, float] = defaultdict(float)
-    for record in read_csv(directory / "soil_horizons.csv"):
-        top = float(record["top_cm"])
-        bottom = float(record["bottom_cm"])
+    for record in horizons:
+        top = record["top_cm"]
+        bottom = record["bottom_cm"]
         thickness = max(0.0, min(bottom, root_bottom_cm) - max(top, 0.0))
         result[record["map_unit_id"]] += (
-            10.0 * (float(record["theta_fc"]) - float(record["theta_wp"])) * thickness
+            10.0 * (record["theta_fc"] - record["theta_wp"]) * thickness
         )
     return dict(result)
 
 
-def area_weighted_taw(unit_geometry, soil_features: list[tuple[str, object]], storage: dict[str, float]) -> float:
-    numerator = 0.0
+def soil_area_weights(unit_geometry, soil_features: list[tuple[str, object]]) -> dict[str, float]:
+    overlaps = {}
     covered = 0.0
     u_min_x, u_min_y, u_max_x, u_max_y = unit_geometry.bounds
     for map_id, geometry in soil_features:
@@ -101,11 +114,15 @@ def area_weighted_taw(unit_geometry, soil_features: list[tuple[str, object]], st
             continue
         overlap = unit_geometry.intersection(geometry).area
         if overlap > 0.0:
-            numerator += overlap * storage[map_id]
+            overlaps[map_id] = overlap
             covered += overlap
     if not math.isclose(covered, unit_geometry.area, rel_tol=0.0, abs_tol=1e-6):
         raise RuntimeError(f"soil partition leaves {unit_geometry.area - covered} square metres uncovered")
-    return numerator / unit_geometry.area
+    return {map_id: overlap / unit_geometry.area for map_id, overlap in overlaps.items()}
+
+
+def weighted_taw(weights: dict[str, float], storage: dict[str, float]) -> float:
+    return sum(fraction * storage[map_id] for map_id, fraction in weights.items())
 
 
 def vegetation_by_unit(directory: Path) -> dict[str, list[tuple[int, float]]]:
@@ -158,7 +175,7 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
         (feature["properties"]["map_unit_id"], shape(feature["geometry"]))
         for feature in soil_document["features"]
     ]
-    storage = soil_storages(directory, float(job["crop"]["root_depth_m"]))
+    horizons = soil_horizons(directory)
     initial_fraction = {
         record["unit_id"]: float(record["depletion_fraction"])
         for record in read_csv(directory / "initial_depletion.csv")
@@ -183,6 +200,16 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
     end = date.fromisoformat(job["simulation"]["end_date"])
     days = dates_inclusive(start, end)
     crop = job["crop"]
+    root_curve = [
+        (date.fromisoformat(item["date"]).toordinal(), float(item["root_depth_m"]))
+        for item in crop["root_depth_curve"]
+    ]
+    daily_storage = {
+        current_day: soil_storages(
+            horizons, interpolate(root_curve, current_day.toordinal())
+        )
+        for current_day in days
+    }
     depletion_fraction = float(crop["depletion_fraction"])
     efficiency = float(job["irrigation"]["efficiency"])
     maximum = float(job["irrigation"]["max_application_mm"])
@@ -194,8 +221,8 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
     for unit in units:
         geometry = unit["geometry"]
         area = geometry.area
-        taw = area_weighted_taw(geometry, soil_features, storage)
-        raw = depletion_fraction * taw
+        soil_weights = soil_area_weights(geometry, soil_features)
+        taw = weighted_taw(soil_weights, daily_storage[start])
         depletion = initial_fraction[unit["unit_id"]] * taw
         observations = vegetation[unit["unit_id"]]
         seasonal_etc = 0.0
@@ -204,6 +231,7 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
         stress_days = 0
         minimum_ks = 1.0
         final_kc = 0.0
+        raw = 0.0
 
         event_depths: dict[date, float] = {}
         for event_day, event_list in events_by_day.items():
@@ -215,8 +243,14 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
             event_depths[event_day] = gross * efficiency
 
         for current_day in days:
+            taw = weighted_taw(soil_weights, daily_storage[current_day])
+            depletion = min(depletion, taw)
             vi = interpolate(observations, current_day.toordinal())
             kc = min(float(crop["kc_max"]), max(float(crop["kc_min"]), float(crop["kc_slope"]) * vi + float(crop["kc_intercept"])))
+            eto, precipitation = weather[current_day]
+            potential_etc = kc * eto
+            daily_p = min(0.8, max(0.1, depletion_fraction + 0.04 * (5.0 - potential_etc)))
+            raw = daily_p * taw
             if depletion <= raw:
                 ks = 1.0
             else:
@@ -224,7 +258,6 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
             if ks < 1.0:
                 stress_days += 1
             minimum_ks = min(minimum_ks, ks)
-            eto, precipitation = weather[current_day]
             etc = ks * kc * eto
             effective_irrigation = event_depths.get(current_day, 0.0)
             unconstrained = depletion + etc - precipitation - effective_irrigation
@@ -259,7 +292,7 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
         features.append({"type": "Feature", "geometry": mapping(geometry), "properties": properties})
 
     zone_records = []
-    for zone_index in range(4):
+    for zone_index in range(len(edges)):
         zone_id = f"Z{zone_index}"
         members = [record for record in properties_records if record["zone_id"] == zone_id]
         zone_area = sum(record["clipped_area_m2"] for record in members)

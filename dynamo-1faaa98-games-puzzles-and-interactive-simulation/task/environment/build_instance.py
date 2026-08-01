@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from shapely import affinity
-from shapely.geometry import Polygon, box, mapping
+from shapely.geometry import MultiPolygon, Polygon, box, mapping
 from shapely.geometry.polygon import orient
 
 
@@ -25,10 +25,14 @@ CAMPAIGNS = (
         "height": 386.0,
         "start": date(2023, 4, 17),
         "days": 139,
-        "root_depth_m": 1.08,
+        "cell_size_m": (7.5, 12.5),
+        "root_depth_curve": ((0.00, 0.28), (0.18, 0.52), (0.42, 0.88), (0.68, 1.08)),
         "depletion_fraction": 0.48,
         "efficiency": 0.83,
-        "max_application_mm": 10.0,
+        "max_application_mm": 34.0,
+        "zone_edges_mm": (0.0, 8.0, 16.0, 24.0, 32.0),
+        "soil_rotation_degrees": 8.0,
+        "split_field": False,
         "kc": (1.31, -0.09, 0.18, 1.17),
     },
     {
@@ -40,10 +44,14 @@ CAMPAIGNS = (
         "height": 421.0,
         "start": date(2024, 3, 29),
         "days": 147,
-        "root_depth_m": 0.94,
+        "cell_size_m": (11.0, 9.0),
+        "root_depth_curve": ((0.00, 0.24), (0.23, 0.44), (0.49, 0.71), (0.74, 0.94)),
         "depletion_fraction": 0.44,
         "efficiency": 0.79,
-        "max_application_mm": 20.0,
+        "max_application_mm": 27.0,
+        "zone_edges_mm": (0.0, 7.5, 15.0, 22.5),
+        "soil_rotation_degrees": -13.0,
+        "split_field": True,
         "kc": (1.24, -0.04, 0.16, 1.12),
     },
     {
@@ -55,10 +63,14 @@ CAMPAIGNS = (
         "height": 352.0,
         "start": date(2022, 5, 3),
         "days": 132,
-        "root_depth_m": 1.16,
+        "cell_size_m": (8.0, 14.0),
+        "root_depth_curve": ((0.00, 0.33), (0.16, 0.62), (0.39, 0.98), (0.64, 1.16)),
         "depletion_fraction": 0.51,
         "efficiency": 0.86,
-        "max_application_mm": 30.0,
+        "max_application_mm": 58.0,
+        "zone_edges_mm": (0.0, 12.0, 24.0, 36.0, 48.0, 56.0),
+        "soil_rotation_degrees": 21.0,
+        "split_field": False,
         "kc": (1.37, -0.12, 0.20, 1.20),
     },
     {
@@ -70,10 +82,14 @@ CAMPAIGNS = (
         "height": 404.0,
         "start": date(2025, 4, 8),
         "days": 143,
-        "root_depth_m": 1.02,
+        "cell_size_m": (12.5, 7.5),
+        "root_depth_curve": ((0.00, 0.26), (0.20, 0.49), (0.46, 0.82), (0.72, 1.02)),
         "depletion_fraction": 0.46,
         "efficiency": 0.81,
-        "max_application_mm": 40.0,
+        "max_application_mm": 43.0,
+        "zone_edges_mm": (0.0, 10.0, 20.0, 30.0, 40.0),
+        "soil_rotation_degrees": -27.0,
+        "split_field": False,
         "kc": (1.28, -0.06, 0.17, 1.15),
     },
 )
@@ -83,8 +99,8 @@ def dump_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
-def field_polygon(config: dict) -> Polygon:
-    """Return one irregular shell with two realistic non-cropped exclusions."""
+def field_geometry(config: dict):
+    """Return an irregular field, optionally split by a non-cropped service corridor."""
     x, y = config["base_x"], config["base_y"]
     w, h = config["width"], config["height"]
     jitter = (config["seed"] % 19) / 10.0
@@ -127,22 +143,29 @@ def field_polygon(config: dict) -> Polygon:
     polygon = orient(Polygon(shell, [hole_one, hole_two]), sign=1.0)
     if not polygon.is_valid:
         raise RuntimeError(f"invalid generated boundary for {config['campaign_id']}")
+    if config["split_field"]:
+        corridor_x = x + 0.34 * w
+        polygon = polygon.difference(box(corridor_x - 3.5, y - 25.0, corridor_x + 3.5, y + h + 25.0))
+        if not isinstance(polygon, MultiPolygon) or len(polygon.geoms) < 2:
+            raise RuntimeError(f"service corridor did not split {config['campaign_id']}")
     return polygon
 
 
-def analysis_units(field: Polygon, origin_x: float, origin_y: float) -> list[dict]:
+def analysis_units(
+    field, origin_x: float, origin_y: float, cell_width: float, cell_height: float
+) -> list[dict]:
     min_x, min_y, max_x, max_y = field.bounds
-    min_col = math.floor((min_x - origin_x) / 10.0)
-    max_col = math.ceil((max_x - origin_x) / 10.0) - 1
-    min_row = math.floor((origin_y - max_y) / 10.0)
-    max_row = math.ceil((origin_y - min_y) / 10.0) - 1
+    min_col = math.floor((min_x - origin_x) / cell_width)
+    max_col = math.ceil((max_x - origin_x) / cell_width) - 1
+    min_row = math.floor((origin_y - max_y) / cell_height)
+    max_row = math.ceil((origin_y - min_y) / cell_height) - 1
     units: list[dict] = []
     for row in range(min_row, max_row + 1):
-        top = origin_y - row * 10.0
-        bottom = top - 10.0
+        top = origin_y - row * cell_height
+        bottom = top - cell_height
         for column in range(min_col, max_col + 1):
-            left = origin_x + column * 10.0
-            clipped = field.intersection(box(left, bottom, left + 10.0, top))
+            left = origin_x + column * cell_width
+            clipped = field.intersection(box(left, bottom, left + cell_width, top))
             if clipped.area <= 0.0:
                 continue
             units.append(
@@ -156,14 +179,15 @@ def analysis_units(field: Polygon, origin_x: float, origin_y: float) -> list[dic
     return units
 
 
-def soil_partition(config: dict, field: Polygon) -> tuple[list[dict], list[dict]]:
-    """Create a complete rectangular survey partition with depth-varying storage."""
+def soil_partition(config: dict, field) -> tuple[list[dict], list[dict]]:
+    """Create a rotated complete survey partition with depth-varying storage."""
     min_x, min_y, max_x, max_y = field.bounds
     width, height = max_x - min_x, max_y - min_y
     x_fracs = (0.0, 0.173, 0.392, 0.641, 0.827, 1.0)
     y_fracs = (0.0, 0.226, 0.518, 0.771, 1.0)
-    x_edges = [min_x - 25.0] + [min_x + width * f for f in x_fracs[1:-1]] + [max_x + 25.0]
-    y_edges = [min_y - 25.0] + [min_y + height * f for f in y_fracs[1:-1]] + [max_y + 25.0]
+    padding = max(width, height)
+    x_edges = [min_x - padding] + [min_x + width * f for f in x_fracs[1:-1]] + [max_x + padding]
+    y_edges = [min_y - padding] + [min_y + height * f for f in y_fracs[1:-1]] + [max_y + padding]
     features: list[dict] = []
     horizons: list[dict] = []
     layer_edges = (0, 17, 39, 72, 108, 145)
@@ -171,11 +195,16 @@ def soil_partition(config: dict, field: Polygon) -> tuple[list[dict], list[dict]
     for band_y in range(len(y_edges) - 1):
         for band_x in range(len(x_edges) - 1):
             map_id = f"MU{sequence + 1:02d}"
-            geometry = box(
-                x_edges[band_x],
-                y_edges[band_y],
-                x_edges[band_x + 1],
-                y_edges[band_y + 1],
+            geometry = affinity.rotate(
+                box(
+                    x_edges[band_x],
+                    y_edges[band_y],
+                    x_edges[band_x + 1],
+                    y_edges[band_y + 1],
+                ),
+                config["soil_rotation_degrees"],
+                origin=((min_x + max_x) / 2.0, (min_y + max_y) / 2.0),
+                use_radians=False,
             )
             features.append(
                 {
@@ -202,21 +231,23 @@ def soil_partition(config: dict, field: Polygon) -> tuple[list[dict], list[dict]
     return features, horizons
 
 
-def observation_offsets(days: int, seed: int) -> list[int]:
-    rng = random.Random(seed ^ 0x5A17)
-    offsets = [3]
-    while offsets[-1] < days - 17:
-        offsets.append(offsets[-1] + rng.randint(10, 17))
-    if offsets[-1] >= days - 2:
-        offsets.pop()
-    offsets.append(days - 4)
+def observation_offsets(days: int, seed: int, row: int, column: int) -> list[int]:
+    rng = random.Random(seed ^ 0x5A17 ^ (row * 1_000_003) ^ (column * 97_409))
+    offsets = [-rng.randint(0, 9)]
+    while offsets[-1] < days - 7:
+        offsets.append(offsets[-1] + rng.randint(9, 18))
+    terminal = days + rng.randint(0, 8)
+    if terminal > offsets[-1]:
+        offsets.append(terminal)
     return sorted(set(offsets))
 
 
 def vegetation_rows(config: dict, units: list[dict]) -> list[dict]:
     rows: list[dict] = []
-    offsets = observation_offsets(config["days"], config["seed"])
     for unit in units:
+        offsets = observation_offsets(
+            config["days"], config["seed"], unit["row"], unit["column"]
+        )
         spatial = (
             0.044 * math.sin((unit["column"] + 1) * 0.419)
             + 0.031 * math.cos((unit["row"] + 2) * 0.347)
@@ -273,7 +304,7 @@ def weather_rows(config: dict) -> list[dict]:
     return rows
 
 
-def irrigation_features(config: dict, field: Polygon) -> list[dict]:
+def irrigation_features(config: dict, field) -> list[dict]:
     min_x, min_y, max_x, max_y = field.bounds
     cx, cy = (min_x + max_x) / 2.0, (min_y + max_y) / 2.0
     width, height = max_x - min_x, max_y - min_y
@@ -289,6 +320,13 @@ def irrigation_features(config: dict, field: Polygon) -> list[dict]:
         (config["days"] - 13, 45.0, box(cx - 0.05 * width, cy - 0.50 * height, cx + 0.23 * width, cy + 0.52 * height), 9.0),
         (config["days"] - 7, 70.0, box(cx + 0.18 * width, cy - 0.50 * height, cx + 0.52 * width, cy + 0.50 * height), -4.0),
     ]
+    multipart = MultiPolygon(
+        [
+            box(min_x - 0.03 * width, cy - 0.31 * height, min_x + 0.23 * width, cy + 0.29 * height),
+            box(max_x - 0.21 * width, cy - 0.27 * height, max_x + 0.03 * width, cy + 0.33 * height),
+        ]
+    )
+    definitions.append((config["days"] - 24, 7.75, multipart, 3.0))
     features: list[dict] = []
     for index, (offset, depth, rectangle, degrees) in enumerate(definitions, start=1):
         geometry = affinity.rotate(rectangle, degrees, origin=(cx, cy), use_radians=False)
@@ -317,11 +355,12 @@ def build_campaign(root: Path, config: dict) -> dict:
     campaign_id = config["campaign_id"]
     directory = root / "campaigns" / campaign_id
     directory.mkdir(parents=True, exist_ok=True)
-    field = field_polygon(config)
+    field = field_geometry(config)
     min_x, _, _, max_y = field.bounds
-    origin_x = math.floor(min_x / 10.0) * 10.0
-    origin_y = math.ceil(max_y / 10.0) * 10.0
-    units = analysis_units(field, origin_x, origin_y)
+    cell_width, cell_height = config["cell_size_m"]
+    origin_x = math.floor(min_x / cell_width) * cell_width
+    origin_y = math.ceil(max_y / cell_height) * cell_height
+    units = analysis_units(field, origin_x, origin_y, cell_width, cell_height)
     soil_features, soil_rows = soil_partition(config, field)
 
     job = {
@@ -330,8 +369,8 @@ def build_campaign(root: Path, config: dict) -> dict:
         "grid": {
             "origin_x": origin_x,
             "origin_y": origin_y,
-            "cell_width_m": 10.0,
-            "cell_height_m": 10.0,
+            "cell_width_m": cell_width,
+            "cell_height_m": cell_height,
             "row_direction": "north_to_south",
             "column_direction": "west_to_east",
         },
@@ -340,7 +379,16 @@ def build_campaign(root: Path, config: dict) -> dict:
             "end_date": (config["start"] + timedelta(days=config["days"] - 1)).isoformat(),
         },
         "crop": {
-            "root_depth_m": config["root_depth_m"],
+            "root_depth_curve": [
+                {
+                    "date": (
+                        config["start"]
+                        + timedelta(days=round(fraction * (config["days"] - 1)))
+                    ).isoformat(),
+                    "root_depth_m": depth,
+                }
+                for fraction, depth in config["root_depth_curve"]
+            ],
             "depletion_fraction": config["depletion_fraction"],
             "kc_slope": config["kc"][0],
             "kc_intercept": config["kc"][1],
@@ -351,7 +399,7 @@ def build_campaign(root: Path, config: dict) -> dict:
             "efficiency": config["efficiency"],
             "max_application_mm": config["max_application_mm"],
         },
-        "management_zone_edges_mm": [0.0, 10.0, 20.0, 30.0],
+        "management_zone_edges_mm": list(config["zone_edges_mm"]),
     }
     dump_json(directory / "job_ticket.json", job)
     dump_json(

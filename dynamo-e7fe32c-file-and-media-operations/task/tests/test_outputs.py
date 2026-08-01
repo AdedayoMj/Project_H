@@ -15,6 +15,7 @@ import fitz
 import freetype
 import numpy as np
 import pikepdf
+import pytest
 import uharfbuzz as hb
 from PIL import Image
 from fontTools.designspaceLib import DesignSpaceDocument
@@ -36,6 +37,25 @@ TESTS = Path(__file__).parent
 EXPECTED = json.loads((TESTS / "expected.json").read_text())
 REFERENCE_FONT = TESTS / "reference.ttf"
 EXPECTED_FILES = {"recovered.ttf", "sources.zip", "manifest.json", "proof.png", "specimen.pdf"}
+RASTER_SUFFIXES = {
+    ".apng",
+    ".avif",
+    ".bmp",
+    ".gif",
+    ".heic",
+    ".heif",
+    ".icns",
+    ".ico",
+    ".jfif",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".psd",
+    ".tga",
+    ".tif",
+    ".tiff",
+    ".webp",
+}
 
 
 def ticket() -> dict:
@@ -118,12 +138,50 @@ def render_glyph(instance_path: Path, glyph_name: str, pixel_size: int = 512) ->
     return canvas
 
 
-def contour_coordinate_signature(contour) -> tuple[float, float, list[tuple[float, float]], int]:
-    coordinates = [(float(point.x), float(point.y)) for point in contour.points]
-    minimum_x = min(value[0] for value in coordinates)
-    minimum_y = min(value[1] for value in coordinates)
-    offcurves = sum(point.type is None for point in contour.points)
-    return minimum_x, minimum_y, sorted(coordinates), offcurves
+def _is_raster_payload(path: Path, header: bytes) -> bool:
+    """Recognize raster assets even when an archive member has a disguised suffix."""
+    suffix = path.suffix.casefold()
+    if suffix in RASTER_SUFFIXES or any(part.casefold() == "images" for part in path.parts):
+        return True
+    return (
+        header.startswith(b"\x89PNG\r\n\x1a\n")
+        or header.startswith((b"\xff\xd8\xff", b"GIF87a", b"GIF89a", b"BM"))
+        or header.startswith((b"II*\x00", b"MM\x00*", b"8BPS", b"icns"))
+        or (header.startswith(b"RIFF") and header[8:12] == b"WEBP")
+        or (len(header) >= 12 and header[4:12] in {b"ftypavif", b"ftypheic", b"ftypheix", b"ftypmif1"})
+    )
+
+
+def assert_archive_member_is_source_only(archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> None:
+    path = Path(info.filename)
+    assert not path.is_absolute() and ".." not in path.parts and "\\" not in info.filename
+    mode = info.external_attr >> 16
+    assert not stat.S_ISLNK(mode)
+    if info.is_dir():
+        return
+    with archive.open(info) as handle:
+        header = handle.read(16)
+    assert not _is_raster_payload(path, header), f"raster payload is forbidden: {info.filename}"
+
+
+def _canonical_cycle(points: list[tuple[float, float, str]]) -> tuple:
+    """Normalize only a contour's arbitrary start point, preserving winding and topology."""
+    assert points
+    rotations = [tuple(points[index:] + points[:index]) for index in range(len(points))]
+    return min(rotations)
+
+
+def contour_topology_signature(contour) -> tuple[float, float, tuple]:
+    points = [
+        (
+            float(point.x),
+            float(point.y),
+            "offcurve" if point.type is None else str(point.type),
+        )
+        for point in contour.points
+    ]
+    coordinates = [(point[0], point[1]) for point in points]
+    return min(x for x, _ in coordinates), min(y for _, y in coordinates), _canonical_cycle(points)
 
 
 def expected_cell_signatures(rows: list[str], geom: dict[str, int]) -> list[tuple]:
@@ -142,24 +200,55 @@ def expected_cell_signatures(rows: list[str], geom: dict[str, int]) -> list[tupl
                 1,
                 min(geom["radius"], (x1 - x0) // 2, (y1 - y0) // 2),
             )
-            coordinates = sorted(
-                [
-                    (x0 + radius, y0),
-                    (x1 - radius, y0),
-                    (x1, y0),
-                    (x1, y0 + radius),
-                    (x1, y1 - radius),
-                    (x1, y1),
-                    (x1 - radius, y1),
-                    (x0 + radius, y1),
-                    (x0, y1),
-                    (x0, y1 - radius),
-                    (x0, y0 + radius),
-                    (x0, y0),
-                ]
-            )
-            signatures.append((float(x0), float(y0), coordinates, 4))
+            points = [
+                (float(x0 + radius), float(y0), "qcurve"),
+                (float(x1 - radius), float(y0), "line"),
+                (float(x1), float(y0), "offcurve"),
+                (float(x1), float(y0 + radius), "qcurve"),
+                (float(x1), float(y1 - radius), "line"),
+                (float(x1), float(y1), "offcurve"),
+                (float(x1 - radius), float(y1), "qcurve"),
+                (float(x0 + radius), float(y1), "line"),
+                (float(x0), float(y1), "offcurve"),
+                (float(x0), float(y1 - radius), "qcurve"),
+                (float(x0), float(y0 + radius), "line"),
+                (float(x0), float(y0), "offcurve"),
+            ]
+            signatures.append((float(x0), float(y0), _canonical_cycle(points)))
     return sorted(signatures, key=lambda item: (item[0], item[1]))
+
+
+def test_raster_detector_catches_unreferenced_and_disguised_payloads():
+    """Held-out-style raster members cannot hide outside a glyph's declared image reference."""
+    cases = {
+        "masters/Default.ufo/images/sneaky.bin": b"not-even-a-valid-image",
+        "masters/Default.ufo/data/innocent.bin": b"\x89PNG\r\n\x1a\n" + b"payload",
+        "masters/Default.ufo/data/preview.JPG": b"renamed",
+        "masters/Default.ufo/data/preview.dat": b"RIFF\x00\x00\x00\x00WEBPpayload",
+    }
+    for name, payload in cases.items():
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w") as archive:
+            archive.writestr(name, payload)
+        stream.seek(0)
+        with zipfile.ZipFile(stream) as archive:
+            with pytest.raises(AssertionError, match="raster payload is forbidden"):
+                assert_archive_member_is_source_only(archive, archive.infolist()[0])
+
+
+def test_topology_signature_preserves_winding_and_point_roles():
+    """Start-point rotation is harmless, but reordered or retyped contour points are rejected."""
+    points = [
+        (0.0, 0.0, "line"),
+        (10.0, 0.0, "offcurve"),
+        (10.0, 10.0, "qcurve"),
+        (0.0, 10.0, "line"),
+    ]
+    assert _canonical_cycle(points) == _canonical_cycle(points[2:] + points[:2])
+    assert _canonical_cycle(points) != _canonical_cycle(list(reversed(points)))
+    retyped = list(points)
+    retyped[1] = (*retyped[1][:2], "line")
+    assert _canonical_cycle(points) != _canonical_cycle(retyped)
 
 
 def test_required_artifacts_are_exact_regular_files_and_inputs_are_untouched():
@@ -260,6 +349,31 @@ def test_manifest_is_complete_and_recovers_hidden_design_and_capture_state():
         page_points = np.asarray([item["page_px"] for item in record["fiducials"]])
         residuals = np.linalg.norm(project(matrix, image_points) - page_points, axis=1)
         assert int(np.count_nonzero(residuals <= residual_limit)) >= required_inliers
+        # Fiducials contain disclosed outliers, so also bind the submitted transform to
+        # the hidden capture geometry at page corners and interior probe locations.
+        truth_page_to_image = np.asarray(expected["page_to_image_homography"], dtype=np.float64)
+        truth_page_points = np.asarray(
+            [
+                [0.0, 0.0],
+                [spec["evidence_contract"]["page_width_px"], 0.0],
+                [0.0, spec["evidence_contract"]["page_height_px"]],
+                [
+                    spec["evidence_contract"]["page_width_px"],
+                    spec["evidence_contract"]["page_height_px"],
+                ],
+                [
+                    spec["evidence_contract"]["page_width_px"] / 2.0,
+                    spec["evidence_contract"]["page_height_px"] / 2.0,
+                ],
+                [
+                    spec["evidence_contract"]["page_width_px"] * 0.23,
+                    spec["evidence_contract"]["page_height_px"] * 0.71,
+                ],
+            ]
+        )
+        truth_image_points = project(truth_page_to_image, truth_page_points)
+        truth_residuals = np.linalg.norm(project(matrix, truth_image_points) - truth_page_points, axis=1)
+        assert float(truth_residuals.max()) <= 1.0
     assert manifest["pdf"] == {
         "title": spec["pdf_contract"]["title"],
         "subject": spec["pdf_contract"]["subject"],
@@ -367,10 +481,7 @@ def test_editable_sources_are_safe_complete_and_geometry_compatible():
         for info in archive.infolist():
             assert info.filename not in seen
             seen.add(info.filename)
-            path = Path(info.filename)
-            assert not path.is_absolute() and ".." not in path.parts and "\\" not in info.filename
-            mode = info.external_attr >> 16
-            assert not stat.S_ISLNK(mode)
+            assert_archive_member_is_source_only(archive, info)
             total += info.file_size
         assert total < 20_000_000
         with tempfile.TemporaryDirectory(prefix="font-source-test-") as tmp:
@@ -379,6 +490,9 @@ def test_editable_sources_are_safe_complete_and_geometry_compatible():
             assert {item.name for item in root.iterdir()} == set(source_contract["exact_top_level_files"]) | {
                 "masters"
             }
+            expected_master_names = {Path(item).name for item in source_contract["masters"]}
+            assert {item.name for item in (root / "masters").iterdir()} == expected_master_names
+            assert all(item.is_dir() and not item.is_symlink() for item in (root / "masters").iterdir())
             document = DesignSpaceDocument.fromfile(root / "font.designspace")
             assert len(document.axes) == len(contract["axes"])
             for actual, expected in zip(document.axes, contract["axes"]):
@@ -431,7 +545,7 @@ def test_editable_sources_are_safe_complete_and_geometry_compatible():
                         <= spec["acceptance_tolerances"]["source_coordinate_error_units_max"]
                     )
                     actual_signatures = sorted(
-                        [contour_coordinate_signature(contour) for contour in glyph],
+                        [contour_topology_signature(contour) for contour in glyph],
                         key=lambda item: (item[0], item[1]),
                     )
                     expected_signatures = expected_cell_signatures(
@@ -441,12 +555,14 @@ def test_editable_sources_are_safe_complete_and_geometry_compatible():
                     for actual_signature, expected_signature in zip(
                         actual_signatures, expected_signatures
                     ):
-                        assert actual_signature[3] == expected_signature[3] == 4
                         assert len(actual_signature[2]) == len(expected_signature[2]) == 12
+                        assert [item[2:] for item in actual_signature[2]] == [
+                            item[2:] for item in expected_signature[2]
+                        ]
                         assert np.max(
                             np.abs(
-                                np.asarray(actual_signature[2])
-                                - np.asarray(expected_signature[2])
+                                np.asarray([item[:2] for item in actual_signature[2]])
+                                - np.asarray([item[:2] for item in expected_signature[2]])
                             )
                         ) <= spec["acceptance_tolerances"]["source_coordinate_error_units_max"]
                     anchors = {anchor.name: anchor for anchor in glyph.anchors}

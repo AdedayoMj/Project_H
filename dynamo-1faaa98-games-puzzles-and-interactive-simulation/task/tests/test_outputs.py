@@ -6,6 +6,8 @@ import json
 import math
 import os
 import stat
+from collections import defaultdict
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
@@ -127,6 +129,55 @@ def test_published_world_inputs_are_unchanged():
     assert found == expected
 
 
+def test_generated_campaigns_exercise_heterogeneous_model_paths():
+    """The published world retains the structural variants that make simplifying assumptions fail."""
+    manifest = json.loads((INPUT / "manifest.json").read_text())
+    grid_sizes = set()
+    zone_counts = set()
+    field_types = set()
+    event_types = set()
+    observation_schedules = set()
+    rotated_soil_edges = 0
+    for campaign in manifest["campaigns"]:
+        directory = INPUT / "campaigns" / campaign["campaign_id"]
+        ticket = json.loads((directory / "job_ticket.json").read_text())
+        grid_sizes.add(
+            (float(ticket["grid"]["cell_width_m"]), float(ticket["grid"]["cell_height_m"]))
+        )
+        zone_counts.add(len(ticket["management_zone_edges_mm"]))
+        curve = ticket["crop"]["root_depth_curve"]
+        curve_dates = [date.fromisoformat(item["date"]) for item in curve]
+        curve_depths = [float(item["root_depth_m"]) for item in curve]
+        assert len(curve) >= 4
+        assert curve_dates == sorted(set(curve_dates))
+        assert curve_depths == sorted(curve_depths) and len(set(curve_depths)) == len(curve_depths)
+
+        boundary = json.loads((directory / "field_boundary.geojson").read_text())
+        field_types.add(boundary["geometry"]["type"])
+        events = json.loads((directory / "irrigation_events.geojson").read_text())
+        event_types.update(feature["geometry"]["type"] for feature in events["features"])
+        soil = json.loads((directory / "soil_map_units.geojson").read_text())
+        for feature in soil["features"]:
+            ring = feature["geometry"]["coordinates"][0]
+            for first, second in zip(ring, ring[1:]):
+                if first[0] != second[0] and first[1] != second[1]:
+                    rotated_soil_edges += 1
+                    break
+
+        by_unit = defaultdict(list)
+        with (directory / "vegetation_index.csv").open(newline="") as handle:
+            for row in csv.DictReader(handle):
+                by_unit[row["unit_id"]].append(row["date"])
+        observation_schedules.update(tuple(values) for values in by_unit.values())
+
+    assert len(grid_sizes) == len(manifest["campaigns"])
+    assert len(zone_counts) >= 3
+    assert {"Polygon", "MultiPolygon"}.issubset(field_types)
+    assert "MultiPolygon" in event_types
+    assert len(observation_schedules) >= 20
+    assert rotated_soil_edges >= len(manifest["campaigns"])
+
+
 def test_geojson_and_csv_follow_the_normative_schemas():
     """GeoJSON features and CSV rows use the exact published keys, types, header, and finite values."""
     document = submitted_geojson()
@@ -159,18 +210,23 @@ def test_geojson_and_csv_follow_the_normative_schemas():
 
 
 def test_summary_follows_the_normative_schema():
-    """The field summary has exactly the documented campaign and four-zone structures."""
+    """The field summary has exactly the documented campaign and campaign-specific zone structures."""
     document = submitted_summary()
+    _, expected_summaries = reference()
     assert set(document) == {"schema_version", "campaigns"}
     assert document["schema_version"] == 1
     assert isinstance(document["campaigns"], list)
-    for campaign in document["campaigns"]:
+    assert len(document["campaigns"]) == len(expected_summaries)
+    for campaign, expected in zip(document["campaigns"], expected_summaries, strict=True):
         assert set(campaign) == set(SUMMARY_FIELDS)
         assert isinstance(campaign["campaign_id"], str)
         assert type(campaign["analysis_unit_count"]) is int
         for key in ("field_area_m2", "irrigated_area_m2", "area_weighted_mean_depth_mm", "total_gross_volume_m3"):
             assert finite_number(campaign[key])
-        assert isinstance(campaign["zones"], list) and len(campaign["zones"]) == 4
+        assert isinstance(campaign["zones"], list)
+        assert [zone["zone_id"] for zone in campaign["zones"]] == [
+            zone["zone_id"] for zone in expected["zones"]
+        ]
         for zone in campaign["zones"]:
             assert set(zone) == set(ZONE_FIELDS)
             assert isinstance(zone["zone_id"], str)
@@ -266,7 +322,9 @@ def test_field_and_zone_summaries_match_independent_aggregation():
         assert abs(actual["irrigated_area_m2"] - expected["irrigated_area_m2"]) <= 1e-6
         close(actual["area_weighted_mean_depth_mm"], expected["area_weighted_mean_depth_mm"], 0.01)
         close(actual["total_gross_volume_m3"], expected["total_gross_volume_m3"], 0.01)
-        assert [zone["zone_id"] for zone in actual["zones"]] == ["Z0", "Z1", "Z2", "Z3"]
+        assert [zone["zone_id"] for zone in actual["zones"]] == [
+            zone["zone_id"] for zone in expected["zones"]
+        ]
         for actual_zone, expected_zone in zip(actual["zones"], expected["zones"], strict=True):
             assert actual_zone["unit_count"] == expected_zone["unit_count"]
             assert abs(actual_zone["area_m2"] - expected_zone["area_m2"]) <= 1e-6
