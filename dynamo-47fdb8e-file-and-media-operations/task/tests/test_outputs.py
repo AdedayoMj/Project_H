@@ -25,7 +25,7 @@ INPUT = APP / "input"
 EVIDENCE = APP / "evidence"
 OUTPUT = APP / "output"
 REFERENCE = Path("/tests/reference_master.npz")
-EXPECTED_SOURCE_SHA256 = "7fb1e21a9074a07a515cac18a70b95d86fe509ffbd922d6b3000bebbb7e3dcf1"
+EXPECTED_SOURCE_SHA256 = "e0b3eeb3e646a1dca3c2f58a77961648b20673892038dca7e8c877abf0c72909"
 REQUIRED_FILES = {
     "plates.npz",
     "proof.png",
@@ -79,6 +79,17 @@ def source_digest() -> str:
 def load_plates() -> dict[str, np.ndarray]:
     with np.load(OUTPUT / "plates.npz", allow_pickle=False) as archive:
         return {key: archive[key] for key in archive.files}
+
+
+def largest_component_area_mm2(mask: np.ndarray, dpi: float) -> float:
+    """Measure the largest 8-connected defect in physical production units."""
+    component_count, _, stats, _ = cv2.connectedComponentsWithStats(
+        mask.astype(np.uint8), connectivity=8
+    )
+    largest_pixels = (
+        int(stats[1:, cv2.CC_STAT_AREA].max()) if component_count > 1 else 0
+    )
+    return largest_pixels * (25.4 / dpi) ** 2
 
 
 def render_from_plates(plates: dict[str, np.ndarray], spec: dict) -> np.ndarray:
@@ -288,6 +299,30 @@ def test_reconstructed_plate_coverage_and_nominal_tones_match_hidden_master():
                 assert median_error <= limits[
                     "plate_nominal_region_median_absolute_coverage_max"
                 ], (plate_id, nominal, median_error)
+
+
+def test_zero_ink_background_has_no_localized_contamination():
+    """No spatially coherent background defect may hide inside an acceptable global mean."""
+    spec = ticket()
+    limits = spec["acceptance_tolerances"]
+    submitted = load_plates()
+    with np.load(REFERENCE, allow_pickle=False) as reference:
+        for plate_id in spec["manifest_schema"]["plate_order"]:
+            actual = submitted[plate_id].astype(np.int16)
+            expected = reference[plate_id].astype(np.int16)
+            substantial_error = (
+                (expected == 0)
+                & (
+                    np.abs(actual - expected)
+                    > limits["plate_background_local_error_code_value_min"]
+                )
+            )
+            largest_area = largest_component_area_mm2(
+                substantial_error, float(spec["canvas"]["dpi"])
+            )
+            assert largest_area <= limits[
+                "plate_background_local_component_area_mm2_max"
+            ], (plate_id, largest_area)
 
 
 def test_proof_is_colorimetrically_correct_and_derived_from_submitted_plates():

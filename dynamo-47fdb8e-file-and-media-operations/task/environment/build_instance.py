@@ -733,6 +733,8 @@ def build(root: Path) -> None:
             "plate_area_error_fraction_max": 0.002,
             "plate_boundary_hausdorff_mm_max": 0.16,
             "plate_background_mean_absolute_coverage_max": 1.25,
+            "plate_background_local_error_code_value_min": 16,
+            "plate_background_local_component_area_mm2_max": 4.0,
             "plate_nominal_region_mean_absolute_coverage_max": 12.0,
             "plate_nominal_region_median_absolute_coverage_max": 2.0,
             "proof_median_delta_e00_max": 1.0,
