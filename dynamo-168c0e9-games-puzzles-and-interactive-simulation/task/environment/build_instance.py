@@ -22,16 +22,30 @@ from sokoban import (
 SEED = 168_0_9_431
 PUZZLE_COUNT = 12
 
-# Calibration envelope. The cap is on expansions, not wall-clock, so the accepted
-# instance set is identical on every machine; measured seconds are informational.
-EXPANSION_LIMIT = 150_000
-MIN_OPTIMAL_MOVES = 40
-MIN_EXPANSIONS = 2_500
+# Calibration envelopes. The caps are on expansions, not wall-clock, so the
+# accepted instance set is identical on every machine; measured seconds are
+# informational. Most puzzles retain the original breadth, while the hard tail
+# makes the tighter push-distance matching bound genuinely load-bearing.
+STANDARD_PUZZLE_COUNT = 8
+STANDARD_EXPANSION_LIMIT = 150_000
+STANDARD_MIN_OPTIMAL_MOVES = 40
+STANDARD_MIN_EXPANSIONS = 2_500
+STANDARD_INTERIOR_MIN = 10
+STANDARD_INTERIOR_MAX = 16
+STANDARD_BOX_MIN = 4
+STANDARD_BOX_MAX = 5
 
-INTERIOR_MIN = 10
-INTERIOR_MAX = 16
-BOX_MIN = 4
-BOX_MAX = 5
+HARD_PUZZLE_COUNT = PUZZLE_COUNT - STANDARD_PUZZLE_COUNT
+HARD_SEED_OFFSETS = (101, 211, 307, 401)
+HARD_EXPANSION_LIMIT = 450_000
+HARD_MIN_OPTIMAL_MOVES = 40
+HARD_MIN_EXPANSIONS = 120_000
+HARD_INTERIOR_MIN = 12
+HARD_INTERIOR_MAX = 18
+HARD_BOX_COUNT = 6
+HARD_REVERSE_PULLS = 180
+
+assert len(HARD_SEED_OFFSETS) == HARD_PUZZLE_COUNT
 
 OPPOSITE = {"U": "D", "D": "U", "L": "R", "R": "L"}
 
@@ -193,14 +207,30 @@ def scatter(rng: random.Random, board: Board, pulls: int) -> tuple[frozenset[int
     return best_state
 
 
-def build_one(rng: random.Random, puzzle_id: str) -> dict | None:
-    height = rng.randint(INTERIOR_MIN, INTERIOR_MAX)
-    width = rng.randint(INTERIOR_MIN, INTERIOR_MAX)
+def build_one(rng: random.Random, puzzle_id: str, *, hard: bool = False) -> dict | None:
+    if hard:
+        interior_min = HARD_INTERIOR_MIN
+        interior_max = HARD_INTERIOR_MAX
+        box_min = box_max = HARD_BOX_COUNT
+        expansion_limit = HARD_EXPANSION_LIMIT
+        min_optimal_moves = HARD_MIN_OPTIMAL_MOVES
+        min_expansions = HARD_MIN_EXPANSIONS
+    else:
+        interior_min = STANDARD_INTERIOR_MIN
+        interior_max = STANDARD_INTERIOR_MAX
+        box_min = STANDARD_BOX_MIN
+        box_max = STANDARD_BOX_MAX
+        expansion_limit = STANDARD_EXPANSION_LIMIT
+        min_optimal_moves = STANDARD_MIN_OPTIMAL_MOVES
+        min_expansions = STANDARD_MIN_EXPANSIONS
+
+    height = rng.randint(interior_min, interior_max)
+    width = rng.randint(interior_min, interior_max)
     stride = width + 2
     floor = carve(rng, height, width, rng.randint(3, 6))
     if len(floor) < 32 or not connected(floor, stride):
         return None
-    box_count = rng.randint(BOX_MIN, BOX_MAX)
+    box_count = rng.randint(box_min, box_max)
     if len(floor) < box_count * 7:
         return None
     goals = set(rng.sample(sorted(floor), box_count))
@@ -213,7 +243,7 @@ def build_one(rng: random.Random, puzzle_id: str) -> dict | None:
     if any(goal in board.dead for goal in board.goals):
         return None
 
-    state = scatter(rng, board, 300)
+    state = scatter(rng, board, HARD_REVERSE_PULLS if hard else 300)
     if state is None:
         return None
     boxes, player = state
@@ -221,11 +251,17 @@ def build_one(rng: random.Random, puzzle_id: str) -> dict | None:
         return None
 
     started = time.monotonic()
-    moves, stats = solve_move_optimal(board, boxes, player, expansion_limit=EXPANSION_LIMIT)
+    moves, stats = solve_move_optimal(board, boxes, player, expansion_limit=expansion_limit)
     elapsed = time.monotonic() - started
+    if hard:
+        print(
+            f"{puzzle_id} hard candidate: optimal={stats['optimal_moves']} "
+            f"expansions={stats['expansions']} proof_seconds={elapsed:.3f}",
+            flush=True,
+        )
     if moves is None:
         return None
-    if stats["optimal_moves"] < MIN_OPTIMAL_MOVES or stats["expansions"] < MIN_EXPANSIONS:
+    if stats["optimal_moves"] < min_optimal_moves or stats["expansions"] < min_expansions:
         return None
 
     rows = compose(height, width, floor, goals, set(boxes), player, crop=True)
@@ -283,18 +319,22 @@ def rules_document() -> dict:
         },
         "instance_bounds": {
             "puzzle_count": PUZZLE_COUNT,
-            "interior_rows_max": INTERIOR_MAX,
-            "interior_columns_max": INTERIOR_MAX,
-            "boxes_min": BOX_MIN,
-            "boxes_max": BOX_MAX,
+            "interior_rows_max": HARD_INTERIOR_MAX,
+            "interior_columns_max": HARD_INTERIOR_MAX,
+            "boxes_min": STANDARD_BOX_MIN,
+            "boxes_max": HARD_BOX_COUNT,
+            "standard_puzzle_count": STANDARD_PUZZLE_COUNT,
+            "hard_tail_puzzle_count": HARD_PUZZLE_COUNT,
+            "hard_tail_min_reference_expansions": HARD_MIN_EXPANSIONS,
             "guarantee": "every instance is generated backwards from its solved state, so a legal solution exists, and the reference solver proved optimality inside the published expansion envelope",
-            "reference_expansion_limit": EXPANSION_LIMIT,
+            "reference_expansion_limit": HARD_EXPANSION_LIMIT,
         },
     }
 
 
 def build(root: Path, tests_root: Path | None = None) -> None:
-    rng = random.Random(SEED)
+    standard_rng = random.Random(SEED)
+    hard_rngs = [random.Random(SEED + offset) for offset in HARD_SEED_OFFSETS]
     puzzles: list[dict] = []
     attempts = 0
     seen: set[str] = set()
@@ -302,7 +342,10 @@ def build(root: Path, tests_root: Path | None = None) -> None:
         attempts += 1
         if attempts > 4000:
             raise RuntimeError("generator failed to reach the requested instance count")
-        candidate = build_one(rng, f"p{len(puzzles) + 1:02d}")
+        hard = len(puzzles) >= STANDARD_PUZZLE_COUNT
+        hard_index = len(puzzles) - STANDARD_PUZZLE_COUNT
+        rng = hard_rngs[hard_index] if hard else standard_rng
+        candidate = build_one(rng, f"p{len(puzzles) + 1:02d}", hard=hard)
         if candidate is None:
             continue
         digest = hashlib.sha256("\n".join(candidate["rows"]).encode()).hexdigest()

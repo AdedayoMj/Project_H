@@ -437,7 +437,7 @@ def test_pdf_has_functional_production_structure_and_matching_render():
         ocg_names = {str(item["/Name"]) for item in pdf.Root["/OCProperties"]["/OCGs"]}
         assert set(spec["svg_contract"]["required_data_roles"]).issubset(ocg_names)
 
-        embedded_font_count = 0
+        embedded_font_names = set()
         fonts = page.Resources.get("/Font")
         assert fonts is not None
         for _, font in fonts.items():
@@ -447,14 +447,44 @@ def test_pdf_has_functional_production_structure_and_matching_render():
             for candidate in candidates:
                 descriptor = candidate.get("/FontDescriptor")
                 if descriptor and any(key in descriptor for key in ("/FontFile", "/FontFile2", "/FontFile3")):
-                    embedded_font_count += 1
-        assert embedded_font_count >= 2
+                    base_font = str(candidate.get("/BaseFont", resolved.get("/BaseFont", ""))).lstrip("/")
+                    embedded_font_names.add(base_font.split("+", 1)[-1])
+        assert {Path(name).stem for name in spec["fonts"]["permitted_files"]}.issubset(
+            embedded_font_names
+        )
 
     document = fitz.open(pdf_path)
     page = document[0]
-    extracted = page.get_text()
-    for value in EXPECTED_TEXT.values():
-        assert value in extracted
+    spans = [
+        span
+        for block in page.get_text("dict")["blocks"]
+        if block["type"] == 0
+        for line in block["lines"]
+        for span in line["spans"]
+        if span["text"]
+    ]
+    assert len(spans) == len(EXPECTED_TEXT)
+    spans_by_text = {span["text"]: span for span in spans}
+    assert set(spans_by_text) == set(EXPECTED_TEXT.values())
+    text_specs = {row["id"]: row for row in spec["fonts"]["text_objects"]}
+    position_tolerance_pt = spec["svg_contract"]["text_position_tolerance_mm"] * 72.0 / 25.4
+    advance_tolerance_pt = spec["fonts"]["equivalence"]["advance_width_mm_max"] * 72.0 / 25.4
+    for text_id, value in EXPECTED_TEXT.items():
+        text_spec = text_specs[text_id]
+        span = spans_by_text[value]
+        assert span["font"] == Path(text_spec["font_file"]).stem
+        assert abs(float(span["size"]) - text_spec["font_size_pt"]) <= 0.01
+        expected_origin = np.asarray(
+            [
+                text_spec["x_mm"] * 72.0 / 25.4,
+                text_spec["y_mm"] * 72.0 / 25.4 + text_spec["font_size_pt"],
+            ]
+        )
+        assert float(np.linalg.norm(np.asarray(span["origin"]) - expected_origin)) <= position_tolerance_pt
+        authoritative_font = fitz.Font(fontfile=str(INPUT / "fonts" / text_spec["font_file"]))
+        expected_advance = authoritative_font.text_length(value, fontsize=text_spec["font_size_pt"])
+        actual_advance = float(span["bbox"][2] - span["bbox"][0])
+        assert abs(actual_advance - expected_advance) <= advance_tolerance_pt
     scale = spec["canvas"]["dpi"] / 72.0
     pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False, colorspace=fitz.csRGB)
     rendered = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(pixmap.height, pixmap.width, 3)
