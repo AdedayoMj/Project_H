@@ -143,13 +143,30 @@ def _is_raster_payload(path: Path, header: bytes) -> bool:
     suffix = path.suffix.casefold()
     if suffix in RASTER_SUFFIXES or any(part.casefold() == "images" for part in path.parts):
         return True
-    return (
+    signature_match = (
         header.startswith(b"\x89PNG\r\n\x1a\n")
         or header.startswith((b"\xff\xd8\xff", b"GIF87a", b"GIF89a", b"BM"))
         or header.startswith((b"II*\x00", b"MM\x00*", b"8BPS", b"icns"))
+        or header.startswith((b"\x00\x00\x01\x00", b"\x00\x00\x02\x00", b"DDS "))
+        or (
+            len(header) >= 3
+            and header[:2] in {b"P1", b"P2", b"P3", b"P4", b"P5", b"P6"}
+            and header[2:3] in b" \t\r\n"
+        )
         or (header.startswith(b"RIFF") and header[8:12] == b"WEBP")
         or (len(header) >= 12 and header[4:12] in {b"ftypavif", b"ftypheic", b"ftypheix", b"ftypmif1"})
+        or header.endswith(b"TRUEVISION-XFILE.\x00")
     )
+    if signature_match:
+        return True
+    try:
+        with Image.open(io.BytesIO(header)) as image:
+            image.verify()
+        return True
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning):
+        return True
+    except (OSError, SyntaxError, ValueError):
+        return False
 
 
 def assert_archive_member_is_source_only(archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> None:
@@ -159,9 +176,9 @@ def assert_archive_member_is_source_only(archive: zipfile.ZipFile, info: zipfile
     assert not stat.S_ISLNK(mode)
     if info.is_dir():
         return
-    with archive.open(info) as handle:
-        header = handle.read(16)
-    assert not _is_raster_payload(path, header), f"raster payload is forbidden: {info.filename}"
+    assert info.file_size <= 20_000_000
+    payload = archive.read(info)
+    assert not _is_raster_payload(path, payload), f"raster payload is forbidden: {info.filename}"
 
 
 def _canonical_cycle(points: list[tuple[float, float, str]]) -> tuple:
@@ -225,6 +242,10 @@ def test_raster_detector_catches_unreferenced_and_disguised_payloads():
         "masters/Default.ufo/data/innocent.bin": b"\x89PNG\r\n\x1a\n" + b"payload",
         "masters/Default.ufo/data/preview.JPG": b"renamed",
         "masters/Default.ufo/data/preview.dat": b"RIFF\x00\x00\x00\x00WEBPpayload",
+        "masters/Default.ufo/data/icon.dat": b"\x00\x00\x01\x00" + b"payload",
+        "masters/Default.ufo/data/texture.dat": b"DDS " + b"payload",
+        "masters/Default.ufo/data/proof.dat": b"P6\n1 1\n255\n\x00\x00\x00",
+        "masters/Default.ufo/data/legacy.dat": b"payloadTRUEVISION-XFILE.\x00",
     }
     for name, payload in cases.items():
         stream = io.BytesIO()
@@ -629,20 +650,21 @@ def test_pdf_is_one_page_live_embedded_and_visually_consistent():
         assert np.allclose([float(value) for value in page.MediaBox], expected_box, atol=0.01)
         fonts = page.Resources.get("/Font")
         assert fonts is not None
-        embedded = 0
-        family_named = False
+        embedded_recovered_family = False
         for _, font in fonts.items():
-            base_name = str(font.get("/BaseFont", ""))
-            family_named |= "DynamoPalimpsest" in base_name
+            parent_base_name = str(font.get("/BaseFont", ""))
             descendants = list(font.get("/DescendantFonts", []))
             candidates = descendants if descendants else [font]
             for candidate in candidates:
+                candidate_base_name = str(candidate.get("/BaseFont", parent_base_name))
                 descriptor = candidate.get("/FontDescriptor")
-                if descriptor and any(
-                    key in descriptor for key in ("/FontFile", "/FontFile2", "/FontFile3")
-                ):
-                    embedded += 1
-        assert embedded >= 1 and family_named
+                is_embedded = bool(
+                    descriptor
+                    and any(key in descriptor for key in ("/FontFile", "/FontFile2", "/FontFile3"))
+                )
+                if is_embedded and "DynamoPalimpsest" in candidate_base_name:
+                    embedded_recovered_family = True
+        assert embedded_recovered_family
 
     document = fitz.open(pdf_path)
     page = document[0]

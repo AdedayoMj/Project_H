@@ -781,6 +781,7 @@ def build(root: Path, tests_root: Path | None = None) -> None:
                     {"text": "AVATAR WAVE", "location": {"wght": 375, "wdth": 88, "opsz": 12}},
                     {"text": "TOYOTA", "location": {"wght": 705, "wdth": 116, "opsz": 46}},
                     {"text": "AT LT PA FO", "location": {"wght": 485, "wdth": 109, "opsz": 22}},
+                    {"text": "YA", "location": {"wght": 755, "wdth": 94, "opsz": 58}},
                     {"text": "fi st", "location": {"wght": 530, "wdth": 103, "opsz": 19}},
                     {"text": "A\u0301 E\u0301 I\u0301 O\u0301 U\u0301", "location": {"wght": 590, "wdth": 97, "opsz": 32}},
                     {"text": "1747", "location": {"wght": 445, "wdth": 108, "opsz": 14}},
