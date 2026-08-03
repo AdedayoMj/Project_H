@@ -8,8 +8,9 @@ COPY build_instance.py sokoban.py /tmp/dynamo-sokoban-build/
 RUN PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/tmp/dynamo-sokoban-build \
         python3 /tmp/dynamo-sokoban-build/build_instance.py --root /app \
     && rm -rf /tmp/dynamo-sokoban-build \
-    && ! find /tmp -type f \
-        \( -name 'sokoban*.pyc' -o -name 'build_instance*.pyc' \) \
+    && ! find / -type f \
+        \( -name 'sokoban.py' -o -name 'sokoban*.pyc' \
+        -o -name 'build_instance.py' -o -name 'build_instance*.pyc' \) \
         -print -quit | grep -q .
 
 WORKDIR /app
