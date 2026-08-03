@@ -235,7 +235,9 @@ def main() -> None:
     kerning, anchors, ligatures = recover_open_type(ticket, probes)
 
     shutil.rmtree(OUTPUT, ignore_errors=True)
-    OUTPUT.mkdir(parents=True)
+    # Validation runners may expose /app/output as a mount point. In that case
+    # rmtree clears its contents but cannot remove the directory itself.
+    OUTPUT.mkdir(parents=True, exist_ok=True)
     font_path = OUTPUT / "recovered.ttf"
     build_variable_font(font_path, patterns, ticket, kerning, anchors, ligatures)
     write_sources_zip(OUTPUT / "sources.zip", patterns, ticket, kerning, anchors, ligatures)
