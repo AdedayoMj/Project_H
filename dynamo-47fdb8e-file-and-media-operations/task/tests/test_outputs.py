@@ -508,15 +508,68 @@ def test_pdf_has_functional_production_structure_and_matching_render():
         assert np.allclose([float(value) for value in page.TrimBox], expected_trim, atol=0.01)
         assert np.allclose([float(value) for value in page.BleedBox], expected_media, atol=0.01)
 
-        # Colour-space resource keys are arbitrary internal names; the colorant name is
-        # the real requirement, so locate each /Separation by the name it declares.
+        # Resource keys are arbitrary, but every required colorant must be a complete,
+        # usable Separation space with a non-trivial exponential tint transform.
         color_spaces = page.Resources["/ColorSpace"]
-        separation_names = set()
-        for _, value in color_spaces.items():
-            if len(value) >= 2 and str(value[0]) == "/Separation":
-                separation_names.add(str(value[1]))
+        separations = {}
+        for resource_name, value in color_spaces.items():
+            if not value or str(value[0]) != "/Separation":
+                continue
+            assert len(value) == 4
+            colorant_name = str(value[1])
+            assert colorant_name not in separations
+            alternate_name = str(value[2])
+            alternate_components = {
+                "/DeviceGray": 1,
+                "/DeviceRGB": 3,
+                "/DeviceCMYK": 4,
+            }.get(alternate_name)
+            assert alternate_components is not None, alternate_name
+            tint_function = value[3]
+            assert int(tint_function["/FunctionType"]) == 2
+            assert np.allclose(
+                [float(item) for item in tint_function["/Domain"]],
+                [0.0, 1.0],
+                atol=1e-12,
+            )
+            exponent = float(tint_function["/N"])
+            assert math.isfinite(exponent) and exponent > 0.0
+            start = [float(item) for item in tint_function.get("/C0", [0.0])]
+            end = [float(item) for item in tint_function.get("/C1", [1.0])]
+            assert len(start) == len(end) == alternate_components
+            assert all(math.isfinite(item) and 0.0 <= item <= 1.0 for item in start + end)
+            assert not np.allclose(start, end, atol=1e-12)
+            separations[colorant_name] = str(resource_name)
+
+        expected_separations = {
+            "/" + spec["plate_registry"][plate_id]["canonical_name"]
+            for plate_id in ("SC", "OW", "V")
+        }
+        assert expected_separations.issubset(separations)
+
+        # A resource dictionary entry alone is inert. Require the page program to
+        # select, tint, and invoke a fill operation with every required spot space.
+        graphics_stack = []
+        fill_space = None
+        fill_tint_set = False
+        painted_spaces = set()
+        fill_operators = {"f", "F", "f*", "B", "B*", "b", "b*"}
+        for operands, operator in pikepdf.parse_content_stream(page):
+            operation = str(operator)
+            if operation == "q":
+                graphics_stack.append((fill_space, fill_tint_set))
+            elif operation == "Q":
+                fill_space, fill_tint_set = graphics_stack.pop()
+            elif operation == "cs" and len(operands) == 1:
+                fill_space = str(operands[0])
+                fill_tint_set = False
+            elif operation in {"sc", "scn"}:
+                fill_tint_set = True
+            elif operation in fill_operators and fill_space and fill_tint_set:
+                painted_spaces.add(fill_space)
         for plate_id in ("SC", "OW", "V"):
-            assert "/" + spec["plate_registry"][plate_id]["canonical_name"] in separation_names
+            colorant_name = "/" + spec["plate_registry"][plate_id]["canonical_name"]
+            assert separations[colorant_name] in painted_spaces
         ocg_names = {str(item["/Name"]) for item in pdf.Root["/OCProperties"]["/OCGs"]}
         assert set(spec["svg_contract"]["required_data_roles"]).issubset(ocg_names)
 

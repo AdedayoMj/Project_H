@@ -10,6 +10,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
+from xml.sax.saxutils import quoteattr
 
 import cv2
 import numpy as np
@@ -26,6 +27,18 @@ APP = Path(os.environ.get("CARTON_APP_ROOT", "/app"))
 INPUT = APP / "input"
 EVIDENCE = APP / "evidence"
 OUTPUT = APP / "output"
+
+
+def prepare_output_directory(path: Path) -> None:
+    """Create an empty output directory without following directory symlinks."""
+    if path.is_symlink() or (path.exists() and not path.is_dir()):
+        path.unlink()
+    path.mkdir(parents=True, exist_ok=True)
+    for entry in path.iterdir():
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
 
 
 def design_matrix(x: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -348,11 +361,12 @@ def qr_matrix(payload: str, ticket: dict) -> list[list[bool]]:
 def write_svg(ticket: dict, text_values: dict[str, str], barcode_payload: str, path: Path) -> None:
     width_mm = ticket["canvas"]["media_box_mm"][2]
     height_mm = ticket["canvas"]["media_box_mm"][3]
+    concrete_roles = {"text", "barcode", "dieline"}
     role_lines = [
-        '  <g data-role="process-art"><rect x="0" y="0" width="72" height="48" fill="none"/></g>',
-        '  <g data-role="spot-art"><rect x="0" y="0" width="72" height="48" fill="none"/></g>',
-        '  <g data-role="opaque-white"><rect x="0" y="0" width="72" height="48" fill="none"/></g>',
-        '  <g data-role="varnish"><rect x="0" y="0" width="72" height="48" fill="none"/></g>',
+        f"  <g data-role={quoteattr(role)}><rect x=\"0\" y=\"0\" "
+        f"width=\"{width_mm}\" height=\"{height_mm}\" fill=\"none\"/></g>"
+        for role in ticket["svg_contract"]["required_data_roles"]
+        if role not in concrete_roles
     ]
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
@@ -476,6 +490,7 @@ def write_pdf(
             page.BleedBox = Array([value * 72.0 / 25.4 for value in media])
             resources = page.Resources
             color_spaces = Dictionary()
+            separation_usage = []
             for plate_id in ("SC", "OW", "V"):
                 registry = ticket["plate_registry"][plate_id]
                 function = pdf.make_indirect(
@@ -495,6 +510,15 @@ def write_pdf(
                         function,
                     ]
                 )
+                separation_usage.extend(
+                    [
+                        "q",
+                        f"/CS_{plate_id} cs",
+                        "1 scn",
+                        "0 0 0 0 re f",
+                        "Q",
+                    ]
+                )
             resources["/ColorSpace"] = color_spaces
 
             roles = ticket["svg_contract"]["required_data_roles"]
@@ -512,7 +536,9 @@ def write_pdf(
                 OCGs=Array(ocgs),
                 D=Dictionary(Order=Array(ocgs), ON=Array(ocgs)),
             )
-            marker_stream = pdf.make_stream(("\n".join(marked) + "\n").encode())
+            marker_stream = pdf.make_stream(
+                ("\n".join([*marked, *separation_usage]) + "\n").encode()
+            )
             current = page.Contents
             if isinstance(current, pikepdf.Array):
                 page.Contents = Array([marker_stream, *current])
@@ -536,7 +562,7 @@ def write_pdf(
 
 
 def main() -> None:
-    OUTPUT.mkdir(parents=True, exist_ok=True)
+    prepare_output_directory(OUTPUT)
     ticket = json.loads((INPUT / "job_ticket.json").read_text())
     index = json.loads((EVIDENCE / "index.json").read_text())
     consensus_evidence = json.loads((EVIDENCE / "text_consensus.json").read_text())
