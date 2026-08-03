@@ -22,6 +22,14 @@ PAGE_WIDTH = 1200
 PAGE_HEIGHT = 760
 PAGE_FONT_PX = 140
 
+# OpenCV's pinned PNG encoder emits byte-distinct but pixel-identical scan files
+# on linux/amd64 and linux/arm64. Keep exact whole-tree fingerprints for both
+# supported runner architectures so arbitrary input mutation still fails.
+SUPPORTED_INPUT_FINGERPRINTS = (
+    "40fbd973b05548a4202a31bdbab9623c6d4a5d2867c65468504bd9848e9ba714",
+    "570b7cf6c7bdf7fa400170657eeee901d4018471f217ad370b7a993e7fec57a2",
+)
+
 
 UPPER = {
     "A": ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
@@ -762,6 +770,11 @@ def build(root: Path, tests_root: Path | None = None) -> None:
                 for glyph_name in ticket["font_contract"]["glyph_order"]
                 if glyph_name != "space"
             ]
+            input_fingerprint = fingerprint_tree([input_dir, evidence_dir], root)
+            if input_fingerprint not in SUPPORTED_INPUT_FINGERPRINTS:
+                raise RuntimeError(
+                    f"unsupported generated input fingerprint: {input_fingerprint}"
+                )
             expected = {
                 "schema_version": 1,
                 "patterns": PATTERNS,
@@ -769,7 +782,7 @@ def build(root: Path, tests_root: Path | None = None) -> None:
                 "anchors": ANCHORS,
                 "ligatures": LIGATURES,
                 "captures": hidden_captures,
-                "input_fingerprint_sha256": fingerprint_tree([input_dir, evidence_dir], root),
+                "input_fingerprint_sha256_allowed": list(SUPPORTED_INPUT_FINGERPRINTS),
                 "hidden_render_cases": [
                     {
                         "location": location,

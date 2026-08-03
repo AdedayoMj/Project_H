@@ -15,6 +15,7 @@ OUTPUT = APP / "output"
 DIRECTIONS = {"U": (-1, 0), "D": (1, 0), "L": (0, -1), "R": (0, 1)}
 ORDER = ("D", "L", "R", "U")
 OPPOSITE = {"U": "D", "D": "U", "L": "R", "R": "L"}
+COUNT_MODULUS = 1_000_000_007
 INFINITY = float("inf")
 
 
@@ -84,43 +85,34 @@ class Puzzle:
         return tables
 
 
-def reachable(puzzle: Puzzle, boxes: frozenset[int], start: int) -> dict[int, int]:
-    distance = {start: 0}
+def routes(
+    puzzle: Puzzle, boxes: frozenset[int], start: int
+) -> dict[int, tuple[str, int]]:
+    """Canonical shortest walk and number of shortest walks to each cell."""
+    result = {start: ("", 1)}
+    distances = {start: 0}
     queue = deque([start])
     while queue:
         cell = queue.popleft()
         for key in ORDER:
             nxt = puzzle.step(cell, key)
-            if nxt is None or nxt in puzzle.walls or nxt in boxes or nxt in distance:
+            if nxt is None or nxt in puzzle.walls or nxt in boxes:
                 continue
-            distance[nxt] = distance[cell] + 1
-            queue.append(nxt)
-    return distance
-
-
-def route(puzzle: Puzzle, boxes: frozenset[int], start: int, target: int) -> str:
-    if start == target:
-        return ""
-    parent = {start: (-1, "")}
-    queue = deque([start])
-    while queue:
-        cell = queue.popleft()
-        for key in ORDER:
-            nxt = puzzle.step(cell, key)
-            if nxt is None or nxt in puzzle.walls or nxt in boxes or nxt in parent:
+            distance = distances[cell] + 1
+            candidate = result[cell][0] + key
+            if nxt not in distances:
+                distances[nxt] = distance
+                result[nxt] = (candidate, result[cell][1])
+                queue.append(nxt)
                 continue
-            parent[nxt] = (cell, key)
-            if nxt == target:
-                queue.clear()
-                break
-            queue.append(nxt)
-    moves = []
-    cell = target
-    while cell != start:
-        previous, key = parent[cell]
-        moves.append(key)
-        cell = previous
-    return "".join(reversed(moves))
+            if distances[nxt] != distance:
+                continue
+            canonical, count = result[nxt]
+            result[nxt] = (
+                min(canonical, candidate),
+                (count + result[cell][1]) % COUNT_MODULUS,
+            )
+    return result
 
 
 def blocked_square(puzzle: Puzzle, boxes: frozenset[int], cell: int) -> bool:
@@ -173,16 +165,16 @@ def lower_bound(puzzle: Puzzle, boxes: frozenset[int]) -> float:
     return best[(1 << size) - 1]
 
 
-def solve(puzzle: Puzzle) -> str:
-    """A* over pushes, charging each edge the walk that sets it up plus the push.
+def solve(puzzle: Puzzle) -> tuple[str, int]:
+    """A* for the canonical optimum and its tied-solution count.
 
-    Edge cost is exactly the number of player steps involved, so the optimal path
-    cost equals the optimal move count. Searching pushes instead of individual
-    steps keeps the state space small without changing the optimum.
+    Push edges retain the lexicographically first shortest setup walk. State labels
+    compare total moves and then pushes, while equal labels accumulate path counts.
+    A separate canonical label retains the smallest complete D/L/R/U move string.
     """
     goals = frozenset(puzzle.goals)
     if puzzle.boxes == goals:
-        return ""
+        return "", 1
     cache: dict[frozenset[int], float] = {}
 
     def estimate(boxes: frozenset[int]) -> float:
@@ -193,18 +185,31 @@ def solve(puzzle: Puzzle) -> str:
         return value
 
     start = (puzzle.player, puzzle.boxes)
-    cost_of = {start: 0}
-    parent: dict[tuple[int, frozenset[int]], tuple] = {}
-    queue = [(estimate(puzzle.boxes), 0, puzzle.player, puzzle.boxes)]
-    final = None
+    best = {start: (0, 0)}
+    canonical = {start: ""}
+    ways = {start: 1}
+    queue = [(estimate(puzzle.boxes), 0, 0, "", puzzle.player, puzzle.boxes)]
+    goal_primary: tuple[int, int] | None = None
+    goal_path: str | None = None
+    goal_ways = 0
     while queue:
-        _, cost, player, boxes = heapq.heappop(queue)
-        if cost > cost_of.get((player, boxes), INFINITY):
+        if goal_primary is not None and queue[0][0] > goal_primary[0]:
+            break
+        _, cost, pushes, path, player, boxes = heapq.heappop(queue)
+        state = (player, boxes)
+        if (cost, pushes) != best.get(state) or path != canonical.get(state):
             continue
         if boxes == goals:
-            final = (player, boxes)
-            break
-        walk = reachable(puzzle, boxes, player)
+            primary = (cost, pushes)
+            if goal_primary is None or primary < goal_primary:
+                goal_primary = primary
+                goal_path = path
+                goal_ways = ways[state]
+            elif primary == goal_primary:
+                goal_path = min(goal_path, path)
+                goal_ways = (goal_ways + ways[state]) % COUNT_MODULUS
+            continue
+        walk = routes(puzzle, boxes, player)
         for box in sorted(boxes):
             for key in ORDER:
                 target = puzzle.step(box, key)
@@ -215,38 +220,45 @@ def solve(puzzle: Puzzle) -> str:
                 stand = puzzle.step(box, OPPOSITE[key])
                 if stand is None or stand in puzzle.walls or stand in boxes:
                     continue
-                approach = walk.get(stand)
-                if approach is None:
+                route_data = walk.get(stand)
+                if route_data is None:
                     continue
+                approach, route_count = route_data
                 moved = frozenset(boxes - {box} | {target})
                 if blocked_square(puzzle, moved, target):
                     continue
                 bound = estimate(moved)
                 if bound == INFINITY:
                     continue
-                total = cost + approach + 1
+                edge = approach + key
+                total = cost + len(edge)
                 state = (box, moved)
-                if total >= cost_of.get(state, INFINITY):
+                primary = (total, pushes + 1)
+                old_primary = best.get(state, (INFINITY, INFINITY))
+                next_path = path + edge
+                next_ways = ways[(player, boxes)] * route_count % COUNT_MODULUS
+                if primary > old_primary:
                     continue
-                cost_of[state] = total
-                parent[state] = ((player, boxes), stand, key)
-                heapq.heappush(queue, (total + bound, total, box, moved))
+                if primary < old_primary:
+                    best[state] = primary
+                    canonical[state] = next_path
+                    ways[state] = next_ways
+                    heapq.heappush(
+                        queue,
+                        (total + bound, total, pushes + 1, next_path, box, moved),
+                    )
+                    continue
+                ways[state] = (ways[state] + next_ways) % COUNT_MODULUS
+                if next_path < canonical[state]:
+                    canonical[state] = next_path
+                    heapq.heappush(
+                        queue,
+                        (total + bound, total, pushes + 1, next_path, box, moved),
+                    )
 
-    if final is None:
+    if goal_primary is None:
         raise RuntimeError("instance is unsolvable, which contradicts the published guarantee")
-
-    steps = []
-    state = final
-    while state in parent:
-        previous, stand, key = parent[state]
-        steps.append((previous, stand, key))
-        state = previous
-    steps.reverse()
-    moves = []
-    for (player, boxes), stand, key in steps:
-        moves.append(route(puzzle, boxes, player, stand))
-        moves.append(key)
-    return "".join(moves)
+    return goal_path, goal_ways
 
 
 def main() -> None:
@@ -254,7 +266,14 @@ def main() -> None:
     solutions = []
     for puzzle_id in sorted(rules["puzzle_ids"]):
         text = (INPUT / "puzzles" / f"{puzzle_id}.txt").read_text()
-        solutions.append({"puzzle_id": puzzle_id, "moves": solve(Puzzle(text))})
+        moves, count = solve(Puzzle(text))
+        solutions.append(
+            {
+                "puzzle_id": puzzle_id,
+                "moves": moves,
+                "optimal_solution_count_mod": count,
+            }
+        )
     solutions.sort(key=lambda row: row["puzzle_id"].encode())
     OUTPUT.mkdir(parents=True, exist_ok=True)
     (OUTPUT / "solutions.json").write_text(

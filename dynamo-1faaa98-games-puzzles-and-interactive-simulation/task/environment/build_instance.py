@@ -33,6 +33,7 @@ CAMPAIGNS = (
         "zone_edges_mm": (0.0, 8.0, 16.0, 24.0, 32.0),
         "soil_rotation_degrees": 8.0,
         "split_field": False,
+        "drainage_storm": (2, 72.0),
         "kc": (1.31, -0.09, 0.18, 1.17),
     },
     {
@@ -52,6 +53,7 @@ CAMPAIGNS = (
         "zone_edges_mm": (0.0, 7.5, 15.0, 22.5),
         "soil_rotation_degrees": -13.0,
         "split_field": True,
+        "drainage_storm": (0, 84.0),
         "kc": (1.24, -0.04, 0.16, 1.12),
     },
     {
@@ -71,6 +73,7 @@ CAMPAIGNS = (
         "zone_edges_mm": (0.0, 12.0, 24.0, 36.0, 48.0, 56.0),
         "soil_rotation_degrees": 21.0,
         "split_field": False,
+        "drainage_storm": (5, 96.0),
         "kc": (1.37, -0.12, 0.20, 1.20),
     },
     {
@@ -90,6 +93,7 @@ CAMPAIGNS = (
         "zone_edges_mm": (0.0, 10.0, 20.0, 30.0, 40.0),
         "soil_rotation_degrees": -27.0,
         "split_field": False,
+        "drainage_storm": (1, 78.0),
         "kc": (1.28, -0.06, 0.17, 1.15),
     },
 )
@@ -271,7 +275,9 @@ def vegetation_rows(config: dict, units: list[dict]) -> list[dict]:
 
 def weather_rows(config: dict) -> list[dict]:
     rng = random.Random(config["seed"] ^ 0xC0FFEE)
+    storm_offset, storm_depth = config["drainage_storm"]
     rain_days = {
+        storm_offset: storm_depth,
         8: 7.5,
         19: 3.2,
         37: 15.8,

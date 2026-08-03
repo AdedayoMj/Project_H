@@ -16,6 +16,7 @@ PLAYER_ON_GOAL = "+"
 # Row/column deltas keyed by the normative move characters.
 DIRECTIONS = {"U": (-1, 0), "D": (1, 0), "L": (0, -1), "R": (0, 1)}
 DIRECTION_ORDER = ("D", "L", "R", "U")
+COUNT_MODULUS = 1_000_000_007
 
 INFINITY = float("inf")
 
@@ -127,30 +128,34 @@ def walk_distances(board: Board, boxes: frozenset[int], start: int) -> dict[int,
     return distance
 
 
-def walk_path(board: Board, boxes: frozenset[int], start: int, target: int) -> str:
-    """A shortest player walk as move characters, ties broken by DIRECTION_ORDER."""
-    if start == target:
-        return ""
-    parent: dict[int, tuple[int, str]] = {start: (-1, "")}
+def walk_routes(
+    board: Board, boxes: frozenset[int], start: int
+) -> dict[int, tuple[str, int]]:
+    """Canonical shortest walk and number of shortest walks to each cell."""
+    routes = {start: ("", 1)}
+    distances = {start: 0}
     queue = deque([start])
     while queue:
         cell = queue.popleft()
         for key in DIRECTION_ORDER:
-            nxt = board.step(cell, key)
-            if nxt is None or nxt in board.walls or nxt in boxes or nxt in parent:
+            target = board.step(cell, key)
+            if target is None or target in board.walls or target in boxes:
                 continue
-            parent[nxt] = (cell, key)
-            if nxt == target:
-                queue.clear()
-                break
-            queue.append(nxt)
-    moves = []
-    cell = target
-    while cell != start:
-        previous, key = parent[cell]
-        moves.append(key)
-        cell = previous
-    return "".join(reversed(moves))
+            distance = distances[cell] + 1
+            candidate = routes[cell][0] + key
+            if target not in distances:
+                distances[target] = distance
+                routes[target] = (candidate, routes[cell][1])
+                queue.append(target)
+                continue
+            if distances[target] != distance:
+                continue
+            canonical, count = routes[target]
+            routes[target] = (
+                min(canonical, candidate),
+                (count + routes[cell][1]) % COUNT_MODULUS,
+            )
+    return routes
 
 
 def frozen_deadlock(board: Board, boxes: frozenset[int], cell: int) -> bool:
@@ -205,23 +210,25 @@ def matching_bound(board: Board, boxes: frozenset[int]) -> float:
     return best[(1 << size) - 1]
 
 
-def solve_move_optimal(
+def screen_move_optimal(
     board: Board,
     boxes: frozenset[int] | None = None,
     player: int | None = None,
     expansion_limit: int = 4_000_000,
-) -> tuple[str | None, dict]:
-    """Search pushes while costing player steps, so the result is move-optimal.
+) -> dict:
+    """Prove only the primary move optimum for deterministic candidate screening.
 
-    Every edge is one push plus the walk that positions the player for it, so the
-    accumulated cost is exactly the player's move count and Dijkstra/A* over this
-    graph returns a move-optimal solution without enumerating walk-only states.
+    Instance generation rejects many candidates. Counting every tied optimum for
+    those discarded boards is unnecessary and makes image builds much slower, so
+    this lean A* retains one move-cost label per push state. Accepted boards are
+    subsequently passed to :func:`solve_move_optimal` for the full canonical and
+    multiplicity proof.
     """
     boxes = board.boxes if boxes is None else boxes
     player = board.player if player is None else player
     goals = frozenset(board.goals)
     if boxes == goals:
-        return "", {"expansions": 0, "generated": 0, "optimal_moves": 0}
+        return {"expansions": 0, "generated": 0, "optimal_moves": 0}
 
     bounds: dict[frozenset[int], float] = {}
 
@@ -232,28 +239,28 @@ def solve_move_optimal(
             bounds[state_boxes] = value
         return value
 
-    start = (player, boxes)
-    best_cost = {start: 0}
-    came_from: dict[tuple[int, frozenset[int]], tuple] = {}
     initial = heuristic(boxes)
     if initial == INFINITY:
-        return None, {"expansions": 0, "generated": 0, "optimal_moves": None}
+        return {"expansions": 0, "generated": 0, "optimal_moves": None}
+
+    best_cost = {(player, boxes): 0}
     queue = [(initial, 0, player, boxes)]
     expansions = 0
     generated = 0
-    goal_state = None
-
     while queue:
         _, cost, current_player, current_boxes = heapq.heappop(queue)
         state = (current_player, current_boxes)
-        if cost > best_cost.get(state, INFINITY):
+        if cost != best_cost.get(state):
             continue
         if current_boxes == goals:
-            goal_state = state
-            break
+            return {
+                "expansions": expansions,
+                "generated": generated,
+                "optimal_moves": cost,
+            }
         expansions += 1
         if expansions > expansion_limit:
-            return None, {
+            return {
                 "expansions": expansions,
                 "generated": generated,
                 "optimal_moves": None,
@@ -267,7 +274,10 @@ def solve_move_optimal(
                     continue
                 if target in board.dead:
                     continue
-                stand = board.step(box, {"U": "D", "D": "U", "L": "R", "R": "L"}[key])
+                stand = board.step(
+                    box,
+                    {"U": "D", "D": "U", "L": "R", "R": "L"}[key],
+                )
                 if stand is None or stand in board.walls or stand in current_boxes:
                     continue
                 walk = reach.get(stand)
@@ -284,34 +294,181 @@ def solve_move_optimal(
                 if next_cost >= best_cost.get(next_state, INFINITY):
                     continue
                 best_cost[next_state] = next_cost
-                came_from[next_state] = (state, stand, key)
                 generated += 1
-                heapq.heappush(queue, (next_cost + estimate, next_cost, box, moved))
+                heapq.heappush(
+                    queue,
+                    (next_cost + estimate, next_cost, box, moved),
+                )
 
-    if goal_state is None:
-        return None, {
-            "expansions": expansions,
-            "generated": generated,
-            "optimal_moves": None,
-            "exhausted": True,
-        }
-
-    segments = []
-    state = goal_state
-    while state in came_from:
-        previous, stand, key = came_from[state]
-        segments.append((previous, stand, key))
-        state = previous
-    segments.reverse()
-    moves = []
-    for (previous_player, previous_boxes), stand, key in segments:
-        moves.append(walk_path(board, previous_boxes, previous_player, stand))
-        moves.append(key)
-    solution = "".join(moves)
-    return solution, {
+    return {
         "expansions": expansions,
         "generated": generated,
-        "optimal_moves": best_cost[goal_state],
+        "optimal_moves": None,
+        "exhausted": True,
+    }
+
+
+def solve_move_optimal(
+    board: Board,
+    boxes: frozenset[int] | None = None,
+    player: int | None = None,
+    expansion_limit: int = 4_000_000,
+) -> tuple[str | None, dict]:
+    """Return the canonical optimum and count all primary/secondary optima.
+
+    Every edge is one push plus the walk that positions the player for it, so the
+    accumulated primary cost is exactly the player's move count. Equal primary
+    costs retain fewer pushes and then the lexicographically smaller complete move
+    string. Equal primary/secondary labels also accumulate the number of distinct
+    move strings modulo COUNT_MODULUS.
+    """
+    boxes = board.boxes if boxes is None else boxes
+    player = board.player if player is None else player
+    goals = frozenset(board.goals)
+    if boxes == goals:
+        return "", {
+            "expansions": 0,
+            "generated": 0,
+            "optimal_moves": 0,
+            "optimal_pushes": 0,
+            "optimal_solution_count_mod": 1,
+        }
+
+    bounds: dict[frozenset[int], float] = {}
+
+    def heuristic(state_boxes: frozenset[int]) -> float:
+        value = bounds.get(state_boxes)
+        if value is None:
+            value = matching_bound(board, state_boxes)
+            bounds[state_boxes] = value
+        return value
+
+    start = (player, boxes)
+    best_primary = {start: (0, 0)}
+    canonical = {start: ""}
+    ways = {start: 1}
+    initial = heuristic(boxes)
+    if initial == INFINITY:
+        return None, {
+            "expansions": 0,
+            "generated": 0,
+            "optimal_moves": None,
+            "optimal_pushes": None,
+            "optimal_solution_count_mod": None,
+        }
+    queue = [(initial, 0, 0, "", player, boxes)]
+    expansions = 0
+    generated = 0
+    goal_primary: tuple[int, int] | None = None
+    goal_path: str | None = None
+    goal_ways = 0
+
+    while queue:
+        if goal_primary is not None and queue[0][0] > goal_primary[0]:
+            break
+        _, cost, pushes, path, current_player, current_boxes = heapq.heappop(queue)
+        state = (current_player, current_boxes)
+        if (cost, pushes) != best_primary.get(state) or path != canonical.get(state):
+            continue
+        if current_boxes == goals:
+            primary = (cost, pushes)
+            if goal_primary is None or primary < goal_primary:
+                goal_primary = primary
+                goal_path = path
+                goal_ways = ways[state]
+            elif primary == goal_primary:
+                goal_path = min(goal_path, path)
+                goal_ways = (goal_ways + ways[state]) % COUNT_MODULUS
+            continue
+        expansions += 1
+        if expansions > expansion_limit:
+            return None, {
+                "expansions": expansions,
+                "generated": generated,
+                "optimal_moves": None,
+                "optimal_pushes": None,
+                "optimal_solution_count_mod": None,
+                "exhausted": False,
+            }
+        routes = walk_routes(board, current_boxes, current_player)
+        for box in sorted(current_boxes):
+            for key in DIRECTION_ORDER:
+                target = board.step(box, key)
+                if target is None or target in board.walls or target in current_boxes:
+                    continue
+                if target in board.dead:
+                    continue
+                stand = board.step(box, {"U": "D", "D": "U", "L": "R", "R": "L"}[key])
+                if stand is None or stand in board.walls or stand in current_boxes:
+                    continue
+                route_data = routes.get(stand)
+                if route_data is None:
+                    continue
+                approach, route_count = route_data
+                moved = frozenset(current_boxes - {box} | {target})
+                if frozen_deadlock(board, moved, target):
+                    continue
+                estimate = heuristic(moved)
+                if estimate == INFINITY:
+                    continue
+                edge = approach + key
+                next_cost = cost + len(edge)
+                next_pushes = pushes + 1
+                next_path = path + edge
+                next_state = (box, moved)
+                next_primary = (next_cost, next_pushes)
+                old_primary = best_primary.get(next_state, (INFINITY, INFINITY))
+                next_ways = ways[state] * route_count % COUNT_MODULUS
+                if next_primary > old_primary:
+                    continue
+                if next_primary < old_primary:
+                    best_primary[next_state] = next_primary
+                    canonical[next_state] = next_path
+                    ways[next_state] = next_ways
+                    generated += 1
+                    heapq.heappush(
+                        queue,
+                        (
+                            next_cost + estimate,
+                            next_cost,
+                            next_pushes,
+                            next_path,
+                            box,
+                            moved,
+                        ),
+                    )
+                    continue
+                ways[next_state] = (ways[next_state] + next_ways) % COUNT_MODULUS
+                if next_path < canonical[next_state]:
+                    canonical[next_state] = next_path
+                    heapq.heappush(
+                        queue,
+                        (
+                            next_cost + estimate,
+                            next_cost,
+                            next_pushes,
+                            next_path,
+                            box,
+                            moved,
+                        ),
+                    )
+
+    if goal_primary is not None:
+        return goal_path, {
+            "expansions": expansions,
+            "generated": generated,
+            "optimal_moves": goal_primary[0],
+            "optimal_pushes": goal_primary[1],
+            "optimal_solution_count_mod": goal_ways,
+        }
+
+    return None, {
+        "expansions": expansions,
+        "generated": generated,
+        "optimal_moves": None,
+        "optimal_pushes": None,
+        "optimal_solution_count_mod": None,
+        "exhausted": True,
     }
 
 

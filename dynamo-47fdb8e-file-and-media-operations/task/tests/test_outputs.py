@@ -351,7 +351,7 @@ def test_nominal_ink_regions_have_no_localized_tone_damage():
                     continue
                 substantial_error = interior & (
                     absolute_error
-                    > limits["plate_nominal_local_error_code_value_min"]
+                    >= limits["plate_nominal_local_error_code_value_min"]
                 )
                 largest_area = largest_component_area_mm2(
                     substantial_error, float(spec["canvas"]["dpi"])
@@ -483,6 +483,16 @@ def test_pdf_has_functional_production_structure_and_matching_render():
         assert float(pdf.pdf_version) >= 1.6
         assert len(pdf.pages) == 1
         assert str(pdf.docinfo["/GTS_PDFXVersion"]) == spec["output_intent"]["pdfx_version"]
+        metadata = pdf.Root.get("/Metadata")
+        assert metadata is not None
+        assert str(metadata["/Type"]) == "/Metadata"
+        assert str(metadata["/Subtype"]) == "/XML"
+        xmp = metadata.read_bytes().decode("utf-8")
+        assert 'xmlns:pdfxid="http://www.npes.org/pdfx/ns/id/"' in xmp
+        assert (
+            f'pdfxid:GTS_PDFXVersion="{spec["output_intent"]["pdfx_version"]}"'
+            in xmp
+        )
         intents = pdf.Root["/OutputIntents"]
         assert len(intents) == 1
         assert str(intents[0]["/S"]) == "/GTS_PDFX"

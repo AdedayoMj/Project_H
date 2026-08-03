@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the hidden Sokoban benchmark and its move-optimal reference answers."""
+"""Generate the hidden Sokoban benchmark and its canonical optimal answers."""
 from __future__ import annotations
 
 import argparse
@@ -15,12 +15,13 @@ from sokoban import (
     DIRECTIONS,
     DIRECTION_ORDER,
     matching_bound,
+    screen_move_optimal,
     solve_move_optimal,
     walk_distances,
 )
 
 SEED = 168_0_9_431
-PUZZLE_COUNT = 12
+PUZZLE_COUNT = 16
 
 # Calibration envelopes. The caps are on expansions, not wall-clock, so the
 # accepted instance set is identical on every machine; measured seconds are
@@ -36,7 +37,7 @@ STANDARD_BOX_MIN = 4
 STANDARD_BOX_MAX = 5
 
 HARD_PUZZLE_COUNT = PUZZLE_COUNT - STANDARD_PUZZLE_COUNT
-HARD_SEED_OFFSETS = (101, 211, 307, 401)
+HARD_SEED_OFFSETS = (101, 211, 307, 401, 503, 601, 701, 809)
 HARD_EXPANSION_LIMIT = 450_000
 HARD_MIN_OPTIMAL_MOVES = 40
 HARD_MIN_EXPANSIONS = 120_000
@@ -251,27 +252,48 @@ def build_one(rng: random.Random, puzzle_id: str, *, hard: bool = False) -> dict
         return None
 
     started = time.monotonic()
-    moves, stats = solve_move_optimal(board, boxes, player, expansion_limit=expansion_limit)
-    elapsed = time.monotonic() - started
+    screening = screen_move_optimal(
+        board,
+        boxes,
+        player,
+        expansion_limit=expansion_limit,
+    )
+    screening_elapsed = time.monotonic() - started
     if hard:
         print(
-            f"{puzzle_id} hard candidate: optimal={stats['optimal_moves']} "
-            f"expansions={stats['expansions']} proof_seconds={elapsed:.3f}",
+            f"{puzzle_id} hard candidate: optimal={screening['optimal_moves']} "
+            f"expansions={screening['expansions']} "
+            f"screen_seconds={screening_elapsed:.3f}",
             flush=True,
         )
-    if moves is None:
+    if screening["optimal_moves"] is None:
         return None
-    if stats["optimal_moves"] < min_optimal_moves or stats["expansions"] < min_expansions:
+    if (
+        screening["optimal_moves"] < min_optimal_moves
+        or screening["expansions"] < min_expansions
+    ):
         return None
+
+    moves, stats = solve_move_optimal(
+        board,
+        boxes,
+        player,
+        expansion_limit=expansion_limit,
+    )
+    elapsed = time.monotonic() - started
+    if moves is None or stats["optimal_moves"] != screening["optimal_moves"]:
+        raise RuntimeError(f"canonical proof disagrees with screening for {puzzle_id}")
 
     rows = compose(height, width, floor, goals, set(boxes), player, crop=True)
     return {
         "puzzle_id": puzzle_id,
         "rows": rows,
         "optimal_moves": int(stats["optimal_moves"]),
+        "optimal_pushes": int(stats["optimal_pushes"]),
+        "optimal_solution_count_mod": int(stats["optimal_solution_count_mod"]),
         "box_count": box_count,
         "interior": [height, width],
-        "expansions": stats["expansions"],
+        "expansions": screening["expansions"],
         "proof_seconds": round(elapsed, 3),
         "reference_moves": moves,
     }
@@ -304,18 +326,26 @@ def rules_document() -> dict:
             "solved": "every box occupies a goal",
         },
         "scoring": {
-            "metric": "total player moves",
-            "definition": "the number of characters in the move string; every player step counts whether or not it pushes a box",
-            "pushes": "the number of pushes is NOT scored and is NOT a tie-break; any solution attaining the optimal move count is accepted",
-            "requirement": "each submitted solution must be legal, must solve its puzzle, and its move count must equal the hidden move-optimal length",
+            "metric": "the lexicographic tuple (total player moves, pushes, move string)",
+            "primary": "minimize the number of characters in the move string; every player step counts whether or not it pushes a box",
+            "secondary": "among move-optimal solutions, minimize the number of moves that push a box",
+            "tertiary": "among solutions tied on moves and pushes, choose the lexicographically smallest complete move string under the explicit character order D < L < R < U",
+            "requirement": "each submitted solution must be legal, solve its puzzle, and equal the unique canonical optimum under all three levels",
+        },
+        "optimal_solution_count": {
+            "definition": "the number of distinct complete move strings attaining both the minimum total-move count and, among those, the minimum push count",
+            "distinctness": "two solutions are distinct exactly when their complete move strings differ at one or more character positions",
+            "modulus": 1_000_000_007,
+            "requirement": "report the count modulo 1000000007 for every puzzle",
         },
         "output_contract": {
             "path": "/app/output/solutions.json",
             "top_level_keys": ["schema_version", "solutions"],
             "schema_version": 1,
-            "entry_keys": ["puzzle_id", "moves"],
+            "entry_keys": ["puzzle_id", "moves", "optimal_solution_count_mod"],
             "ordering": "solutions ascending by puzzle_id UTF-8 bytes, exactly one entry per puzzle id",
             "moves_alphabet": "uppercase U, D, L, R only; no separators, whitespace, lowercase, or any other character",
+            "optimal_solution_count_mod": "an integer from 0 through 1000000006",
         },
         "instance_bounds": {
             "puzzle_count": PUZZLE_COUNT,
@@ -326,8 +356,9 @@ def rules_document() -> dict:
             "standard_puzzle_count": STANDARD_PUZZLE_COUNT,
             "hard_tail_puzzle_count": HARD_PUZZLE_COUNT,
             "hard_tail_min_reference_expansions": HARD_MIN_EXPANSIONS,
-            "guarantee": "every instance is generated backwards from its solved state, so a legal solution exists, and the reference solver proved optimality inside the published expansion envelope",
+            "guarantee": "every instance is generated backwards from its solved state, so a legal solution exists, and the reference solver proved its canonical optimum and tied-solution count inside the published expansion envelope",
             "reference_expansion_limit": HARD_EXPANSION_LIMIT,
+            "canonical_move_order": list(DIRECTION_ORDER),
         },
     }
 
@@ -355,7 +386,9 @@ def build(root: Path, tests_root: Path | None = None) -> None:
         puzzles.append(candidate)
         print(
             f"{candidate['puzzle_id']}: optimal={candidate['optimal_moves']} "
-            f"boxes={candidate['box_count']} interior={candidate['interior']} "
+            f"pushes={candidate['optimal_pushes']} boxes={candidate['box_count']} "
+            f"count_mod={candidate['optimal_solution_count_mod']} "
+            f"interior={candidate['interior']} "
             f"expansions={candidate['expansions']} proof_seconds={candidate['proof_seconds']}",
             flush=True,
         )
@@ -377,6 +410,13 @@ def build(root: Path, tests_root: Path | None = None) -> None:
                 {
                     "puzzle_id": puzzle["puzzle_id"],
                     "optimal_moves": puzzle["optimal_moves"],
+                    "optimal_pushes": puzzle["optimal_pushes"],
+                    "optimal_solution_count_mod": puzzle[
+                        "optimal_solution_count_mod"
+                    ],
+                    "canonical_moves_sha256": hashlib.sha256(
+                        puzzle["reference_moves"].encode()
+                    ).hexdigest(),
                     "board_sha256": hashlib.sha256(
                         ("\n".join(puzzle["rows"]) + "\n").encode()
                     ).hexdigest(),

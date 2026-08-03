@@ -519,12 +519,13 @@ def write_pdf(
             else:
                 page.Contents = Array([marker_stream, current])
 
+            pdfx_version = ticket["output_intent"]["pdfx_version"]
             xmp = (
                 '<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>'
                 '<x:xmpmeta xmlns:x="adobe:ns:meta/">'
                 '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
                 '<rdf:Description xmlns:pdfxid="http://www.npes.org/pdfx/ns/id/" '
-                'pdfxid:GTS_PDFXVersion="PDF/X-4"/>'
+                f'pdfxid:GTS_PDFXVersion="{pdfx_version}"/>'
                 "</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>"
             ).encode("utf-8")
             metadata = pdf.make_stream(xmp)

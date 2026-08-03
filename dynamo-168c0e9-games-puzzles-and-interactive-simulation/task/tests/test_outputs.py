@@ -55,10 +55,11 @@ def parse(text: str) -> dict:
     }
 
 
-def replay(board: dict, moves: str) -> tuple[set, tuple]:
+def replay(board: dict, moves: str) -> tuple[set, tuple, int]:
     """Apply the move string under official rules, raising on the first illegal step."""
     boxes = set(board["boxes"])
     player = board["player"]
+    pushes = 0
     for index, key in enumerate(moves):
         delta_r, delta_c = DIRECTIONS[key]
         target = (player[0] + delta_r, player[1] + delta_c)
@@ -76,8 +77,9 @@ def replay(board: dict, moves: str) -> tuple[set, tuple]:
                 raise ValueError(f"move {index} pushes a box into another box")
             boxes.discard(target)
             boxes.add(beyond)
+            pushes += 1
         player = target
-    return boxes, player
+    return boxes, player, pushes
 
 
 def test_solution_document_is_a_regular_file():
@@ -119,6 +121,8 @@ def test_solution_document_matches_the_normative_schema():
         assert isinstance(record["moves"], str)
         assert record["moves"], f"{record['puzzle_id']} has an empty solution"
         assert set(record["moves"]) <= ALPHABET, record["puzzle_id"]
+        assert type(record["optimal_solution_count_mod"]) is int
+        assert 0 <= record["optimal_solution_count_mod"] < 1_000_000_007
 
 
 def test_every_solution_is_legal_and_solves_its_puzzle():
@@ -127,17 +131,42 @@ def test_every_solution_is_legal_and_solves_its_puzzle():
     for record in EXPECTED["puzzles"]:
         puzzle_id = record["puzzle_id"]
         board = parse((PUZZLES / f"{puzzle_id}.txt").read_text())
-        boxes, _ = replay(board, entries[puzzle_id])
+        boxes, _, _ = replay(board, entries[puzzle_id])
         assert boxes == board["goals"], puzzle_id
 
 
-def test_every_solution_attains_the_hidden_optimal_move_count():
-    """Each solution's length equals the move-optimal length proved by the reference."""
-    entries = {record["puzzle_id"]: record["moves"] for record in submitted()["solutions"]}
+def test_every_solution_is_the_hidden_canonical_optimum():
+    """Require optimal moves and pushes plus the published canonical tie-break."""
+    entries = {
+        record["puzzle_id"]: record for record in submitted()["solutions"]
+    }
     for record in EXPECTED["puzzles"]:
         puzzle_id = record["puzzle_id"]
-        assert len(entries[puzzle_id]) == record["optimal_moves"], (
+        moves = entries[puzzle_id]["moves"]
+        assert len(moves) == record["optimal_moves"], (
             puzzle_id,
-            len(entries[puzzle_id]),
+            len(moves),
             record["optimal_moves"],
         )
+        board = parse((PUZZLES / f"{puzzle_id}.txt").read_text())
+        _, _, pushes = replay(board, moves)
+        assert pushes == record["optimal_pushes"], (
+            puzzle_id,
+            pushes,
+            record["optimal_pushes"],
+        )
+        assert hashlib.sha256(moves.encode()).hexdigest() == record[
+            "canonical_moves_sha256"
+        ], puzzle_id
+
+
+def test_reported_optimal_solution_counts_are_exact():
+    """Match the hidden number of move-and-push-optimal strings modulo the prime."""
+    entries = {
+        record["puzzle_id"]: record for record in submitted()["solutions"]
+    }
+    for record in EXPECTED["puzzles"]:
+        puzzle_id = record["puzzle_id"]
+        assert entries[puzzle_id]["optimal_solution_count_mod"] == record[
+            "optimal_solution_count_mod"
+        ], puzzle_id

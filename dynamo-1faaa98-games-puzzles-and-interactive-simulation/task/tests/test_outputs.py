@@ -178,6 +178,23 @@ def test_generated_campaigns_exercise_heterogeneous_model_paths():
     assert rotated_soil_edges >= len(manifest["campaigns"])
 
 
+def test_generated_campaigns_exercise_deep_drainage_balance():
+    """Storm regimes keep deep drainage live, spatially variable, and campaign-general."""
+    records, _ = reference()
+    by_campaign = defaultdict(list)
+    for record in records:
+        by_campaign[record["campaign_id"]].append(float(record["seasonal_drainage_mm"]))
+
+    assert len(by_campaign) >= 4
+    for campaign_id, values in by_campaign.items():
+        positive = [value for value in values if value > 0.01]
+        assert positive, campaign_id
+        assert max(positive) >= 5.0, campaign_id
+        assert len({round(value, 3) for value in positive}) >= 8, campaign_id
+    all_values = [value for values in by_campaign.values() for value in values]
+    assert sum(value > 0.01 for value in all_values) >= len(all_values) // 3
+
+
 def test_geojson_and_csv_follow_the_normative_schemas():
     """GeoJSON features and CSV rows use the exact published keys, types, header, and finite values."""
     document = submitted_geojson()

@@ -278,7 +278,9 @@ def test_required_artifacts_are_exact_regular_files_and_inputs_are_untouched():
     assert {item.name for item in OUTPUT.iterdir()} == EXPECTED_FILES
     for item in OUTPUT.iterdir():
         assert item.is_file() and not item.is_symlink()
-    assert fingerprint_tree([INPUT, EVIDENCE], APP) == EXPECTED["input_fingerprint_sha256"]
+    assert fingerprint_tree([INPUT, EVIDENCE], APP) in set(
+        EXPECTED["input_fingerprint_sha256_allowed"]
+    )
 
 
 def test_manifest_is_complete_and_recovers_hidden_design_and_capture_state():
