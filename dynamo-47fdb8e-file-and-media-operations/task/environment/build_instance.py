@@ -420,13 +420,17 @@ def build(root: Path) -> None:
     font_dir = input_dir / "fonts"
     font_dir.mkdir()
 
+    bundled_assets = Path(__file__).parent / "assets"
     system_fonts = Path("/usr/share/fonts/truetype/dejavu")
+    if not system_fonts.is_dir():
+        system_fonts = bundled_assets
     for name in ("DejaVuSans.ttf", "DejaVuSans-Bold.ttf"):
         shutil.copy2(system_fonts / name, font_dir / name)
 
     profile_candidates = [
         Path("/usr/share/color/icc/ghostscript/default_cmyk.icc"),
         Path("/usr/share/ghostscript/iccprofiles/default_cmyk.icc"),
+        bundled_assets / "default_cmyk.icc",
     ]
     profile = next((path for path in profile_candidates if path.exists()), None)
     if profile is None:
@@ -737,6 +741,8 @@ def build(root: Path) -> None:
             "plate_background_local_component_area_mm2_max": 4.0,
             "plate_nominal_region_mean_absolute_coverage_max": 12.0,
             "plate_nominal_region_median_absolute_coverage_max": 2.0,
+            "plate_nominal_local_error_code_value_min": 24,
+            "plate_nominal_local_component_area_mm2_max": 4.0,
             "proof_median_delta_e00_max": 1.0,
             "proof_p95_delta_e00_max": 2.5,
             "proof_color_edge_exclusion_px": 2,

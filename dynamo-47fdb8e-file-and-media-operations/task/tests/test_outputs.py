@@ -25,7 +25,7 @@ INPUT = APP / "input"
 EVIDENCE = APP / "evidence"
 OUTPUT = APP / "output"
 REFERENCE = Path("/tests/reference_master.npz")
-EXPECTED_SOURCE_SHA256 = "e0b3eeb3e646a1dca3c2f58a77961648b20673892038dca7e8c877abf0c72909"
+EXPECTED_SOURCE_SHA256 = "782e440865a11979687de4c9b27ba171cb7ba3c6c58aaf883f6585ac07474d43"
 REQUIRED_FILES = {
     "plates.npz",
     "proof.png",
@@ -204,7 +204,7 @@ def qr_modules(payload: str, spec: dict) -> set[tuple[int, int]]:
 def test_required_artifacts_are_regular_files():
     """Every requested artifact exists at the documented path as a non-symlinked regular file."""
     assert OUTPUT.is_dir()
-    assert {path.name for path in OUTPUT.iterdir() if path.is_file()} == REQUIRED_FILES
+    assert {path.name for path in OUTPUT.iterdir()} == REQUIRED_FILES
     for name in REQUIRED_FILES:
         path = OUTPUT / name
         assert path.exists()
@@ -323,6 +323,42 @@ def test_zero_ink_background_has_no_localized_contamination():
             assert largest_area <= limits[
                 "plate_background_local_component_area_mm2_max"
             ], (plate_id, largest_area)
+
+
+def test_nominal_ink_regions_have_no_localized_tone_damage():
+    """No coherent interior defect may hide inside a nonzero tone region's global statistics."""
+    spec = ticket()
+    limits = spec["acceptance_tolerances"]
+    submitted = load_plates()
+    edge_exclusion = max(
+        1,
+        math.ceil(
+            limits["plate_boundary_hausdorff_mm_max"]
+            * float(spec["canvas"]["dpi"])
+            / 25.4
+        ),
+    )
+    with np.load(REFERENCE, allow_pickle=False) as reference:
+        for plate_id in spec["manifest_schema"]["plate_order"]:
+            actual = submitted[plate_id].astype(np.int16)
+            expected = reference[plate_id].astype(np.int16)
+            absolute_error = np.abs(actual - expected)
+            for nominal in spec["plate_registry"][plate_id]["nominal_coverage_levels"]:
+                if nominal == 0:
+                    continue
+                interior = binary_erosion(expected == nominal, iterations=edge_exclusion)
+                if not np.any(interior):
+                    continue
+                substantial_error = interior & (
+                    absolute_error
+                    > limits["plate_nominal_local_error_code_value_min"]
+                )
+                largest_area = largest_component_area_mm2(
+                    substantial_error, float(spec["canvas"]["dpi"])
+                )
+                assert largest_area <= limits[
+                    "plate_nominal_local_component_area_mm2_max"
+                ], (plate_id, nominal, largest_area)
 
 
 def test_proof_is_colorimetrically_correct_and_derived_from_submitted_plates():
@@ -451,7 +487,9 @@ def test_pdf_has_functional_production_structure_and_matching_render():
         assert len(intents) == 1
         assert str(intents[0]["/S"]) == "/GTS_PDFX"
         assert str(intents[0]["/OutputConditionIdentifier"]) == spec["output_intent"]["identifier"]
-        assert int(intents[0]["/DestOutputProfile"]["/N"]) == 4
+        embedded_profile = intents[0]["/DestOutputProfile"]
+        assert int(embedded_profile["/N"]) == 4
+        assert embedded_profile.read_bytes() == Path(spec["output_intent"]["profile"]).read_bytes()
 
         page = pdf.pages[0]
         expected_media = [value * 72.0 / 25.4 for value in spec["canvas"]["media_box_mm"]]
