@@ -138,6 +138,17 @@ def render_glyph(instance_path: Path, glyph_name: str, pixel_size: int = 512) ->
     return canvas
 
 
+def glyph_outline_signature(font: TTFont, glyph_name: str) -> tuple:
+    """Return an exact TrueType outline signature independent of glyph naming."""
+    glyf = font["glyf"]
+    coordinates, end_points, flags = glyf[glyph_name].getCoordinates(glyf)
+    return (
+        tuple((int(x), int(y)) for x, y in coordinates),
+        tuple(int(value) for value in end_points),
+        tuple(int(value) for value in flags),
+    )
+
+
 def _is_raster_payload(path: Path, header: bytes) -> bool:
     """Recognize raster assets even when an archive member has a disguised suffix."""
     suffix = path.suffix.casefold()
@@ -652,7 +663,15 @@ def test_pdf_is_one_page_live_embedded_and_visually_consistent():
         assert np.allclose([float(value) for value in page.MediaBox], expected_box, atol=0.01)
         fonts = page.Resources.get("/Font")
         assert fonts is not None
-        embedded_recovered_family = False
+        submitted_font = TTFont(OUTPUT / "recovered.ttf")
+        submitted_cmap = submitted_font.getBestCmap()
+        live_text_codepoints = {
+            ord(character)
+            for line in spec["proof_contract"]["lines"]
+            for character in line["text"]
+        }
+        assert live_text_codepoints <= set(submitted_cmap)
+        embedded_recovered_subset = False
         for _, font in fonts.items():
             parent_base_name = str(font.get("/BaseFont", ""))
             descendants = list(font.get("/DescendantFonts", []))
@@ -660,13 +679,39 @@ def test_pdf_is_one_page_live_embedded_and_visually_consistent():
             for candidate in candidates:
                 candidate_base_name = str(candidate.get("/BaseFont", parent_base_name))
                 descriptor = candidate.get("/FontDescriptor")
-                is_embedded = bool(
-                    descriptor
-                    and any(key in descriptor for key in ("/FontFile", "/FontFile2", "/FontFile3"))
+                if (
+                    not descriptor
+                    or "/FontFile2" not in descriptor
+                    or "DynamoPalimpsest" not in candidate_base_name
+                ):
+                    continue
+                embedded_font = TTFont(
+                    io.BytesIO(descriptor["/FontFile2"].read_bytes())
                 )
-                if is_embedded and "DynamoPalimpsest" in candidate_base_name:
-                    embedded_recovered_family = True
-        assert embedded_recovered_family
+                embedded_cmap = {
+                    codepoint: glyph_name
+                    for cmap_table in embedded_font["cmap"].tables
+                    for codepoint, glyph_name in cmap_table.cmap.items()
+                }
+                assert live_text_codepoints <= set(embedded_cmap)
+                assert (
+                    embedded_font["head"].unitsPerEm
+                    == submitted_font["head"].unitsPerEm
+                )
+                for codepoint in live_text_codepoints:
+                    submitted_name = submitted_cmap[codepoint]
+                    embedded_name = embedded_cmap[codepoint]
+                    assert (
+                        embedded_font["hmtx"].metrics[embedded_name]
+                        == submitted_font["hmtx"].metrics[submitted_name]
+                    )
+                    assert glyph_outline_signature(
+                        embedded_font, embedded_name
+                    ) == glyph_outline_signature(submitted_font, submitted_name)
+                embedded_recovered_subset = True
+                embedded_font.close()
+        submitted_font.close()
+        assert embedded_recovered_subset
 
     document = fitz.open(pdf_path)
     page = document[0]

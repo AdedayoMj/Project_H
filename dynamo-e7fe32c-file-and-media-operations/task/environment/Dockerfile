@@ -21,9 +21,14 @@ RUN apt-get update \
         uharfbuzz==0.55.0 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY build_instance.py font_model.py /tmp/
-RUN PYTHONPATH=/tmp python3 /tmp/build_instance.py --root /app \
-    && rm /tmp/build_instance.py /tmp/font_model.py \
+COPY build_instance.py font_model.py /tmp/dynamo-font-build/
+RUN PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/tmp/dynamo-font-build \
+        python3 /tmp/dynamo-font-build/build_instance.py --root /app \
+    && rm -rf /tmp/dynamo-font-build \
+    && ! find / -type f \
+        \( -name 'font_model.py' -o -name 'font_model*.pyc' \
+        -o -name 'build_instance.py' -o -name 'build_instance*.pyc' \) \
+        -print -quit | grep -q . \
     && mkdir -p /app/output
 
 WORKDIR /app
