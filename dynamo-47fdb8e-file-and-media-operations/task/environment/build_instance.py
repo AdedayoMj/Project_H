@@ -731,13 +731,28 @@ def build(root: Path) -> None:
             "identifier": "DYNAMO-SYNTH-CMYK-v1",
             "profile": "/app/input/DYNAMO-SYNTH-CMYK-v1.icc",
             "pdfx_version": "PDF/X-4",
+            "separation_color_space": {
+                "plate_ids": ["SC", "OW", "V"],
+                "array_length": 4,
+                "alternate_space_component_counts": {
+                    "DeviceGray": 1,
+                    "DeviceRGB": 3,
+                    "DeviceCMYK": 4,
+                },
+                "tint_transform_function_type": 2,
+                "tint_domain": [0.0, 1.0],
+                "tint_exponent_min_exclusive": 0.0,
+                "component_value_range": [0.0, 1.0],
+                "require_nontrivial_endpoints": True,
+                "require_painted_usage": True,
+            },
         },
         "acceptance_tolerances": {
             "plate_solid_mask_iou_min": 0.995,
             "plate_area_error_fraction_max": 0.002,
             "plate_boundary_hausdorff_mm_max": 0.16,
             "plate_background_mean_absolute_coverage_max": 1.25,
-            "plate_background_local_error_code_value_min": 16,
+            "plate_background_local_error_code_value_min": 1,
             "plate_background_local_component_area_mm2_max": 4.0,
             "plate_nominal_region_mean_absolute_coverage_max": 12.0,
             "plate_nominal_region_median_absolute_coverage_max": 2.0,
@@ -749,6 +764,8 @@ def build(root: Path) -> None:
             "proof_multiscale_ssim_min": 0.995,
             "proof_ssim_area_resample_scales": [2, 4, 8],
             "pdf_render_mean_absolute_rgb_max": 1.0,
+            "pdf_render_local_window_mm": 4.0,
+            "pdf_render_local_mean_absolute_rgb_max": 1.0,
         },
         "manifest_schema": {
             "top_level_exact_keys": [

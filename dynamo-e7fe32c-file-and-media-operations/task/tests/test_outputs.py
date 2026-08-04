@@ -41,6 +41,7 @@ RASTER_SUFFIXES = {
     ".apng",
     ".avif",
     ".bmp",
+    ".dds",
     ".gif",
     ".heic",
     ".heif",
@@ -49,7 +50,11 @@ RASTER_SUFFIXES = {
     ".jfif",
     ".jpeg",
     ".jpg",
+    ".pbm",
+    ".pgm",
     ".png",
+    ".pnm",
+    ".ppm",
     ".psd",
     ".tga",
     ".tif",
@@ -257,6 +262,11 @@ def test_raster_detector_catches_unreferenced_and_disguised_payloads():
         "masters/Default.ufo/data/texture.dat": b"DDS " + b"payload",
         "masters/Default.ufo/data/proof.dat": b"P6\n1 1\n255\n\x00\x00\x00",
         "masters/Default.ufo/data/legacy.dat": b"payloadTRUEVISION-XFILE.\x00",
+        "masters/Default.ufo/data/malformed.dds": b"not a decodable image",
+        "masters/Default.ufo/data/malformed.pbm": b"not a decodable image",
+        "masters/Default.ufo/data/malformed.pgm": b"not a decodable image",
+        "masters/Default.ufo/data/malformed.pnm": b"not a decodable image",
+        "masters/Default.ufo/data/malformed.ppm": b"not a decodable image",
     }
     for name, payload in cases.items():
         stream = io.BytesIO()

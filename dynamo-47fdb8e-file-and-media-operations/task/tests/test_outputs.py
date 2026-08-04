@@ -25,7 +25,7 @@ INPUT = APP / "input"
 EVIDENCE = APP / "evidence"
 OUTPUT = APP / "output"
 REFERENCE = Path("/tests/reference_master.npz")
-EXPECTED_SOURCE_SHA256 = "782e440865a11979687de4c9b27ba171cb7ba3c6c58aaf883f6585ac07474d43"
+EXPECTED_SOURCE_SHA256 = "8c4a9969690cb23881005f31363d108890647b9c8e60ca33f76b6fdfa1102fbc"
 REQUIRED_FILES = {
     "plates.npz",
     "proof.png",
@@ -314,7 +314,7 @@ def test_zero_ink_background_has_no_localized_contamination():
                 (expected == 0)
                 & (
                     np.abs(actual - expected)
-                    > limits["plate_background_local_error_code_value_min"]
+                    >= limits["plate_background_local_error_code_value_min"]
                 )
             )
             largest_area = largest_component_area_mm2(
@@ -508,42 +508,55 @@ def test_pdf_has_functional_production_structure_and_matching_render():
         assert np.allclose([float(value) for value in page.TrimBox], expected_trim, atol=0.01)
         assert np.allclose([float(value) for value in page.BleedBox], expected_media, atol=0.01)
 
-        # Resource keys are arbitrary, but every required colorant must be a complete,
-        # usable Separation space with a non-trivial exponential tint transform.
+        # Resource keys are arbitrary, but every required colorant must satisfy the
+        # complete, agent-visible Separation and tint-transform contract.
+        separation_contract = spec["output_intent"]["separation_color_space"]
         color_spaces = page.Resources["/ColorSpace"]
         separations = {}
         for resource_name, value in color_spaces.items():
             if not value or str(value[0]) != "/Separation":
                 continue
-            assert len(value) == 4
+            assert len(value) == separation_contract["array_length"]
             colorant_name = str(value[1])
             assert colorant_name not in separations
             alternate_name = str(value[2])
             alternate_components = {
-                "/DeviceGray": 1,
-                "/DeviceRGB": 3,
-                "/DeviceCMYK": 4,
+                "/" + name: count
+                for name, count in separation_contract[
+                    "alternate_space_component_counts"
+                ].items()
             }.get(alternate_name)
             assert alternate_components is not None, alternate_name
             tint_function = value[3]
-            assert int(tint_function["/FunctionType"]) == 2
+            assert int(tint_function["/FunctionType"]) == separation_contract[
+                "tint_transform_function_type"
+            ]
             assert np.allclose(
                 [float(item) for item in tint_function["/Domain"]],
-                [0.0, 1.0],
+                separation_contract["tint_domain"],
                 atol=1e-12,
             )
             exponent = float(tint_function["/N"])
-            assert math.isfinite(exponent) and exponent > 0.0
+            assert math.isfinite(exponent) and exponent > separation_contract[
+                "tint_exponent_min_exclusive"
+            ]
             start = [float(item) for item in tint_function.get("/C0", [0.0])]
             end = [float(item) for item in tint_function.get("/C1", [1.0])]
             assert len(start) == len(end) == alternate_components
-            assert all(math.isfinite(item) and 0.0 <= item <= 1.0 for item in start + end)
-            assert not np.allclose(start, end, atol=1e-12)
+            component_min, component_max = separation_contract[
+                "component_value_range"
+            ]
+            assert all(
+                math.isfinite(item) and component_min <= item <= component_max
+                for item in start + end
+            )
+            if separation_contract["require_nontrivial_endpoints"]:
+                assert not np.allclose(start, end, atol=1e-12)
             separations[colorant_name] = str(resource_name)
 
         expected_separations = {
             "/" + spec["plate_registry"][plate_id]["canonical_name"]
-            for plate_id in ("SC", "OW", "V")
+            for plate_id in separation_contract["plate_ids"]
         }
         assert expected_separations.issubset(separations)
 
@@ -567,9 +580,10 @@ def test_pdf_has_functional_production_structure_and_matching_render():
                 fill_tint_set = True
             elif operation in fill_operators and fill_space and fill_tint_set:
                 painted_spaces.add(fill_space)
-        for plate_id in ("SC", "OW", "V"):
-            colorant_name = "/" + spec["plate_registry"][plate_id]["canonical_name"]
-            assert separations[colorant_name] in painted_spaces
+        if separation_contract["require_painted_usage"]:
+            for plate_id in separation_contract["plate_ids"]:
+                colorant_name = "/" + spec["plate_registry"][plate_id]["canonical_name"]
+                assert separations[colorant_name] in painted_spaces
         ocg_names = {str(item["/Name"]) for item in pdf.Root["/OCProperties"]["/OCGs"]}
         assert set(spec["svg_contract"]["required_data_roles"]).issubset(ocg_names)
 
@@ -627,5 +641,28 @@ def test_pdf_has_functional_production_structure_and_matching_render():
     document.close()
     proof = np.asarray(Image.open(OUTPUT / "proof.png").convert("RGB"))
     assert rendered.shape == proof.shape
-    mean_absolute = float(np.mean(np.abs(rendered.astype(np.int16) - proof.astype(np.int16))))
-    assert mean_absolute <= spec["acceptance_tolerances"]["pdf_render_mean_absolute_rgb_max"], mean_absolute
+    limits = spec["acceptance_tolerances"]
+    absolute_difference = np.abs(
+        rendered.astype(np.int16) - proof.astype(np.int16)
+    ).astype(np.float32)
+    mean_absolute = float(np.mean(absolute_difference))
+    assert mean_absolute <= limits["pdf_render_mean_absolute_rgb_max"], mean_absolute
+    local_window_px = max(
+        1,
+        round(
+            limits["pdf_render_local_window_mm"]
+            * float(spec["canvas"]["dpi"])
+            / 25.4
+        ),
+    )
+    pixel_mean_absolute = np.mean(absolute_difference, axis=2)
+    local_mean_absolute = cv2.boxFilter(
+        pixel_mean_absolute,
+        cv2.CV_32F,
+        (local_window_px, local_window_px),
+        normalize=True,
+    )
+    maximum_local_mean = float(np.max(local_mean_absolute))
+    assert maximum_local_mean <= limits[
+        "pdf_render_local_mean_absolute_rgb_max"
+    ], maximum_local_mean
