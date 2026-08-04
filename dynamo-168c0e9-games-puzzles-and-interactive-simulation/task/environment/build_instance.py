@@ -398,7 +398,8 @@ def build(root: Path, tests_root: Path | None = None) -> None:
     puzzle_dir.mkdir(parents=True, exist_ok=True)
     for puzzle in puzzles:
         (puzzle_dir / f"{puzzle['puzzle_id']}.txt").write_text("\n".join(puzzle["rows"]) + "\n")
-    (input_dir / "rules.json").write_text(json.dumps(rules_document(), indent=2) + "\n")
+    specification = rules_document()
+    (input_dir / "rules.json").write_text(json.dumps(specification, indent=2) + "\n")
     (root / "output").mkdir(parents=True, exist_ok=True)
     print(f"total attempts: {attempts}", flush=True)
 
@@ -406,6 +407,21 @@ def build(root: Path, tests_root: Path | None = None) -> None:
         tests_root.mkdir(parents=True, exist_ok=True)
         expected = {
             "schema_version": 1,
+            "fixture_contract": {
+                "rules_schema_version": specification["schema_version"],
+                "puzzle_count": PUZZLE_COUNT,
+                "puzzle_ids": specification["puzzle_ids"],
+                "expected_puzzle_keys": [
+                    "puzzle_id",
+                    "optimal_moves",
+                    "optimal_pushes",
+                    "optimal_solution_count_mod",
+                    "canonical_moves_sha256",
+                    "board_sha256",
+                ],
+                "output_entry_keys": specification["output_contract"]["entry_keys"],
+                "count_modulus": specification["optimal_solution_count"]["modulus"],
+            },
             "puzzles": [
                 {
                     "puzzle_id": puzzle["puzzle_id"],
@@ -424,7 +440,7 @@ def build(root: Path, tests_root: Path | None = None) -> None:
                 for puzzle in puzzles
             ],
             "rules_sha256": hashlib.sha256(
-                (json.dumps(rules_document(), indent=2) + "\n").encode()
+                (json.dumps(specification, indent=2) + "\n").encode()
             ).hexdigest(),
         }
         (tests_root / "expected.json").write_text(json.dumps(expected, indent=2) + "\n")

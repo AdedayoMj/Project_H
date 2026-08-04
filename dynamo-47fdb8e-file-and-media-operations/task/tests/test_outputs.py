@@ -25,7 +25,7 @@ INPUT = APP / "input"
 EVIDENCE = APP / "evidence"
 OUTPUT = APP / "output"
 REFERENCE = Path("/tests/reference_master.npz")
-EXPECTED_SOURCE_SHA256 = "8c4a9969690cb23881005f31363d108890647b9c8e60ca33f76b6fdfa1102fbc"
+EXPECTED_SOURCE_SHA256 = "a1dacc9b5584e7b281d7ef75693ac6119bd3207bac8227d672d4f3f7cc1bf421"
 REQUIRED_FILES = {
     "plates.npz",
     "proof.png",
@@ -326,7 +326,7 @@ def test_zero_ink_background_has_no_localized_contamination():
 
 
 def test_nominal_ink_regions_have_no_localized_tone_damage():
-    """No coherent interior defect may hide inside a nonzero tone region's global statistics."""
+    """No coherent or distributed interior defect may hide inside a nominal tone region."""
     spec = ticket()
     limits = spec["acceptance_tolerances"]
     submitted = load_plates()
@@ -356,9 +356,15 @@ def test_nominal_ink_regions_have_no_localized_tone_damage():
                 largest_area = largest_component_area_mm2(
                     substantial_error, float(spec["canvas"]["dpi"])
                 )
+                total_area = float(np.count_nonzero(substantial_error)) * (
+                    25.4 / float(spec["canvas"]["dpi"])
+                ) ** 2
                 assert largest_area <= limits[
                     "plate_nominal_local_component_area_mm2_max"
                 ], (plate_id, nominal, largest_area)
+                assert total_area <= limits[
+                    "plate_nominal_local_total_area_mm2_max"
+                ], (plate_id, nominal, total_area)
 
 
 def test_proof_is_colorimetrically_correct_and_derived_from_submitted_plates():

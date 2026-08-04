@@ -1,5 +1,41 @@
 {
   "schema_version": 1,
+  "fixture_contract": {
+    "rules_schema_version": 1,
+    "puzzle_count": 16,
+    "puzzle_ids": [
+      "p01",
+      "p02",
+      "p03",
+      "p04",
+      "p05",
+      "p06",
+      "p07",
+      "p08",
+      "p09",
+      "p10",
+      "p11",
+      "p12",
+      "p13",
+      "p14",
+      "p15",
+      "p16"
+    ],
+    "expected_puzzle_keys": [
+      "puzzle_id",
+      "optimal_moves",
+      "optimal_pushes",
+      "optimal_solution_count_mod",
+      "canonical_moves_sha256",
+      "board_sha256"
+    ],
+    "output_entry_keys": [
+      "puzzle_id",
+      "moves",
+      "optimal_solution_count_mod"
+    ],
+    "count_modulus": 1000000007
+  },
   "puzzles": [
     {
       "puzzle_id": "p01",

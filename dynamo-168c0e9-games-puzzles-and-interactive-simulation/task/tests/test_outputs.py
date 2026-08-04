@@ -93,9 +93,29 @@ def test_solution_document_is_a_regular_file():
 def test_published_instances_are_unchanged():
     """Every board and the normative rule document are byte-identical to the build."""
     specification = rules()
+    fixture_contract = EXPECTED["fixture_contract"]
     expected_ids = [record["puzzle_id"] for record in EXPECTED["puzzles"]]
     assert EXPECTED["schema_version"] == specification["schema_version"]
     assert specification["output_contract"]["schema_version"] == EXPECTED["schema_version"]
+    assert fixture_contract == {
+        "rules_schema_version": specification["schema_version"],
+        "puzzle_count": len(expected_ids),
+        "puzzle_ids": expected_ids,
+        "expected_puzzle_keys": [
+            "puzzle_id",
+            "optimal_moves",
+            "optimal_pushes",
+            "optimal_solution_count_mod",
+            "canonical_moves_sha256",
+            "board_sha256",
+        ],
+        "output_entry_keys": specification["output_contract"]["entry_keys"],
+        "count_modulus": specification["optimal_solution_count"]["modulus"],
+    }
+    assert all(
+        set(record) == set(fixture_contract["expected_puzzle_keys"])
+        for record in EXPECTED["puzzles"]
+    )
     assert specification["puzzle_ids"] == expected_ids
     assert specification["instance_bounds"]["puzzle_count"] == len(expected_ids)
     assert (
@@ -128,7 +148,11 @@ def test_solution_document_matches_the_normative_schema():
         assert record["moves"], f"{record['puzzle_id']} has an empty solution"
         assert set(record["moves"]) <= ALPHABET, record["puzzle_id"]
         assert type(record["optimal_solution_count_mod"]) is int
-        assert 0 <= record["optimal_solution_count_mod"] < 1_000_000_007
+        assert (
+            0
+            <= record["optimal_solution_count_mod"]
+            < EXPECTED["fixture_contract"]["count_modulus"]
+        )
 
 
 def test_every_solution_is_legal_and_solves_its_puzzle():
