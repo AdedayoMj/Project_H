@@ -33,6 +33,25 @@ UNIT_FIELDS = [
     "stress_days",
     "minimum_ks",
 ]
+INTEGER_FIELDS = {"row", "column", "stress_days"}
+TEXT_FIELDS = {"campaign_id", "unit_id", "zone_id"}
+
+
+def decimal_text(value: float) -> str:
+    """Serialize finite task values without exponent notation or precision loss."""
+    text = format(float(value), ".17f").rstrip("0").rstrip(".")
+    return "0" if text in {"", "-0"} else text
+
+
+def csv_record(record: dict) -> dict:
+    return {
+        key: (
+            record[key]
+            if key in TEXT_FIELDS or key in INTEGER_FIELDS
+            else decimal_text(record[key])
+        )
+        for key in UNIT_FIELDS
+    }
 
 
 def read_json(path: Path) -> object:
@@ -346,7 +365,7 @@ def main() -> None:
     with (OUTPUT / "units.csv").open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=UNIT_FIELDS, lineterminator="\n")
         writer.writeheader()
-        writer.writerows(records)
+        writer.writerows(csv_record(record) for record in records)
     (OUTPUT / "summary.json").write_text(
         json.dumps({"schema_version": 1, "campaigns": summaries}, separators=(",", ":")) + "\n"
     )

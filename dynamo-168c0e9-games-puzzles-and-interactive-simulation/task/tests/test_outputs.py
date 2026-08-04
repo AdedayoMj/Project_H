@@ -92,6 +92,12 @@ def test_solution_document_is_a_regular_file():
 
 def test_published_instances_are_unchanged():
     """Every board and the normative rule document are byte-identical to the build."""
+    specification = rules()
+    expected_ids = [record["puzzle_id"] for record in EXPECTED["puzzles"]]
+    assert EXPECTED["schema_version"] == specification["schema_version"]
+    assert specification["output_contract"]["schema_version"] == EXPECTED["schema_version"]
+    assert specification["puzzle_ids"] == expected_ids
+    assert specification["instance_bounds"]["puzzle_count"] == len(expected_ids)
     assert (
         hashlib.sha256((INPUT / "rules.json").read_bytes()).hexdigest()
         == EXPECTED["rules_sha256"]
@@ -101,7 +107,7 @@ def test_published_instances_are_unchanged():
         assert path.is_file()
         assert hashlib.sha256(path.read_bytes()).hexdigest() == record["board_sha256"]
     published = {path.name for path in PUZZLES.iterdir() if path.is_file()}
-    assert published == {f"{record['puzzle_id']}.txt" for record in EXPECTED["puzzles"]}
+    assert published == {f"{puzzle_id}.txt" for puzzle_id in expected_ids}
 
 
 def test_solution_document_matches_the_normative_schema():

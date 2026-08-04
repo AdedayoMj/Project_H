@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import stat
 from collections import defaultdict
 from datetime import date
@@ -45,8 +46,8 @@ PROPERTY_FIELDS = [
 ]
 IDENTITY_FIELDS = ["campaign_id", "unit_id", "row", "column"]
 SOIL_FIELDS = ["taw_mm", "raw_mm"]
-DYNAMIC_DEPTH_FIELDS = [
-    "final_dr_mm",
+DYNAMIC_STATE_DEPTH_FIELDS = ["final_dr_mm"]
+ACCUMULATED_DEPTH_FIELDS = [
     "seasonal_etc_mm",
     "seasonal_effective_irrigation_mm",
     "seasonal_drainage_mm",
@@ -62,6 +63,8 @@ SUMMARY_FIELDS = [
     "zones",
 ]
 ZONE_FIELDS = ["zone_id", "unit_count", "area_m2", "area_fraction", "mean_depth_mm"]
+INTEGER_TEXT = re.compile(r"[+-]?[0-9]+\Z")
+DECIMAL_TEXT = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)\Z")
 
 
 @lru_cache(maxsize=1)
@@ -219,10 +222,10 @@ def test_geojson_and_csv_follow_the_normative_schemas():
     assert header == PROPERTY_FIELDS
     for row in csv_rows:
         assert set(row) == set(PROPERTY_FIELDS)
-        int(row["row"])
-        int(row["column"])
-        int(row["stress_days"])
+        for key in ("row", "column", "stress_days"):
+            assert INTEGER_TEXT.fullmatch(row[key]), (row["campaign_id"], row["unit_id"], key)
         for key in set(PROPERTY_FIELDS) - {"campaign_id", "unit_id", "zone_id", "row", "column", "stress_days"}:
+            assert DECIMAL_TEXT.fullmatch(row[key]), (row["campaign_id"], row["unit_id"], key)
             assert math.isfinite(float(row[key]))
 
 
@@ -297,8 +300,10 @@ def test_daily_water_balance_and_audit_state_are_correct():
     """Final state and seasonal audits match the single-Kc stress-feedback simulation."""
     expected_units, _ = reference()
     for actual, expected in zip(feature_properties(), expected_units, strict=True):
-        for field in DYNAMIC_DEPTH_FIELDS:
+        for field in DYNAMIC_STATE_DEPTH_FIELDS:
             close(actual[field], expected[field], 0.01)
+        for field in ACCUMULATED_DEPTH_FIELDS:
+            close(actual[field], expected[field], 0.01, relative=0.0)
         for field in COEFFICIENT_FIELDS:
             close(actual[field], expected[field], 0.0001)
         assert actual["stress_days"] == expected["stress_days"]
