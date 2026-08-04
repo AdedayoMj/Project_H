@@ -22,12 +22,11 @@ PAGE_WIDTH = 1200
 PAGE_HEIGHT = 760
 PAGE_FONT_PX = 140
 
-# OpenCV's pinned PNG encoder emits byte-distinct but pixel-identical scan files
-# on linux/amd64 and linux/arm64. Keep exact whole-tree fingerprints for both
-# supported runner architectures so arbitrary input mutation still fails.
+# Scan PNGs are encoded with pinned Pillow below so pixel-identical generated
+# pages have one canonical byte representation on every runner architecture.
+# Keeping a single exact whole-tree fingerprint preserves strict mutation checks.
 SUPPORTED_INPUT_FINGERPRINTS = (
-    "40fbd973b05548a4202a31bdbab9623c6d4a5d2867c65468504bd9848e9ba714",
-    "570b7cf6c7bdf7fa400170657eeee901d4018471f217ad370b7a993e7fec57a2",
+    "d2798ebcdd1c7179eacf6fd3c544be48f897e8b790bde38cdcfbcb30969a0912",
 )
 
 
@@ -689,7 +688,12 @@ def build(root: Path, tests_root: Path | None = None) -> None:
                     ).astype(np.uint8)
                     observation_id = f"OBS-{observation_index:03d}"
                     filename = f"scan-{hashlib.sha256((observation_id + ':font').encode()).hexdigest()[:20]}.png"
-                    cv2.imwrite(str(scans_dir / filename), warped)
+                    Image.fromarray(warped).save(
+                        scans_dir / filename,
+                        format="PNG",
+                        compress_level=9,
+                        optimize=False,
+                    )
 
                     image_points = project_points(page_to_image, canonical_fiducials)
                     image_points += np_rng.normal(0, 0.08, image_points.shape)
@@ -702,7 +706,11 @@ def build(root: Path, tests_root: Path | None = None) -> None:
                         {
                             "id": f"F-{index:02d}",
                             "page_px": [float(value) for value in canonical_fiducials[index]],
-                            "image_px": [float(value) for value in image_points[index]],
+                            # OpenCV projection differs at about 1e-13 between
+                            # CPU architectures. Eight decimal places retain
+                            # far more precision than the 0.65 px verifier
+                            # tolerance while making the fixture byte-stable.
+                            "image_px": [round(float(value), 8) for value in image_points[index]],
                         }
                         for index in range(len(canonical_fiducials))
                     ]

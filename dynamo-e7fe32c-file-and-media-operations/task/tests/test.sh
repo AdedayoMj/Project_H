@@ -1,10 +1,10 @@
 #!/bin/bash
 verification_root="$(mktemp -d)"
 trap 'rm -rf "$verification_root"' EXIT
-cp -al /app/input "$verification_root/input"
-cp -al /app/evidence "$verification_root/evidence"
-# Agent artifacts may be bind-mounted on a different filesystem in CI, where
-# hard-linking fails with EXDEV. Copy this small directory portably instead.
+# CI may bind-mount inputs, evidence, and agent artifacts on a filesystem that
+# differs from /tmp. Portable copies avoid cross-device hard-link failures.
+cp -a /app/input "$verification_root/input"
+cp -a /app/evidence "$verification_root/evidence"
 cp -a /app/output "$verification_root/output"
 
 FONT_REVIVAL_APP_ROOT="$verification_root" \
