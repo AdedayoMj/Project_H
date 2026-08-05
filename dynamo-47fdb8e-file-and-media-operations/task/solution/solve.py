@@ -381,7 +381,7 @@ def write_svg(ticket: dict, text_values: dict[str, str], barcode_payload: str, p
             .replace("<", "&lt;")
             .replace(">", "&gt;")
         )
-        weight = "700" if item["font_style"] == "Bold" else "400"
+        weight = ticket["svg_contract"]["font_weight_by_style"][item["font_style"]]
         lines.append(
             f'    <text data-id="{item["id"]}" x="{item["x_mm"]:.3f}" y="{item["y_mm"]:.3f}" '
             f'font-family="{item["font_family"]}" font-weight="{weight}" '

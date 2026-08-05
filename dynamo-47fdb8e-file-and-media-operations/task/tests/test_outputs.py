@@ -25,7 +25,7 @@ INPUT = APP / "input"
 EVIDENCE = APP / "evidence"
 OUTPUT = APP / "output"
 REFERENCE = Path("/tests/reference_master.npz")
-EXPECTED_SOURCE_SHA256 = "a1dacc9b5584e7b281d7ef75693ac6119bd3207bac8227d672d4f3f7cc1bf421"
+EXPECTED_SOURCE_SHA256 = "d9b783c91c43d4e4a041999c3fc045faba1670f797334f1e1e2a3dd760201937"
 REQUIRED_FILES = {
     "plates.npz",
     "proof.png",
@@ -438,6 +438,14 @@ def test_svg_uses_semantic_equivalence_and_preserves_live_objects():
         element = submitted_text[text_id]
         assert "".join(element.itertext()) == value
         assert element.attrib["font-family"] == specs[text_id]["font_family"]
+        expected_weight = spec["svg_contract"]["font_weight_by_style"][
+            specs[text_id]["font_style"]
+        ]
+        assert element.attrib["font-weight"] == expected_weight
+        expected_font_size_mm = specs[text_id]["font_size_pt"] * 25.4 / 72.0
+        assert abs(float(element.attrib["font-size"]) - expected_font_size_mm) <= spec[
+            "svg_contract"
+        ]["font_size_tolerance_mm"]
         assert abs(float(element.attrib["x"]) - specs[text_id]["x_mm"]) <= tolerance
         assert abs(float(element.attrib["y"]) - specs[text_id]["y_mm"]) <= tolerance
 

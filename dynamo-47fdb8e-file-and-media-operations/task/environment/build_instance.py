@@ -756,7 +756,7 @@ def build(root: Path) -> None:
             "plate_background_local_component_area_mm2_max": 4.0,
             "plate_nominal_region_mean_absolute_coverage_max": 12.0,
             "plate_nominal_region_median_absolute_coverage_max": 1.0,
-            "plate_nominal_local_error_code_value_min": 24,
+            "plate_nominal_local_error_code_value_min": 2,
             "plate_nominal_local_component_area_mm2_max": 4.0,
             "plate_nominal_local_total_area_mm2_max": 4.0,
             "proof_median_delta_e00_max": 1.0,
@@ -804,6 +804,8 @@ def build(root: Path) -> None:
             "barcode_module_attribute": "data-module",
             "barcode_module_format": "zero-based 'row:column' of the QR module, counted from the top-left of the matrix",
             "text_position_tolerance_mm": 0.05,
+            "font_weight_by_style": {"Regular": "400", "Bold": "700"},
+            "font_size_tolerance_mm": 0.0001,
             "barcode_module_geometry_tolerance_mm": 0.05,
         },
     }
