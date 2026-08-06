@@ -263,21 +263,36 @@ def solve(puzzle: Puzzle) -> tuple[str, int]:
 
 def main() -> None:
     rules = json.loads((INPUT / "rules.json").read_text())
+    output_contract = rules["output_contract"]
+    expected_entry_keys = set(output_contract["entry_keys"])
     solutions = []
     for puzzle_id in sorted(rules["puzzle_ids"]):
         text = (INPUT / "puzzles" / f"{puzzle_id}.txt").read_text()
         moves, count = solve(Puzzle(text))
-        solutions.append(
-            {
-                "puzzle_id": puzzle_id,
-                "moves": moves,
-                "optimal_solution_count_mod": count,
-            }
-        )
+        record = {
+            "puzzle_id": puzzle_id,
+            "moves": moves,
+            "optimal_solution_count_mod": count,
+        }
+        if set(record) != expected_entry_keys:
+            raise RuntimeError(
+                "reference solution record does not match rules.json output_contract"
+            )
+        solutions.append(record)
     solutions.sort(key=lambda row: row["puzzle_id"].encode())
+
+    document = {
+        "schema_version": output_contract["schema_version"],
+        "solutions": solutions,
+    }
+    if set(document) != set(output_contract["top_level_keys"]):
+        raise RuntimeError(
+            "reference solution document does not match rules.json output_contract"
+        )
+
     OUTPUT.mkdir(parents=True, exist_ok=True)
     (OUTPUT / "solutions.json").write_text(
-        json.dumps({"schema_version": 1, "solutions": solutions}, indent=2) + "\n"
+        json.dumps(document, indent=2) + "\n"
     )
 
 
