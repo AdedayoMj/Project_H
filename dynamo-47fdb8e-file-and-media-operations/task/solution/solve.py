@@ -73,11 +73,25 @@ def consensus(candidates: list[str]) -> str:
     return "".join(result)
 
 
-def classify_plate(record: dict, registry: dict) -> str:
+def classify_plate(record: dict, ticket: dict) -> str:
+    contract = ticket["observation_classification"]
+    if (
+        contract["sample_field"] != "spectral_samples_lab"
+        or contract["aggregation"] != "componentwise_median"
+        or contract["distance_metric"] != "euclidean_cie_lab"
+        or contract["assignment"] != "minimum_distance"
+        or contract["tie_break_order"] != "manifest_schema.plate_order"
+    ):
+        raise ValueError("unsupported observation classification contract")
+
+    registry = ticket["plate_registry"]
+    plate_order = ticket["manifest_schema"]["plate_order"]
     samples = np.asarray(record["spectral_samples_lab"], dtype=np.float64)
+    if samples.shape != (contract["sample_count"], 3):
+        raise ValueError("spectral sample array does not match observation classification contract")
     robust_lab = np.median(samples, axis=0)
     return min(
-        registry,
+        plate_order,
         key=lambda plate_id: float(
             np.linalg.norm(robust_lab - np.asarray(registry[plate_id]["reference_lab"], dtype=np.float64))
         ),
@@ -198,7 +212,7 @@ def reconstruct_plates(ticket: dict, index: dict) -> tuple[dict[str, np.ndarray]
     sources: dict[str, list[str]] = {plate_id: [] for plate_id in registry}
 
     for record in index["observations"]:
-        plate_id = classify_plate(record, registry)
+        plate_id = classify_plate(record, ticket)
         sources[plate_id].append(record["id"])
         image = cv2.imread(record["file"], cv2.IMREAD_UNCHANGED)
         if image is None or image.ndim != 3 or image.shape[2] != 4:

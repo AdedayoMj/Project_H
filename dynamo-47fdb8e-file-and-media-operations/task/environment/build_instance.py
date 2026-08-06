@@ -686,6 +686,16 @@ def build(root: Path) -> None:
             "true_fiducials_per_scan": 34,
             "inlier_residual_px": 0.20,
         },
+        "observation_classification": {
+            "sample_field": "spectral_samples_lab",
+            "sample_count": 9,
+            "aggregation": "componentwise_median",
+            "aggregation_definition": "take the median independently across all nine samples for L*, a*, and b*",
+            "distance_metric": "euclidean_cie_lab",
+            "reference_field": "plate_registry.<plate_id>.reference_lab",
+            "assignment": "minimum_distance",
+            "tie_break_order": "manifest_schema.plate_order",
+        },
         "plate_registry": registry,
         "render_model": {
             "working_space": "linear RGB",
@@ -731,6 +741,15 @@ def build(root: Path) -> None:
             "identifier": "DYNAMO-SYNTH-CMYK-v1",
             "profile": "/app/input/DYNAMO-SYNTH-CMYK-v1.icc",
             "pdfx_version": "PDF/X-4",
+            "xmp_pdfx": {
+                "namespace_uri": "http://www.npes.org/pdfx/ns/id/",
+                "version_property": "GTS_PDFXVersion",
+                "accepted_serializations": [
+                    "namespaced_attribute",
+                    "namespaced_element",
+                ],
+                "namespace_prefix_is_normative": False,
+            },
             "separation_color_space": {
                 "plate_ids": ["SC", "OW", "V"],
                 "array_length": 4,
@@ -754,6 +773,7 @@ def build(root: Path) -> None:
             "plate_background_mean_absolute_coverage_max": 1.25,
             "plate_background_local_error_code_value_min": 1,
             "plate_background_local_component_area_mm2_max": 4.0,
+            "plate_background_local_total_area_mm2_max": 36.0,
             "plate_nominal_region_mean_absolute_coverage_max": 12.0,
             "plate_nominal_region_median_absolute_coverage_max": 1.0,
             "plate_nominal_local_error_code_value_min": 2,

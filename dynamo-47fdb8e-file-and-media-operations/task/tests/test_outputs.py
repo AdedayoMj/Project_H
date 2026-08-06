@@ -25,7 +25,7 @@ INPUT = APP / "input"
 EVIDENCE = APP / "evidence"
 OUTPUT = APP / "output"
 REFERENCE = Path("/tests/reference_master.npz")
-EXPECTED_SOURCE_SHA256 = "6148419ef5cfee601dd5656a6c338d00987ae73df31eaaa12304e1b1f234c698"
+EXPECTED_SOURCE_SHA256 = "f63f3a20a7cfeac9bbbfd537dc1413b91599b71802f6beb05b75be0c76ae1fe9"
 REQUIRED_FILES = {
     "plates.npz",
     "proof.png",
@@ -123,12 +123,19 @@ def render_from_plates(plates: dict[str, np.ndarray], spec: dict) -> np.ndarray:
 def expected_manifest() -> dict:
     spec = ticket()
     registry = spec["plate_registry"]
+    plate_order = spec["manifest_schema"]["plate_order"]
+    classification = spec["observation_classification"]
     sources: dict[str, list[str]] = defaultdict(list)
     for record in evidence_index()["observations"]:
-        samples = np.asarray(record["spectral_samples_lab"], dtype=np.float64)
+        samples = np.asarray(record[classification["sample_field"]], dtype=np.float64)
+        assert samples.shape == (classification["sample_count"], 3)
+        assert classification["aggregation"] == "componentwise_median"
+        assert classification["distance_metric"] == "euclidean_cie_lab"
+        assert classification["assignment"] == "minimum_distance"
+        assert classification["tie_break_order"] == "manifest_schema.plate_order"
         robust = np.median(samples, axis=0)
         plate_id = min(
-            registry,
+            plate_order,
             key=lambda key: float(
                 np.linalg.norm(robust - np.asarray(registry[key]["reference_lab"], dtype=np.float64))
             ),
@@ -137,7 +144,7 @@ def expected_manifest() -> dict:
     for values in sources.values():
         values.sort()
     text_specs = {row["id"]: row for row in spec["fonts"]["text_objects"]}
-    order = spec["manifest_schema"]["plate_order"]
+    order = plate_order
     return {
         "schema_version": 1,
         "canvas": {
@@ -223,6 +230,16 @@ def test_agent_visible_sources_are_unchanged_and_recoverability_is_present():
     assert all(len(record["fiducials"]) == 42 for record in index["observations"])
     assert all(len(record["spectral_samples_lab"]) == 9 for record in index["observations"])
     assert spec["registration_model"]["true_fiducials_per_scan"] == 34
+    assert spec["observation_classification"] == {
+        "sample_field": "spectral_samples_lab",
+        "sample_count": 9,
+        "aggregation": "componentwise_median",
+        "aggregation_definition": "take the median independently across all nine samples for L*, a*, and b*",
+        "distance_metric": "euclidean_cie_lab",
+        "reference_field": "plate_registry.<plate_id>.reference_lab",
+        "assignment": "minimum_distance",
+        "tie_break_order": "manifest_schema.plate_order",
+    }
     assert set(spec["plate_registry"]) == {"C", "M", "Y", "K", "SC", "OW", "V"}
 
 
@@ -302,7 +319,7 @@ def test_reconstructed_plate_coverage_and_nominal_tones_match_hidden_master():
 
 
 def test_zero_ink_background_has_no_localized_contamination():
-    """No spatially coherent background defect may hide inside an acceptable global mean."""
+    """No spatially coherent or distributed background defect may hide inside an acceptable global mean."""
     spec = ticket()
     limits = spec["acceptance_tolerances"]
     submitted = load_plates()
@@ -320,9 +337,15 @@ def test_zero_ink_background_has_no_localized_contamination():
             largest_area = largest_component_area_mm2(
                 substantial_error, float(spec["canvas"]["dpi"])
             )
+            total_area = float(np.count_nonzero(substantial_error)) * (
+                25.4 / float(spec["canvas"]["dpi"])
+            ) ** 2
             assert largest_area <= limits[
                 "plate_background_local_component_area_mm2_max"
             ], (plate_id, largest_area)
+            assert total_area <= limits[
+                "plate_background_local_total_area_mm2_max"
+            ], (plate_id, total_area)
 
 
 def test_nominal_ink_regions_have_no_localized_tone_damage():
@@ -502,11 +525,24 @@ def test_pdf_has_functional_production_structure_and_matching_render():
         assert str(metadata["/Type"]) == "/Metadata"
         assert str(metadata["/Subtype"]) == "/XML"
         xmp = metadata.read_bytes().decode("utf-8")
-        assert 'xmlns:pdfxid="http://www.npes.org/pdfx/ns/id/"' in xmp
-        assert (
-            f'pdfxid:GTS_PDFXVersion="{spec["output_intent"]["pdfx_version"]}"'
-            in xmp
+        xmp_root = ET.fromstring(xmp)
+        xmp_contract = spec["output_intent"]["xmp_pdfx"]
+        assert xmp_contract["accepted_serializations"] == [
+            "namespaced_attribute",
+            "namespaced_element",
+        ]
+        assert xmp_contract["namespace_prefix_is_normative"] is False
+        property_name = (
+            f'{{{xmp_contract["namespace_uri"]}}}'
+            f'{xmp_contract["version_property"]}'
         )
+        declared_versions = []
+        for element in xmp_root.iter():
+            if property_name in element.attrib:
+                declared_versions.append(element.attrib[property_name].strip())
+            if element.tag == property_name and element.text:
+                declared_versions.append(element.text.strip())
+        assert spec["output_intent"]["pdfx_version"] in declared_versions
         intents = pdf.Root["/OutputIntents"]
         assert len(intents) == 1
         assert str(intents[0]["/S"]) == "/GTS_PDFX"
