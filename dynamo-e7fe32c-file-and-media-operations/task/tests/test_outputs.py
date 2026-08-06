@@ -19,7 +19,14 @@ import pytest
 import uharfbuzz as hb
 from PIL import Image
 from fontTools.designspaceLib import DesignSpaceDocument
-from fontTools.feaLib.ast import FeatureBlock
+from fontTools.feaLib.ast import (
+    FeatureBlock,
+    LanguageSystemStatement,
+    LigatureSubstStatement,
+    MarkBasePosStatement,
+    MarkClassDefinition,
+    PairPosStatement,
+)
 from fontTools.feaLib.parser import Parser
 from fontTools.ttLib import TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
@@ -195,6 +202,93 @@ def assert_archive_member_is_source_only(archive: zipfile.ZipFile, info: zipfile
     assert info.file_size <= 20_000_000
     payload = archive.read(info)
     assert not _is_raster_payload(path, payload), f"raster payload is forbidden: {info.filename}"
+
+
+def assert_recovered_feature_semantics(
+    text: str,
+    glyph_names: set[str],
+    advances: dict[str, float],
+    spec: dict,
+) -> None:
+    """Require the recovered liga, kern, and mark rules while ignoring FEA formatting."""
+    limits = spec["acceptance_tolerances"]
+    document = Parser(io.StringIO(text), glyph_names).parse()
+    mark_definitions = []
+    feature_blocks = {}
+    for statement in document.statements:
+        if isinstance(statement, LanguageSystemStatement):
+            continue
+        if isinstance(statement, MarkClassDefinition):
+            mark_definitions.append(statement)
+            continue
+        assert isinstance(statement, FeatureBlock), type(statement).__name__
+        assert statement.name in {"kern", "liga", "mark"}
+        assert statement.name not in feature_blocks
+        feature_blocks[statement.name] = statement.statements
+
+    assert set(feature_blocks) == set(
+        spec["font_contract"]["open_type_recovery"]["required_features"]
+    )
+    assert len(mark_definitions) == 1
+    mark_definition = mark_definitions[0]
+    expected_mark = EXPECTED["anchors"]["mark"]
+    assert mark_definition.glyphs.glyph == expected_mark["glyph"]
+    assert abs(mark_definition.anchor.x - expected_mark["x"]) <= limits[
+        "anchor_error_units_max"
+    ]
+    assert abs(mark_definition.anchor.y - expected_mark["y"]) <= limits[
+        "anchor_error_units_max"
+    ]
+    mark_class_name = mark_definition.markClass.name
+
+    ligatures = []
+    for statement in feature_blocks["liga"]:
+        assert isinstance(statement, LigatureSubstStatement), type(statement).__name__
+        assert not statement.prefix and not statement.suffix and not statement.forceChain
+        ligatures.append(
+            {
+                "feature": "liga",
+                "input": [glyph.glyph for glyph in statement.glyphs],
+                "output": statement.replacement,
+            }
+        )
+    assert ligatures == EXPECTED["ligatures"]
+
+    kerning = {}
+    for statement in feature_blocks["kern"]:
+        assert isinstance(statement, PairPosStatement), type(statement).__name__
+        assert not statement.enumerated and statement.valuerecord2 is None
+        value = statement.valuerecord1
+        assert value is not None and value.xAdvance is not None
+        assert value.xPlacement in (None, 0)
+        assert value.yPlacement in (None, 0)
+        assert value.yAdvance in (None, 0)
+        pair = (statement.glyphs1.glyph, statement.glyphs2.glyph)
+        assert pair not in kerning
+        kerning[pair] = value.xAdvance
+    expected_kerning = {
+        (item["left"], item["right"]): item["value"] for item in EXPECTED["kerning"]
+    }
+    assert set(kerning) == set(expected_kerning)
+    for pair, expected in expected_kerning.items():
+        assert abs(kerning[pair] - expected) <= limits["metric_error_units_max"]
+
+    mark_positions = {}
+    for statement in feature_blocks["mark"]:
+        assert isinstance(statement, MarkBasePosStatement), type(statement).__name__
+        assert len(statement.marks) == 1
+        anchor, mark_class = statement.marks[0]
+        assert mark_class.name == mark_class_name
+        glyph_name = statement.base.glyph
+        assert glyph_name not in mark_positions
+        mark_positions[glyph_name] = (anchor.x, anchor.y)
+    expected_bases = EXPECTED["anchors"]["bases"]
+    assert set(mark_positions) == set(expected_bases)
+    for glyph_name, expected in expected_bases.items():
+        actual_x, actual_y = mark_positions[glyph_name]
+        expected_x = round(advances[glyph_name] / 2 + expected["x_offset"])
+        assert abs(actual_x - expected_x) <= limits["anchor_error_units_max"]
+        assert abs(actual_y - expected["y"]) <= limits["anchor_error_units_max"]
 
 
 def _canonical_cycle(points: list[tuple[float, float, str]]) -> tuple:
@@ -554,6 +648,31 @@ def test_editable_sources_are_safe_complete_and_geometry_compatible():
             expected_kerning = {
                 (item["left"], item["right"]): item["value"] for item in EXPECTED["kerning"]
             }
+            glyph_specs = {item["name"]: item for item in contract["glyphs"]}
+            glyph_names = set(contract["glyph_order"])
+            limits = spec["acceptance_tolerances"]
+
+            def advances_at(location: dict[str, float]) -> dict[str, float]:
+                return {
+                    glyph_name: (
+                        0
+                        if glyph_name == EXPECTED["anchors"]["mark"]["glyph"]
+                        else geometry_for(glyph_specs[glyph_name], location, spec)["advance"]
+                    )
+                    for glyph_name in contract["glyph_order"]
+                }
+
+            default_master = next(
+                master
+                for master in contract["masters"]
+                if master["name"] == contract["default_master"]
+            )
+            assert_recovered_feature_semantics(
+                (root / "features.fea").read_text(),
+                glyph_names,
+                advances_at(default_master["location"]),
+                spec,
+            )
             for source, master in zip(document.sources, contract["masters"]):
                 assert source.location == {
                     axis["name"]: master["location"][axis["tag"]]
@@ -567,14 +686,12 @@ def test_editable_sources_are_safe_complete_and_geometry_compatible():
                         abs(ufo.kerning[pair] - value)
                         <= spec["acceptance_tolerances"]["metric_error_units_max"]
                     )
-                parsed = Parser(io.StringIO(ufo.features.text), set(ufo.keys())).parse()
-                feature_tags = {
-                    statement.name
-                    for statement in parsed.statements
-                    if isinstance(statement, FeatureBlock)
-                }
-                assert set(contract["open_type_recovery"]["required_features"]).issubset(feature_tags)
-                glyph_specs = {item["name"]: item for item in contract["glyphs"]}
+                assert_recovered_feature_semantics(
+                    ufo.features.text,
+                    glyph_names,
+                    advances_at(master["location"]),
+                    spec,
+                )
                 for glyph_name in contract["glyph_order"]:
                     glyph = ufo[glyph_name]
                     assert not getattr(glyph.image, "fileName", None)
