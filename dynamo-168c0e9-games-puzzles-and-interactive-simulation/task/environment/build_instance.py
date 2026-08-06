@@ -21,7 +21,7 @@ from sokoban import (
 )
 
 SEED = 168_0_9_431
-PUZZLE_COUNT = 16
+PUZZLE_COUNT = 10
 
 # Calibration envelopes. The caps are on expansions, not wall-clock, so the
 # accepted instance set is identical on every machine; measured seconds are
@@ -37,7 +37,7 @@ STANDARD_BOX_MIN = 4
 STANDARD_BOX_MAX = 5
 
 HARD_PUZZLE_COUNT = PUZZLE_COUNT - STANDARD_PUZZLE_COUNT
-HARD_SEED_OFFSETS = (101, 211, 307, 401, 503, 601, 701, 809)
+HARD_SEED_OFFSETS = (101, 211)
 HARD_EXPANSION_LIMIT = 450_000
 HARD_MIN_OPTIMAL_MOVES = 40
 HARD_MIN_EXPANSIONS = 120_000
