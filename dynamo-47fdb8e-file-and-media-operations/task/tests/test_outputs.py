@@ -25,7 +25,7 @@ INPUT = APP / "input"
 EVIDENCE = APP / "evidence"
 OUTPUT = APP / "output"
 REFERENCE = Path("/tests/reference_master.npz")
-EXPECTED_SOURCE_SHA256 = "8de4d14c0e49dce16d448e37c1442625c0ba0e5ce9f0e302fbd9571e2febbb6a"
+EXPECTED_SOURCE_SHA256 = "a21ee7001e70012609f8e1cf1ab1f26bd75adba9e14dc3f21d32949f5b06e53c"
 REQUIRED_FILES = {
     "plates.npz",
     "proof.png",
@@ -374,7 +374,7 @@ def test_zero_ink_background_has_no_localized_contamination():
 
 
 def test_nominal_ink_regions_have_no_localized_tone_damage():
-    """No coherent or distributed interior defect may hide inside a nominal tone region."""
+    """No coherent or distributed defect may hide in broad or sub-boundary-width nominal tones."""
     spec = ticket()
     limits = spec["acceptance_tolerances"]
     submitted = load_plates()
@@ -394,10 +394,11 @@ def test_nominal_ink_regions_have_no_localized_tone_damage():
             for nominal in spec["plate_registry"][plate_id]["nominal_coverage_levels"]:
                 if nominal == 0:
                     continue
-                interior = binary_erosion(expected == nominal, iterations=edge_exclusion)
-                if not np.any(interior):
-                    continue
-                substantial_error = interior & (
+                nominal_region = expected == nominal
+                interior = binary_erosion(nominal_region, iterations=edge_exclusion)
+                thin_region = not np.any(interior)
+                evaluated_region = nominal_region if thin_region else interior
+                substantial_error = evaluated_region & (
                     absolute_error
                     >= limits["plate_nominal_local_error_code_value_min"]
                 )
@@ -410,9 +411,19 @@ def test_nominal_ink_regions_have_no_localized_tone_damage():
                 assert largest_area <= limits[
                     "plate_nominal_local_component_area_mm2_max"
                 ], (plate_id, nominal, largest_area)
-                assert total_area <= limits[
-                    "plate_nominal_local_total_area_mm2_max"
-                ], (plate_id, nominal, total_area)
+                total_limit = limits[
+                    "plate_nominal_thin_region_total_area_mm2_max"
+                    if thin_region
+                    else "plate_nominal_local_total_area_mm2_max"
+                ]
+                assert total_area <= total_limit, (plate_id, nominal, total_area)
+                if thin_region:
+                    error_fraction = float(np.count_nonzero(substantial_error)) / float(
+                        np.count_nonzero(evaluated_region)
+                    )
+                    assert error_fraction <= limits[
+                        "plate_nominal_thin_region_error_fraction_max"
+                    ], (plate_id, nominal, error_fraction)
 
 
 def test_proof_is_colorimetrically_correct_and_derived_from_submitted_plates():

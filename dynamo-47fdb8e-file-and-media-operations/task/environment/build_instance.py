@@ -791,6 +791,8 @@ def build(root: Path) -> None:
             "plate_nominal_local_error_code_value_min": 2,
             "plate_nominal_local_component_area_mm2_max": 4.0,
             "plate_nominal_local_total_area_mm2_max": 4.0,
+            "plate_nominal_thin_region_total_area_mm2_max": 5.0,
+            "plate_nominal_thin_region_error_fraction_max": 0.30,
             "proof_median_delta_e00_max": 1.0,
             "proof_p95_delta_e00_max": 2.5,
             "proof_color_edge_exclusion_px": 2,
