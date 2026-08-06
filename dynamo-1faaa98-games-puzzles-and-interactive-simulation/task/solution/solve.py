@@ -26,14 +26,21 @@ UNIT_FIELDS = [
     "raw_mm",
     "final_dr_mm",
     "final_kc",
+    "final_ec_ds_m",
+    "minimum_k_sal",
     "recommended_gross_mm",
+    "unconstrained_gross_mm",
+    "allocation_priority",
+    "allocation_shortfall_mm",
     "seasonal_etc_mm",
     "seasonal_effective_irrigation_mm",
     "seasonal_drainage_mm",
+    "seasonal_leached_salt_index",
     "stress_days",
+    "salinity_stress_days",
     "minimum_ks",
 ]
-INTEGER_FIELDS = {"row", "column", "stress_days"}
+INTEGER_FIELDS = {"row", "column", "stress_days", "salinity_stress_days"}
 TEXT_FIELDS = {"campaign_id", "unit_id", "zone_id"}
 
 
@@ -199,6 +206,10 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
         record["unit_id"]: float(record["depletion_fraction"])
         for record in read_csv(directory / "initial_depletion.csv")
     }
+    initial_salinity = {
+        record["unit_id"]: float(record["initial_ec_ds_m"])
+        for record in read_csv(directory / "initial_salinity.csv")
+    }
     vegetation = vegetation_by_unit(directory)
     weather = {
         date.fromisoformat(record["date"]): (
@@ -208,11 +219,15 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
         for record in read_csv(directory / "weather.csv")
     }
     event_document = read_json(directory / "irrigation_events.geojson")
-    events_by_day: dict[date, list[tuple[object, float]]] = defaultdict(list)
+    events_by_day: dict[date, list[tuple[object, float, float]]] = defaultdict(list)
     for feature in event_document["features"]:
         properties = feature["properties"]
         events_by_day[date.fromisoformat(properties["date"])].append(
-            (shape(feature["geometry"]), float(properties["gross_depth_mm"]))
+            (
+                shape(feature["geometry"]),
+                float(properties["gross_depth_mm"]),
+                float(properties["water_ec_ds_m"]),
+            )
         )
 
     start = date.fromisoformat(job["simulation"]["start_date"])
@@ -232,6 +247,15 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
     depletion_fraction = float(crop["depletion_fraction"])
     efficiency = float(job["irrigation"]["efficiency"])
     maximum = float(job["irrigation"]["max_application_mm"])
+    salinity = job["salinity"]
+    rain_ec = float(salinity["rainfall_ec_ds_m"])
+    threshold_ec = float(salinity["crop_threshold_ec_ds_m"])
+    yield_slope = float(salinity["yield_slope_per_ds_m"])
+    minimum_k_sal = float(salinity["minimum_stress_coefficient"])
+    leaching_efficiency = float(salinity["leaching_efficiency"])
+    new_root_ec = float(salinity["new_root_zone_ec_ds_m"])
+    minimum_solution = float(salinity["minimum_solution_depth_mm"])
+    leaching_requirement = float(salinity["leaching_requirement_mm_per_ds_m"])
     edges = [float(value) for value in job["management_zone_edges_mm"]]
     campaign_id = campaign["campaign_id"]
     properties_records: list[dict] = []
@@ -244,26 +268,40 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
         taw = weighted_taw(soil_weights, daily_storage[start])
         depletion = initial_fraction[unit["unit_id"]] * taw
         observations = vegetation[unit["unit_id"]]
+        salt_load = initial_salinity[unit["unit_id"]] * max(
+            taw - depletion, minimum_solution
+        )
+        previous_taw = taw
         seasonal_etc = 0.0
         seasonal_irrigation = 0.0
         seasonal_drainage = 0.0
+        seasonal_leached_salt = 0.0
         stress_days = 0
+        salinity_stress_days = 0
         minimum_ks = 1.0
+        minimum_salinity_stress = 1.0
         final_kc = 0.0
         raw = 0.0
 
-        event_depths: dict[date, float] = {}
+        event_depths: dict[date, tuple[float, float]] = {}
         for event_day, event_list in events_by_day.items():
-            gross = 0.0
-            for event_geometry, event_depth in event_list:
+            effective_depth = 0.0
+            salt_input = 0.0
+            for event_geometry, event_depth, event_ec in event_list:
                 overlap = geometry.intersection(event_geometry).area
                 if overlap > 0.0:
-                    gross += event_depth * overlap / area
-            event_depths[event_day] = gross * efficiency
+                    event_effective = event_depth * overlap / area * efficiency
+                    effective_depth += event_effective
+                    salt_input += event_effective * event_ec
+            event_depths[event_day] = (effective_depth, salt_input)
 
         for current_day in days:
             taw = weighted_taw(soil_weights, daily_storage[current_day])
             depletion = min(depletion, taw)
+            if taw > previous_taw:
+                salt_load += (taw - previous_taw) * new_root_ec
+            previous_taw = taw
+            root_zone_ec = salt_load / max(taw - depletion, minimum_solution)
             vi = interpolate(observations, current_day.toordinal())
             kc = min(float(crop["kc_max"]), max(float(crop["kc_min"]), float(crop["kc_slope"]) * vi + float(crop["kc_intercept"])))
             eto, precipitation = weather[current_day]
@@ -277,38 +315,127 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
             if ks < 1.0:
                 stress_days += 1
             minimum_ks = min(minimum_ks, ks)
-            etc = ks * kc * eto
-            effective_irrigation = event_depths.get(current_day, 0.0)
+            k_sal = min(
+                1.0,
+                max(
+                    minimum_k_sal,
+                    1.0 - yield_slope * max(root_zone_ec - threshold_ec, 0.0),
+                ),
+            )
+            if k_sal < 1.0:
+                salinity_stress_days += 1
+            minimum_salinity_stress = min(minimum_salinity_stress, k_sal)
+            etc = ks * k_sal * kc * eto
+            effective_irrigation, irrigation_salt = event_depths.get(
+                current_day, (0.0, 0.0)
+            )
+            storage_before = taw - depletion
             unconstrained = depletion + etc - precipitation - effective_irrigation
             drainage = max(0.0, -unconstrained)
             depletion = min(taw, max(0.0, unconstrained))
+            salt_before_leaching = salt_load + precipitation * rain_ec + irrigation_salt
+            leaching_fraction = leaching_efficiency * min(
+                1.0,
+                drainage
+                / max(storage_before + precipitation + effective_irrigation, minimum_solution),
+            )
+            leached_salt = salt_before_leaching * leaching_fraction
+            salt_load = max(0.0, salt_before_leaching - leached_salt)
             seasonal_etc += etc
             seasonal_irrigation += effective_irrigation
             seasonal_drainage += drainage
+            seasonal_leached_salt += leached_salt
             final_kc = kc
 
-        recommendation = 0.0 if depletion <= raw else min(maximum, depletion / efficiency)
+        final_ec = salt_load / max(taw - depletion, minimum_solution)
+        deficit_request = 0.0 if depletion <= raw else depletion / efficiency
+        leaching_request = (
+            max(final_ec - threshold_ec, 0.0) * leaching_requirement / efficiency
+        )
+        unconstrained_recommendation = min(maximum, deficit_request + leaching_request)
+        priority = (
+            1.0
+            + float(job["pump"]["water_deficit_priority_weight"])
+            * depletion
+            / max(taw, minimum_solution)
+            + float(job["pump"]["salinity_priority_weight"])
+            * max(final_ec / threshold_ec - 1.0, 0.0)
+            + float(job["pump"]["stress_history_priority_weight"])
+            * (stress_days + salinity_stress_days)
+            / len(days)
+        )
         properties = {
             "campaign_id": campaign_id,
             "unit_id": unit["unit_id"],
             "row": unit["row"],
             "column": unit["column"],
-            "zone_id": zone_for(recommendation, edges),
+            "zone_id": "",
             "clipped_area_m2": area,
             "area_fraction": area / field_area,
             "taw_mm": taw,
             "raw_mm": raw,
             "final_dr_mm": depletion,
             "final_kc": final_kc,
-            "recommended_gross_mm": recommendation,
+            "final_ec_ds_m": final_ec,
+            "minimum_k_sal": minimum_salinity_stress,
+            "recommended_gross_mm": 0.0,
+            "unconstrained_gross_mm": unconstrained_recommendation,
+            "allocation_priority": priority,
+            "allocation_shortfall_mm": unconstrained_recommendation,
             "seasonal_etc_mm": seasonal_etc,
             "seasonal_effective_irrigation_mm": seasonal_irrigation,
             "seasonal_drainage_mm": seasonal_drainage,
+            "seasonal_leached_salt_index": seasonal_leached_salt,
             "stress_days": stress_days,
+            "salinity_stress_days": salinity_stress_days,
             "minimum_ks": minimum_ks,
         }
         properties_records.append(properties)
         features.append({"type": "Feature", "geometry": mapping(geometry), "properties": properties})
+
+    requested_volume = sum(
+        record["clipped_area_m2"] * record["unconstrained_gross_mm"] / 1000.0
+        for record in properties_records
+    )
+    pump_budget = float(job["pump"]["volume_budget_m3"])
+    quota_binding = requested_volume > pump_budget
+    if quota_binding:
+        low = 0.0
+        high = max(
+            2.0 * record["allocation_priority"] * record["unconstrained_gross_mm"]
+            for record in properties_records
+        )
+        for _ in range(100):
+            lagrange = (low + high) / 2.0
+            volume = sum(
+                record["clipped_area_m2"]
+                * max(
+                    0.0,
+                    record["unconstrained_gross_mm"]
+                    - lagrange / (2.0 * record["allocation_priority"]),
+                )
+                / 1000.0
+                for record in properties_records
+            )
+            if volume > pump_budget:
+                low = lagrange
+            else:
+                high = lagrange
+        lagrange = high
+    else:
+        lagrange = 0.0
+
+    for record in properties_records:
+        recommendation = max(
+            0.0,
+            record["unconstrained_gross_mm"]
+            - lagrange / (2.0 * record["allocation_priority"]),
+        )
+        record["recommended_gross_mm"] = recommendation
+        record["allocation_shortfall_mm"] = (
+            record["unconstrained_gross_mm"] - recommendation
+        )
+        record["zone_id"] = zone_for(recommendation, edges)
 
     zone_records = []
     for zone_index in range(len(edges)):
@@ -342,6 +469,10 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
         ),
         "area_weighted_mean_depth_mm": weighted_depth / field_area,
         "total_gross_volume_m3": weighted_depth / 1000.0,
+        "requested_gross_volume_m3": requested_volume,
+        "pump_budget_m3": pump_budget,
+        "allocation_shortfall_volume_m3": requested_volume - weighted_depth / 1000.0,
+        "quota_binding": quota_binding,
         "zones": zone_records,
     }
     return properties_records, features, summary

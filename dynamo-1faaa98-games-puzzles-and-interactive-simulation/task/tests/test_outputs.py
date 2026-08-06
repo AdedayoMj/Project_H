@@ -37,22 +37,40 @@ PROPERTY_FIELDS = [
     "raw_mm",
     "final_dr_mm",
     "final_kc",
+    "final_ec_ds_m",
+    "minimum_k_sal",
     "recommended_gross_mm",
+    "unconstrained_gross_mm",
+    "allocation_priority",
+    "allocation_shortfall_mm",
     "seasonal_etc_mm",
     "seasonal_effective_irrigation_mm",
     "seasonal_drainage_mm",
+    "seasonal_leached_salt_index",
     "stress_days",
+    "salinity_stress_days",
     "minimum_ks",
 ]
 IDENTITY_FIELDS = ["campaign_id", "unit_id", "row", "column"]
 SOIL_FIELDS = ["taw_mm", "raw_mm"]
-DYNAMIC_STATE_DEPTH_FIELDS = ["final_dr_mm"]
+DYNAMIC_STATE_DEPTH_FIELDS = [
+    "final_dr_mm",
+    "unconstrained_gross_mm",
+    "allocation_shortfall_mm",
+]
 ACCUMULATED_DEPTH_FIELDS = [
     "seasonal_etc_mm",
     "seasonal_effective_irrigation_mm",
     "seasonal_drainage_mm",
+    "seasonal_leached_salt_index",
 ]
-COEFFICIENT_FIELDS = ["final_kc", "minimum_ks"]
+COEFFICIENT_FIELDS = [
+    "final_kc",
+    "final_ec_ds_m",
+    "minimum_ks",
+    "minimum_k_sal",
+    "allocation_priority",
+]
 SUMMARY_FIELDS = [
     "campaign_id",
     "analysis_unit_count",
@@ -60,6 +78,10 @@ SUMMARY_FIELDS = [
     "irrigated_area_m2",
     "area_weighted_mean_depth_mm",
     "total_gross_volume_m3",
+    "requested_gross_volume_m3",
+    "pump_budget_m3",
+    "allocation_shortfall_volume_m3",
+    "quota_binding",
     "zones",
 ]
 ZONE_FIELDS = ["zone_id", "unit_count", "area_m2", "area_fraction", "mean_depth_mm"]
@@ -198,6 +220,62 @@ def test_generated_campaigns_exercise_deep_drainage_balance():
     assert sum(value > 0.01 for value in all_values) >= len(all_values) // 3
 
 
+def test_generated_campaigns_exercise_coupled_salinity_paths():
+    """Every campaign activates salt stress, salt leaching, and heterogeneous terminal salinity."""
+    manifest = json.loads((INPUT / "manifest.json").read_text())
+    records, _ = reference()
+    by_campaign = defaultdict(list)
+    for record in records:
+        by_campaign[record["campaign_id"]].append(record)
+
+    assert len(manifest["campaigns"]) >= 6
+    for campaign in manifest["campaigns"]:
+        campaign_id = campaign["campaign_id"]
+        directory = INPUT / "campaigns" / campaign_id
+        ticket = json.loads((directory / "job_ticket.json").read_text())
+        assert set(ticket["salinity"]) == {
+            "rainfall_ec_ds_m",
+            "crop_threshold_ec_ds_m",
+            "yield_slope_per_ds_m",
+            "minimum_stress_coefficient",
+            "leaching_efficiency",
+            "new_root_zone_ec_ds_m",
+            "minimum_solution_depth_mm",
+            "leaching_requirement_mm_per_ds_m",
+        }
+        with (directory / "initial_salinity.csv").open(newline="") as handle:
+            reader = csv.DictReader(handle)
+            assert reader.fieldnames == ["unit_id", "initial_ec_ds_m"]
+            salinity_rows = list(reader)
+        assert salinity_rows
+        assert set(salinity_rows[0]) == {"unit_id", "initial_ec_ds_m"}
+        events = json.loads((directory / "irrigation_events.geojson").read_text())
+        assert all(
+            set(feature["properties"])
+            == {"event_id", "date", "gross_depth_mm", "water_ec_ds_m"}
+            for feature in events["features"]
+        )
+        rows = by_campaign[campaign_id]
+        assert any(row["salinity_stress_days"] > 0 for row in rows), campaign_id
+        assert any(row["seasonal_leached_salt_index"] > 0.01 for row in rows), campaign_id
+        assert len({round(row["final_ec_ds_m"], 3) for row in rows}) >= 20, campaign_id
+
+
+def test_campaign_pump_quota_is_binding_and_allocation_is_nonlocal():
+    """Each campaign requires a genuine joint allocation rather than per-cell clipping."""
+    records, summaries = reference()
+    by_campaign = defaultdict(list)
+    for record in records:
+        by_campaign[record["campaign_id"]].append(record)
+    for summary in summaries:
+        rows = by_campaign[summary["campaign_id"]]
+        assert summary["quota_binding"] is True, summary["campaign_id"]
+        assert summary["requested_gross_volume_m3"] > summary["pump_budget_m3"]
+        assert abs(summary["total_gross_volume_m3"] - summary["pump_budget_m3"]) <= 1e-8
+        assert any(row["allocation_shortfall_mm"] > 0.01 for row in rows)
+        assert len({round(row["allocation_priority"], 4) for row in rows}) >= 20
+
+
 def test_geojson_and_csv_follow_the_normative_schemas():
     """GeoJSON features and CSV rows use the exact published keys, types, header, and finite values."""
     document = submitted_geojson()
@@ -216,15 +294,16 @@ def test_geojson_and_csv_follow_the_normative_schemas():
         assert type(properties["row"]) is int
         assert type(properties["column"]) is int
         assert type(properties["stress_days"]) is int
-        for key in set(PROPERTY_FIELDS) - {"campaign_id", "unit_id", "zone_id", "row", "column", "stress_days"}:
+        assert type(properties["salinity_stress_days"]) is int
+        for key in set(PROPERTY_FIELDS) - {"campaign_id", "unit_id", "zone_id", "row", "column", "stress_days", "salinity_stress_days"}:
             assert finite_number(properties[key]), (properties["campaign_id"], properties["unit_id"], key)
     header, csv_rows = submitted_csv()
     assert header == PROPERTY_FIELDS
     for row in csv_rows:
         assert set(row) == set(PROPERTY_FIELDS)
-        for key in ("row", "column", "stress_days"):
+        for key in ("row", "column", "stress_days", "salinity_stress_days"):
             assert INTEGER_TEXT.fullmatch(row[key]), (row["campaign_id"], row["unit_id"], key)
-        for key in set(PROPERTY_FIELDS) - {"campaign_id", "unit_id", "zone_id", "row", "column", "stress_days"}:
+        for key in set(PROPERTY_FIELDS) - {"campaign_id", "unit_id", "zone_id", "row", "column", "stress_days", "salinity_stress_days"}:
             assert DECIMAL_TEXT.fullmatch(row[key]), (row["campaign_id"], row["unit_id"], key)
             assert math.isfinite(float(row[key]))
 
@@ -241,7 +320,8 @@ def test_summary_follows_the_normative_schema():
         assert set(campaign) == set(SUMMARY_FIELDS)
         assert isinstance(campaign["campaign_id"], str)
         assert type(campaign["analysis_unit_count"]) is int
-        for key in ("field_area_m2", "irrigated_area_m2", "area_weighted_mean_depth_mm", "total_gross_volume_m3"):
+        assert type(campaign["quota_binding"]) is bool
+        for key in ("field_area_m2", "irrigated_area_m2", "area_weighted_mean_depth_mm", "total_gross_volume_m3", "requested_gross_volume_m3", "pump_budget_m3", "allocation_shortfall_volume_m3"):
             assert finite_number(campaign[key])
         assert isinstance(campaign["zones"], list)
         assert [zone["zone_id"] for zone in campaign["zones"]] == [
@@ -297,7 +377,7 @@ def test_soil_horizon_integration_and_area_weighting_are_correct():
 
 
 def test_daily_water_balance_and_audit_state_are_correct():
-    """Final state and seasonal audits match the single-Kc stress-feedback simulation."""
+    """Water, salt, stress, and seasonal audits match the coupled daily simulation."""
     expected_units, _ = reference()
     for actual, expected in zip(feature_properties(), expected_units, strict=True):
         for field in DYNAMIC_STATE_DEPTH_FIELDS:
@@ -307,10 +387,11 @@ def test_daily_water_balance_and_audit_state_are_correct():
         for field in COEFFICIENT_FIELDS:
             close(actual[field], expected[field], 0.0001)
         assert actual["stress_days"] == expected["stress_days"]
+        assert actual["salinity_stress_days"] == expected["salinity_stress_days"]
 
 
 def test_prescription_depths_and_management_zones_are_correct():
-    """Capacity-limited terminal recommendations and half-open zone assignments are correct."""
+    """Jointly allocated terminal recommendations and half-open zone assignments are correct."""
     expected_units, _ = reference()
     for actual, expected in zip(feature_properties(), expected_units, strict=True):
         close(actual["recommended_gross_mm"], expected["recommended_gross_mm"], 0.01)
@@ -323,7 +404,7 @@ def test_csv_records_correspond_to_the_geojson_properties():
     properties = feature_properties()
     assert len(rows) == len(properties)
     text_fields = {"campaign_id", "unit_id", "zone_id"}
-    integer_fields = {"row", "column", "stress_days"}
+    integer_fields = {"row", "column", "stress_days", "salinity_stress_days"}
     for csv_row, geo_row in zip(rows, properties, strict=True):
         for field in text_fields:
             assert csv_row[field] == geo_row[field]
@@ -344,6 +425,10 @@ def test_field_and_zone_summaries_match_independent_aggregation():
         assert abs(actual["irrigated_area_m2"] - expected["irrigated_area_m2"]) <= 1e-6
         close(actual["area_weighted_mean_depth_mm"], expected["area_weighted_mean_depth_mm"], 0.01)
         close(actual["total_gross_volume_m3"], expected["total_gross_volume_m3"], 0.01)
+        close(actual["requested_gross_volume_m3"], expected["requested_gross_volume_m3"], 0.01)
+        close(actual["pump_budget_m3"], expected["pump_budget_m3"], 0.01)
+        close(actual["allocation_shortfall_volume_m3"], expected["allocation_shortfall_volume_m3"], 0.01)
+        assert actual["quota_binding"] is expected["quota_binding"]
         assert [zone["zone_id"] for zone in actual["zones"]] == [
             zone["zone_id"] for zone in expected["zones"]
         ]

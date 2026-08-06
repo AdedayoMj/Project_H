@@ -129,6 +129,10 @@ def calculate_campaign(campaign):
         for row in table(directory / "weather.csv")
     }
     initial = {row["unit_id"]: float(row["depletion_fraction"]) for row in table(directory / "initial_depletion.csv")}
+    initial_ec = {
+        row["unit_id"]: float(row["initial_ec_ds_m"])
+        for row in table(directory / "initial_salinity.csv")
+    }
     satellite = defaultdict(list)
     for row in table(directory / "vegetation_index.csv"):
         satellite[row["unit_id"]].append((date.fromisoformat(row["date"]).toordinal(), float(row["vi"])))
@@ -139,7 +143,11 @@ def calculate_campaign(campaign):
     events = defaultdict(list)
     for feature in event_doc["features"]:
         events[date.fromisoformat(feature["properties"]["date"])].append(
-            (shape(feature["geometry"]), float(feature["properties"]["gross_depth_mm"]))
+            (
+                shape(feature["geometry"]),
+                float(feature["properties"]["gross_depth_mm"]),
+                float(feature["properties"]["water_ec_ds_m"]),
+            )
         )
 
     crop = ticket["crop"]
@@ -154,6 +162,15 @@ def calculate_campaign(campaign):
     reference_p = float(crop["depletion_fraction"])
     efficiency = float(ticket["irrigation"]["efficiency"])
     maximum = float(ticket["irrigation"]["max_application_mm"])
+    salt_contract = ticket["salinity"]
+    rain_ec = float(salt_contract["rainfall_ec_ds_m"])
+    threshold_ec = float(salt_contract["crop_threshold_ec_ds_m"])
+    yield_slope = float(salt_contract["yield_slope_per_ds_m"])
+    minimum_k_sal = float(salt_contract["minimum_stress_coefficient"])
+    leaching_efficiency = float(salt_contract["leaching_efficiency"])
+    new_root_ec = float(salt_contract["new_root_zone_ec_ds_m"])
+    solution_floor = float(salt_contract["minimum_solution_depth_mm"])
+    leaching_requirement = float(salt_contract["leaching_requirement_mm_per_ds_m"])
     edges = [float(value) for value in ticket["management_zone_edges_mm"]]
     results = []
     for cell in cells:
@@ -162,26 +179,41 @@ def calculate_campaign(campaign):
         weights = survey_weights(geometry, survey)
         taw = capacity_for_cell(weights, storages[start])
         depletion = initial[cell["unit_id"]] * taw
+        salt_mass = initial_ec[cell["unit_id"]] * max(taw - depletion, solution_floor)
+        prior_taw = taw
         accumulated_etc = 0.0
         accumulated_irrigation = 0.0
         accumulated_drainage = 0.0
+        accumulated_leaching = 0.0
         minimum_stress = 1.0
+        minimum_salt_stress = 1.0
         stressed = 0
+        salt_stressed = 0
         final_kc = None
         raw = None
 
-        effective_events = defaultdict(float)
+        effective_events = defaultdict(lambda: (0.0, 0.0))
         for event_date, footprints in events.items():
-            covered_gross = math.fsum(
-                depth * geometry.intersection(footprint).area / area
-                for footprint, depth in footprints
+            contributions = [
+                (
+                    depth * geometry.intersection(footprint).area / area * efficiency,
+                    water_ec,
+                )
+                for footprint, depth, water_ec in footprints
                 if geometry.intersects(footprint)
+            ]
+            effective_events[event_date] = (
+                math.fsum(depth for depth, _ in contributions),
+                math.fsum(depth * water_ec for depth, water_ec in contributions),
             )
-            effective_events[event_date] = efficiency * covered_gross
 
         for current in calendar:
             taw = capacity_for_cell(weights, storages[current])
             depletion = min(depletion, taw)
+            if taw > prior_taw:
+                salt_mass += (taw - prior_taw) * new_root_ec
+            prior_taw = taw
+            root_zone_ec = salt_mass / max(taw - depletion, solution_floor)
             vi = interpolate_series(satellite[cell["unit_id"]], current.toordinal())
             kc = max(float(crop["kc_min"]), min(float(crop["kc_max"]), float(crop["kc_slope"]) * vi + float(crop["kc_intercept"])))
             eto, rain = weather[current]
@@ -191,39 +223,116 @@ def calculate_campaign(campaign):
             stress = 1.0 if depletion <= raw else max(0.0, min(1.0, (taw - depletion) / (taw - raw)))
             stressed += int(stress < 1.0)
             minimum_stress = min(minimum_stress, stress)
-            crop_use = stress * kc * eto
-            applied = effective_events[current]
+            salt_stress = max(
+                minimum_k_sal,
+                min(1.0, 1.0 - yield_slope * max(root_zone_ec - threshold_ec, 0.0)),
+            )
+            salt_stressed += int(salt_stress < 1.0)
+            minimum_salt_stress = min(minimum_salt_stress, salt_stress)
+            crop_use = stress * salt_stress * kc * eto
+            applied, irrigation_salt = effective_events[current]
+            stored_water = taw - depletion
             candidate = depletion + crop_use - rain - applied
             drainage = max(0.0, -candidate)
             depletion = max(0.0, min(taw, candidate))
+            pre_leach_salt = salt_mass + rain * rain_ec + irrigation_salt
+            removal_fraction = leaching_efficiency * min(
+                1.0, drainage / max(stored_water + rain + applied, solution_floor)
+            )
+            leached = pre_leach_salt * removal_fraction
+            salt_mass = max(0.0, pre_leach_salt - leached)
             accumulated_etc += crop_use
             accumulated_irrigation += applied
             accumulated_drainage += drainage
+            accumulated_leaching += leached
             final_kc = kc
 
-        gross = 0.0 if depletion <= raw else min(maximum, depletion / efficiency)
+        final_ec = salt_mass / max(taw - depletion, solution_floor)
+        water_request = 0.0 if depletion <= raw else depletion / efficiency
+        salt_request = max(final_ec - threshold_ec, 0.0) * leaching_requirement / efficiency
+        requested = min(maximum, water_request + salt_request)
+        priority = (
+            1.0
+            + float(ticket["pump"]["water_deficit_priority_weight"])
+            * depletion
+            / max(taw, solution_floor)
+            + float(ticket["pump"]["salinity_priority_weight"])
+            * max(final_ec / threshold_ec - 1.0, 0.0)
+            + float(ticket["pump"]["stress_history_priority_weight"])
+            * (stressed + salt_stressed)
+            / len(calendar)
+        )
         results.append(
             {
                 "campaign_id": campaign["campaign_id"],
                 "unit_id": cell["unit_id"],
                 "row": cell["row"],
                 "column": cell["column"],
-                "zone_id": classify_zone(gross, edges),
+                "zone_id": None,
                 "clipped_area_m2": area,
                 "area_fraction": area / field_area,
                 "taw_mm": taw,
                 "raw_mm": raw,
                 "final_dr_mm": depletion,
                 "final_kc": final_kc,
-                "recommended_gross_mm": gross,
+                "final_ec_ds_m": final_ec,
+                "minimum_k_sal": minimum_salt_stress,
+                "recommended_gross_mm": 0.0,
+                "unconstrained_gross_mm": requested,
+                "allocation_priority": priority,
+                "allocation_shortfall_mm": requested,
                 "seasonal_etc_mm": accumulated_etc,
                 "seasonal_effective_irrigation_mm": accumulated_irrigation,
                 "seasonal_drainage_mm": accumulated_drainage,
+                "seasonal_leached_salt_index": accumulated_leaching,
                 "stress_days": stressed,
+                "salinity_stress_days": salt_stressed,
                 "minimum_ks": minimum_stress,
                 "geometry": geometry,
             }
         )
+
+    requested_volume = math.fsum(
+        row["clipped_area_m2"] * row["unconstrained_gross_mm"] / 1000.0
+        for row in results
+    )
+    budget = float(ticket["pump"]["volume_budget_m3"])
+    binding = requested_volume > budget
+    if binding:
+        lower = 0.0
+        upper = max(
+            2.0 * row["allocation_priority"] * row["unconstrained_gross_mm"]
+            for row in results
+        )
+        for _ in range(100):
+            multiplier = (lower + upper) / 2.0
+            used = math.fsum(
+                row["clipped_area_m2"]
+                * max(
+                    0.0,
+                    row["unconstrained_gross_mm"]
+                    - multiplier / (2.0 * row["allocation_priority"]),
+                )
+                / 1000.0
+                for row in results
+            )
+            if used > budget:
+                lower = multiplier
+            else:
+                upper = multiplier
+        multiplier = upper
+    else:
+        multiplier = 0.0
+
+    for row in results:
+        allocated = max(
+            0.0,
+            row["unconstrained_gross_mm"]
+            - multiplier / (2.0 * row["allocation_priority"]),
+        )
+        row["recommended_gross_mm"] = allocated
+        row["allocation_shortfall_mm"] = row["unconstrained_gross_mm"] - allocated
+        row["zone_id"] = classify_zone(allocated, edges)
 
     zone_rows = []
     for number in range(len(edges)):
@@ -250,6 +359,10 @@ def calculate_campaign(campaign):
         ),
         "area_weighted_mean_depth_mm": total_depth_area / field_area,
         "total_gross_volume_m3": total_depth_area / 1000.0,
+        "requested_gross_volume_m3": requested_volume,
+        "pump_budget_m3": budget,
+        "allocation_shortfall_volume_m3": requested_volume - total_depth_area / 1000.0,
+        "quota_binding": binding,
         "zones": zone_rows,
     }
     return results, summary
@@ -260,7 +373,11 @@ def calculate(input_root: Path):
     all_units = []
     summaries = []
     for campaign in manifest["campaigns"]:
-        units, summary = calculate_campaign(campaign)
+        relocated = {
+            **campaign,
+            "directory": str(input_root / "campaigns" / campaign["campaign_id"]),
+        }
+        units, summary = calculate_campaign(relocated)
         all_units.extend(units)
         summaries.append(summary)
     return all_units, summaries

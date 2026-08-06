@@ -35,6 +35,8 @@ CAMPAIGNS = (
         "split_field": False,
         "drainage_storm": (2, 72.0),
         "kc": (1.31, -0.09, 0.18, 1.17),
+        "salinity": (0.12, 2.25, 0.115, 0.32, 0.73, 0.55, 4.8, 1.45),
+        "pump": (7.0, 1.15, 0.85, 0.65),
     },
     {
         "campaign_id": "mesa_2024",
@@ -55,6 +57,8 @@ CAMPAIGNS = (
         "split_field": True,
         "drainage_storm": (0, 84.0),
         "kc": (1.24, -0.04, 0.16, 1.12),
+        "salinity": (0.18, 1.85, 0.145, 0.28, 0.68, 0.72, 5.5, 1.90),
+        "pump": (8.0, 0.90, 1.35, 0.72),
     },
     {
         "campaign_id": "northfork_2022",
@@ -75,6 +79,8 @@ CAMPAIGNS = (
         "split_field": False,
         "drainage_storm": (5, 96.0),
         "kc": (1.37, -0.12, 0.20, 1.20),
+        "salinity": (0.09, 2.65, 0.095, 0.38, 0.79, 0.48, 4.2, 1.25),
+        "pump": (3.0, 1.30, 0.70, 0.58),
     },
     {
         "campaign_id": "willow_2025",
@@ -95,6 +101,52 @@ CAMPAIGNS = (
         "split_field": False,
         "drainage_storm": (1, 78.0),
         "kc": (1.28, -0.06, 0.17, 1.15),
+        "salinity": (0.15, 2.05, 0.125, 0.30, 0.71, 0.64, 5.1, 1.70),
+        "pump": (10.5, 1.05, 1.10, 0.80),
+    },
+    {
+        "campaign_id": "delta_2021",
+        "seed": 225287,
+        "base_x": 541_260.0,
+        "base_y": 3_762_430.0,
+        "width": 397.0,
+        "height": 449.0,
+        "start": date(2021, 4, 21),
+        "days": 151,
+        "cell_size_m": (9.5, 10.5),
+        "root_depth_curve": ((0.00, 0.22), (0.15, 0.43), (0.37, 0.76), (0.66, 1.04)),
+        "depletion_fraction": 0.43,
+        "efficiency": 0.77,
+        "max_application_mm": 39.0,
+        "zone_edges_mm": (0.0, 9.0, 18.0, 27.0, 36.0),
+        "soil_rotation_degrees": 16.0,
+        "split_field": True,
+        "drainage_storm": (4, 88.0),
+        "kc": (1.22, -0.02, 0.15, 1.10),
+        "salinity": (0.21, 1.70, 0.155, 0.25, 0.65, 0.80, 5.8, 2.10),
+        "pump": (7.5, 0.82, 1.50, 0.76),
+    },
+    {
+        "campaign_id": "orchard_2026",
+        "seed": 257953,
+        "base_x": 658_940.0,
+        "base_y": 4_244_710.0,
+        "width": 489.0,
+        "height": 371.0,
+        "start": date(2026, 3, 18),
+        "days": 156,
+        "cell_size_m": (13.0, 8.5),
+        "root_depth_curve": ((0.00, 0.30), (0.19, 0.57), (0.45, 0.91), (0.70, 1.12)),
+        "depletion_fraction": 0.49,
+        "efficiency": 0.84,
+        "max_application_mm": 51.0,
+        "zone_edges_mm": (0.0, 11.0, 22.0, 33.0, 44.0),
+        "soil_rotation_degrees": -19.0,
+        "split_field": False,
+        "drainage_storm": (3, 91.0),
+        "kc": (1.34, -0.10, 0.19, 1.18),
+        "salinity": (0.11, 2.40, 0.105, 0.35, 0.77, 0.50, 4.5, 1.35),
+        "pump": (5.5, 1.25, 0.78, 0.62),
     },
 )
 
@@ -334,6 +386,7 @@ def irrigation_features(config: dict, field) -> list[dict]:
     )
     definitions.append((config["days"] - 24, 7.75, multipart, 3.0))
     features: list[dict] = []
+    event_base_ec = config["salinity"][7]
     for index, (offset, depth, rectangle, degrees) in enumerate(definitions, start=1):
         geometry = affinity.rotate(rectangle, degrees, origin=(cx, cy), use_radians=False)
         features.append(
@@ -343,6 +396,7 @@ def irrigation_features(config: dict, field) -> list[dict]:
                     "event_id": f"E{index:02d}",
                     "date": (config["start"] + timedelta(days=offset)).isoformat(),
                     "gross_depth_mm": depth,
+                    "water_ec_ds_m": event_base_ec + 0.16 * ((index * 7 + config["seed"]) % 9),
                 },
                 "geometry": mapping(geometry),
             }
@@ -369,6 +423,8 @@ def build_campaign(root: Path, config: dict) -> dict:
     units = analysis_units(field, origin_x, origin_y, cell_width, cell_height)
     soil_features, soil_rows = soil_partition(config, field)
 
+    rain_ec, threshold_ec, yield_slope, minimum_k_sal, leaching_efficiency, new_root_ec, leaching_requirement, _ = config["salinity"]
+    budget_depth, water_weight, salinity_weight, history_weight = config["pump"]
     job = {
         "campaign_id": campaign_id,
         "crs": "EPSG:32614",
@@ -405,6 +461,22 @@ def build_campaign(root: Path, config: dict) -> dict:
             "efficiency": config["efficiency"],
             "max_application_mm": config["max_application_mm"],
         },
+        "salinity": {
+            "rainfall_ec_ds_m": rain_ec,
+            "crop_threshold_ec_ds_m": threshold_ec,
+            "yield_slope_per_ds_m": yield_slope,
+            "minimum_stress_coefficient": minimum_k_sal,
+            "leaching_efficiency": leaching_efficiency,
+            "new_root_zone_ec_ds_m": new_root_ec,
+            "minimum_solution_depth_mm": 1.0,
+            "leaching_requirement_mm_per_ds_m": leaching_requirement,
+        },
+        "pump": {
+            "volume_budget_m3": field.area * budget_depth / 1000.0,
+            "water_deficit_priority_weight": water_weight,
+            "salinity_priority_weight": salinity_weight,
+            "stress_history_priority_weight": history_weight,
+        },
         "management_zone_edges_mm": list(config["zone_edges_mm"]),
     }
     dump_json(directory / "job_ticket.json", job)
@@ -425,6 +497,13 @@ def build_campaign(root: Path, config: dict) -> dict:
         )
         initial_rows.append({"unit_id": unit["unit_id"], "depletion_fraction": f"{fraction:.8f}"})
     write_csv(directory / "initial_depletion.csv", ["unit_id", "depletion_fraction"], initial_rows)
+    salinity_rows = []
+    for unit in units:
+        initial_ec = 0.75 + 3.55 * (
+            ((unit["row"] * 29 + unit["column"] * 43 + config["seed"]) % 257) / 256.0
+        )
+        salinity_rows.append({"unit_id": unit["unit_id"], "initial_ec_ds_m": f"{initial_ec:.8f}"})
+    write_csv(directory / "initial_salinity.csv", ["unit_id", "initial_ec_ds_m"], salinity_rows)
     write_csv(directory / "vegetation_index.csv", ["unit_id", "date", "vi"], vegetation_rows(config, units))
     write_csv(
         directory / "weather.csv",
