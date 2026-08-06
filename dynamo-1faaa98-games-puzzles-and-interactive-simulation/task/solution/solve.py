@@ -2,6 +2,7 @@
 """Reference implementation of the prescribed agricultural world simulation."""
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import math
@@ -12,8 +13,8 @@ from pathlib import Path
 from shapely.geometry import box, mapping, shape
 
 
-INPUT = Path("/app/input")
-OUTPUT = Path("/app/output")
+DEFAULT_INPUT = Path("/app/input")
+DEFAULT_OUTPUT = Path("/app/output")
 UNIT_FIELDS = [
     "campaign_id",
     "unit_id",
@@ -478,8 +479,8 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
     return properties_records, features, summary
 
 
-def main() -> None:
-    manifest = read_json(INPUT / "manifest.json")
+def main(input_root: Path = DEFAULT_INPUT, output_root: Path = DEFAULT_OUTPUT) -> None:
+    manifest = read_json(input_root / "manifest.json")
     records: list[dict] = []
     features: list[dict] = []
     summaries: list[dict] = []
@@ -489,18 +490,22 @@ def main() -> None:
         features.extend(campaign_features)
         summaries.append(campaign_summary)
 
-    OUTPUT.mkdir(parents=True, exist_ok=True)
-    (OUTPUT / "prescription.geojson").write_text(
+    output_root.mkdir(parents=True, exist_ok=True)
+    (output_root / "prescription.geojson").write_text(
         json.dumps({"type": "FeatureCollection", "features": features}, separators=(",", ":")) + "\n"
     )
-    with (OUTPUT / "units.csv").open("w", newline="") as handle:
+    with (output_root / "units.csv").open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=UNIT_FIELDS, lineterminator="\n")
         writer.writeheader()
         writer.writerows(csv_record(record) for record in records)
-    (OUTPUT / "summary.json").write_text(
+    (output_root / "summary.json").write_text(
         json.dumps({"schema_version": 1, "campaigns": summaries}, separators=(",", ":")) + "\n"
     )
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input-root", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT)
+    arguments = parser.parse_args()
+    main(arguments.input_root, arguments.output_root)

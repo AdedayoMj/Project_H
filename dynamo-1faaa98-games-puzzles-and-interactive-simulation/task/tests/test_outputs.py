@@ -6,12 +6,16 @@ import json
 import math
 import os
 import re
+import shutil
 import stat
+import subprocess
+import sys
 from collections import defaultdict
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
+import pytest
 from shapely.geometry import shape
 
 from reference_model import calculate
@@ -24,6 +28,7 @@ TESTS = Path(__file__).parent
 GEOJSON_PATH = OUTPUT / "prescription.geojson"
 CSV_PATH = OUTPUT / "units.csv"
 SUMMARY_PATH = OUTPUT / "summary.json"
+SOLVER_PATH = OUTPUT / "solver.py"
 
 PROPERTY_FIELDS = [
     "campaign_id",
@@ -87,6 +92,46 @@ SUMMARY_FIELDS = [
 ZONE_FIELDS = ["zone_id", "unit_count", "area_m2", "area_fraction", "mean_depth_mm"]
 INTEGER_TEXT = re.compile(r"[+-]?[0-9]+\Z")
 DECIMAL_TEXT = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)\Z")
+UNIT_NUMERIC_TOLERANCES = {
+    "clipped_area_m2": (1e-6, 0.0),
+    "area_fraction": (1e-6, 0.0),
+    "taw_mm": (0.01, 0.001),
+    "raw_mm": (0.01, 0.001),
+    "final_dr_mm": (0.01, 0.001),
+    "final_kc": (0.0001, 0.001),
+    "final_ec_ds_m": (0.0001, 0.001),
+    "minimum_k_sal": (0.0001, 0.001),
+    "recommended_gross_mm": (0.01, 0.001),
+    "unconstrained_gross_mm": (0.01, 0.001),
+    "allocation_priority": (0.0001, 0.001),
+    "allocation_shortfall_mm": (0.01, 0.001),
+    "seasonal_etc_mm": (0.01, 0.0),
+    "seasonal_effective_irrigation_mm": (0.01, 0.0),
+    "seasonal_drainage_mm": (0.01, 0.0),
+    "seasonal_leached_salt_index": (0.01, 0.0),
+    "minimum_ks": (0.0001, 0.001),
+}
+BIAS_GUARDED_FIELDS = tuple(
+    field
+    for field in UNIT_NUMERIC_TOLERANCES
+    if field not in {"clipped_area_m2", "area_fraction"}
+)
+SUMMARY_NUMERIC_TOLERANCES = {
+    "field_area_m2": (1e-6, 0.0),
+    "irrigated_area_m2": (1e-6, 0.0),
+    "area_weighted_mean_depth_mm": (0.01, 0.001),
+    "total_gross_volume_m3": (0.01, 0.001),
+    "requested_gross_volume_m3": (0.01, 0.001),
+    "pump_budget_m3": (0.01, 0.001),
+    "allocation_shortfall_volume_m3": (0.01, 0.001),
+}
+ZONE_NUMERIC_TOLERANCES = {
+    "area_m2": (1e-6, 0.0),
+    "area_fraction": (1e-6, 0.0),
+    "mean_depth_mm": (0.01, 0.001),
+}
+MAX_NORMALIZED_MEAN_BIAS = 0.05
+MAX_NORMALIZED_RMS_RESIDUAL = 0.25
 
 
 @lru_cache(maxsize=1)
@@ -126,15 +171,203 @@ def close(actual, expected, absolute, relative=0.001):
     assert abs(float(actual) - float(expected)) <= max(absolute, relative * abs(float(expected)))
 
 
+def normalized_residual(actual, expected, absolute, relative):
+    scale = max(absolute, relative * abs(float(expected)))
+    return (float(actual) - float(expected)) / scale
+
+
+def assert_residual_distribution(actual_values, expected_values, absolute, relative, label):
+    assert len(actual_values) == len(expected_values) and actual_values, label
+    residuals = [
+        normalized_residual(actual, expected, absolute, relative)
+        for actual, expected in zip(actual_values, expected_values, strict=True)
+    ]
+    mean = math.fsum(residuals) / len(residuals)
+    rms = math.sqrt(math.fsum(value * value for value in residuals) / len(residuals))
+    assert abs(mean) <= MAX_NORMALIZED_MEAN_BIAS, (label, "mean_bias", mean)
+    assert rms <= MAX_NORMALIZED_RMS_RESIDUAL, (label, "rms_residual", rms)
+
+
+def assert_no_coherent_unit_bias(actual_rows, expected_rows):
+    campaigns = sorted({row["campaign_id"] for row in expected_rows})
+    for campaign_id in campaigns:
+        actual_campaign = [row for row in actual_rows if row["campaign_id"] == campaign_id]
+        expected_campaign = [row for row in expected_rows if row["campaign_id"] == campaign_id]
+        assert len(actual_campaign) == len(expected_campaign)
+        for field in BIAS_GUARDED_FIELDS:
+            absolute, relative = UNIT_NUMERIC_TOLERANCES[field]
+            assert_residual_distribution(
+                [row[field] for row in actual_campaign],
+                [row[field] for row in expected_campaign],
+                absolute,
+                relative,
+                f"{campaign_id}:{field}",
+            )
+
+
+def decimal_text(value):
+    text = format(float(value), ".12f").rstrip("0").rstrip(".")
+    return "0" if text in {"", "-0"} else text
+
+
+def mutate_csv(path, transforms):
+    with path.open(newline="") as handle:
+        reader = csv.DictReader(handle)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+    assert fieldnames is not None
+    for row in rows:
+        for field, transform in transforms.items():
+            row[field] = decimal_text(transform(float(row[field])))
+    with path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def build_counterfactual_input(destination):
+    """Create a verifier-only one-campaign world with coupled state and budget perturbations."""
+    manifest = json.loads((INPUT / "manifest.json").read_text())
+    campaign = min(
+        manifest["campaigns"],
+        key=lambda item: (
+            INPUT / "campaigns" / item["campaign_id"] / "initial_depletion.csv"
+        ).stat().st_size,
+    )
+    campaign_id = campaign["campaign_id"]
+    source = INPUT / "campaigns" / campaign_id
+    target = destination / "campaigns" / campaign_id
+    destination.mkdir(parents=True)
+    shutil.copytree(source, target)
+    shutil.copy2(INPUT / "specification.md", destination / "specification.md")
+
+    ticket_path = target / "job_ticket.json"
+    ticket = json.loads(ticket_path.read_text())
+    ticket["crop"]["kc_intercept"] = float(ticket["crop"]["kc_intercept"]) + 0.017
+    ticket["pump"]["volume_budget_m3"] = (
+        float(ticket["pump"]["volume_budget_m3"]) * 0.82
+    )
+    ticket["salinity"]["rainfall_ec_ds_m"] = (
+        float(ticket["salinity"]["rainfall_ec_ds_m"]) + 0.037
+    )
+    ticket_path.write_text(json.dumps(ticket, indent=2) + "\n")
+
+    mutate_csv(
+        target / "weather.csv",
+        {
+            "eto_mm": lambda value: value * 1.037 + 0.013,
+            "effective_precipitation_mm": lambda value: value * 0.91,
+        },
+    )
+    mutate_csv(
+        target / "initial_depletion.csv",
+        {"depletion_fraction": lambda value: min(0.95, value * 0.91 + 0.043)},
+    )
+    mutate_csv(
+        target / "initial_salinity.csv",
+        {"initial_ec_ds_m": lambda value: value * 1.11 + 0.09},
+    )
+
+    (destination / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "campaigns": [
+                    {"campaign_id": campaign_id, "directory": str(target)}
+                ],
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    return campaign_id
+
+
+def validate_complete_output(output_root, input_root):
+    """Apply the complete value-level contract to a solver run at arbitrary roots."""
+    geojson_path = output_root / "prescription.geojson"
+    csv_path = output_root / "units.csv"
+    summary_path = output_root / "summary.json"
+    assert regular_file(geojson_path)
+    assert regular_file(csv_path)
+    assert regular_file(summary_path)
+
+    document = json.loads(geojson_path.read_text())
+    with csv_path.open(newline="") as handle:
+        reader = csv.DictReader(handle)
+        header = reader.fieldnames
+        csv_rows = list(reader)
+    summary_document = json.loads(summary_path.read_text())
+    expected_units, expected_summaries = calculate(input_root)
+
+    assert set(document) == {"type", "features"}
+    assert document["type"] == "FeatureCollection"
+    assert len(document["features"]) == len(expected_units)
+    actual_rows = []
+    for feature, expected in zip(document["features"], expected_units, strict=True):
+        assert set(feature) == {"type", "geometry", "properties"}
+        assert feature["type"] == "Feature"
+        actual_geometry = shape(feature["geometry"])
+        assert actual_geometry.is_valid and not actual_geometry.is_empty
+        assert actual_geometry.symmetric_difference(expected["geometry"]).area <= 1e-6
+        actual = feature["properties"]
+        assert set(actual) == set(PROPERTY_FIELDS)
+        for field in IDENTITY_FIELDS:
+            assert actual[field] == expected[field]
+        assert actual["zone_id"] == expected["zone_id"]
+        assert actual["stress_days"] == expected["stress_days"]
+        assert actual["salinity_stress_days"] == expected["salinity_stress_days"]
+        for field, (absolute, relative) in UNIT_NUMERIC_TOLERANCES.items():
+            close(actual[field], expected[field], absolute, relative)
+        actual_rows.append(actual)
+    assert_no_coherent_unit_bias(actual_rows, expected_units)
+
+    assert header == PROPERTY_FIELDS
+    assert len(csv_rows) == len(actual_rows)
+    text_fields = {"campaign_id", "unit_id", "zone_id"}
+    integer_fields = {"row", "column", "stress_days", "salinity_stress_days"}
+    for csv_row, geo_row in zip(csv_rows, actual_rows, strict=True):
+        for field in text_fields:
+            assert csv_row[field] == geo_row[field]
+        for field in integer_fields:
+            assert INTEGER_TEXT.fullmatch(csv_row[field])
+            assert int(csv_row[field]) == geo_row[field]
+        for field in set(PROPERTY_FIELDS) - text_fields - integer_fields:
+            assert DECIMAL_TEXT.fullmatch(csv_row[field])
+            close(float(csv_row[field]), geo_row[field], 1e-10, 1e-10)
+
+    assert set(summary_document) == {"schema_version", "campaigns"}
+    assert summary_document["schema_version"] == 1
+    actual_summaries = summary_document["campaigns"]
+    assert len(actual_summaries) == len(expected_summaries)
+    for actual, expected in zip(actual_summaries, expected_summaries, strict=True):
+        assert set(actual) == set(SUMMARY_FIELDS)
+        assert actual["campaign_id"] == expected["campaign_id"]
+        assert actual["analysis_unit_count"] == expected["analysis_unit_count"]
+        assert actual["quota_binding"] is expected["quota_binding"]
+        for field, (absolute, relative) in SUMMARY_NUMERIC_TOLERANCES.items():
+            close(actual[field], expected[field], absolute, relative)
+        assert len(actual["zones"]) == len(expected["zones"])
+        for actual_zone, expected_zone in zip(
+            actual["zones"], expected["zones"], strict=True
+        ):
+            assert set(actual_zone) == set(ZONE_FIELDS)
+            assert actual_zone["zone_id"] == expected_zone["zone_id"]
+            assert actual_zone["unit_count"] == expected_zone["unit_count"]
+            for field, (absolute, relative) in ZONE_NUMERIC_TOLERANCES.items():
+                close(actual_zone[field], expected_zone[field], absolute, relative)
+
+
 def feature_properties():
     return [feature["properties"] for feature in submitted_geojson()["features"]]
 
 
 def test_requested_artifacts_are_regular_parseable_files():
-    """All three requested artifacts exist as regular files and parse in their documented formats."""
+    """The three data artifacts and reusable solver are regular files with valid formats."""
     assert regular_file(GEOJSON_PATH)
     assert regular_file(CSV_PATH)
     assert regular_file(SUMMARY_PATH)
+    assert regular_file(SOLVER_PATH)
     assert isinstance(submitted_geojson(), dict)
     header, rows = submitted_csv()
     assert header is not None and isinstance(rows, list)
@@ -390,6 +623,36 @@ def test_daily_water_balance_and_audit_state_are_correct():
         assert actual["salinity_stress_days"] == expected["salinity_stress_days"]
 
 
+def test_physical_fields_have_no_coherent_in_band_bias():
+    """Campaign/field residual distributions reject systematic bias hidden by pointwise bands."""
+    expected_units, _ = reference()
+    assert_no_coherent_unit_bias(feature_properties(), expected_units)
+
+
+def test_residual_guard_rejects_pointwise_valid_additive_and_multiplicative_bias():
+    """Regression probes prove that coherent offsets cannot consume the pointwise tolerance."""
+    depth_expected = [5.0 + index / 10.0 for index in range(200)]
+    depth_actual = [value + 0.009 for value in depth_expected]
+    assert all(abs(actual - expected) <= 0.01 for actual, expected in zip(depth_actual, depth_expected))
+    with pytest.raises(AssertionError):
+        assert_residual_distribution(depth_actual, depth_expected, 0.01, 0.0, "additive")
+
+    coefficient_expected = [0.5 + index / 500.0 for index in range(200)]
+    coefficient_actual = [value * 1.0009 for value in coefficient_expected]
+    assert all(
+        abs(actual - expected) <= max(0.0001, 0.001 * abs(expected))
+        for actual, expected in zip(coefficient_actual, coefficient_expected, strict=True)
+    )
+    with pytest.raises(AssertionError):
+        assert_residual_distribution(
+            coefficient_actual,
+            coefficient_expected,
+            0.0001,
+            0.001,
+            "multiplicative",
+        )
+
+
 def test_prescription_depths_and_management_zones_are_correct():
     """Jointly allocated terminal recommendations and half-open zone assignments are correct."""
     expected_units, _ = reference()
@@ -437,3 +700,61 @@ def test_field_and_zone_summaries_match_independent_aggregation():
             assert abs(actual_zone["area_m2"] - expected_zone["area_m2"]) <= 1e-6
             assert abs(actual_zone["area_fraction"] - expected_zone["area_fraction"]) <= 1e-6
             close(actual_zone["mean_depth_mm"], expected_zone["mean_depth_mm"], 0.01)
+
+
+def test_reusable_solver_generalizes_to_a_held_out_counterfactual(tmp_path):
+    """Re-run submitted code on changed state drivers and budget; fixed-world answers must fail."""
+    challenge_input = tmp_path / "counterfactual-input"
+    challenge_output = tmp_path / "counterfactual-output"
+    campaign_id = build_counterfactual_input(challenge_input)
+    counterfactual_units, counterfactual_summaries = calculate(challenge_input)
+    published_units, published_summaries = reference()
+    published_campaign_units = [
+        row for row in published_units if row["campaign_id"] == campaign_id
+    ]
+    published_campaign_summary = next(
+        row for row in published_summaries if row["campaign_id"] == campaign_id
+    )
+    assert [row["unit_id"] for row in counterfactual_units] == [
+        row["unit_id"] for row in published_campaign_units
+    ]
+    material_changes = 0
+    for actual, published in zip(
+        counterfactual_units, published_campaign_units, strict=True
+    ):
+        for field in BIAS_GUARDED_FIELDS:
+            absolute, relative = UNIT_NUMERIC_TOLERANCES[field]
+            if abs(float(actual[field]) - float(published[field])) > 5 * max(
+                absolute, relative * abs(float(published[field]))
+            ):
+                material_changes += 1
+    assert material_changes >= 3 * len(counterfactual_units)
+    assert counterfactual_summaries[0]["pump_budget_m3"] != published_campaign_summary[
+        "pump_budget_m3"
+    ]
+    environment = os.environ.copy()
+    environment.pop("IRRIGATION_APP_ROOT", None)
+    environment.pop("PYTHONPATH", None)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SOLVER_PATH),
+            "--input-root",
+            str(challenge_input),
+            "--output-root",
+            str(challenge_output),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        text=True,
+        capture_output=True,
+        timeout=180,
+        check=False,
+    )
+    assert completed.returncode == 0, (
+        campaign_id,
+        completed.stdout[-2000:],
+        completed.stderr[-2000:],
+    )
+    validate_complete_output(challenge_output, challenge_input)
