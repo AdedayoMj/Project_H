@@ -25,7 +25,7 @@ INPUT = APP / "input"
 EVIDENCE = APP / "evidence"
 OUTPUT = APP / "output"
 REFERENCE = Path("/tests/reference_master.npz")
-EXPECTED_SOURCE_SHA256 = "f63f3a20a7cfeac9bbbfd537dc1413b91599b71802f6beb05b75be0c76ae1fe9"
+EXPECTED_SOURCE_SHA256 = "8de4d14c0e49dce16d448e37c1442625c0ba0e5ce9f0e302fbd9571e2febbb6a"
 REQUIRED_FILES = {
     "plates.npz",
     "proof.png",
@@ -42,6 +42,22 @@ EXPECTED_TEXT = {
 }
 EXPECTED_BARCODE = "09506000123457|LOT-H7K4-29"
 SOLID_THRESHOLDS = {"C": 128, "M": 128, "Y": 128, "K": 128, "SC": 128, "OW": 128, "V": 116}
+
+
+def app_path(declared_path: str) -> Path:
+    """Resolve normative /app paths against the verifier-selected root."""
+    path = Path(declared_path)
+    if path.is_absolute() and len(path.parts) >= 2 and path.parts[1] == "app":
+        return APP.joinpath(*path.parts[2:])
+    return path
+
+
+def linear_to_srgb(values: np.ndarray) -> np.ndarray:
+    return np.where(
+        values <= 0.0031308,
+        12.92 * values,
+        1.055 * np.power(values, 1.0 / 2.4) - 0.055,
+    )
 
 
 def ticket() -> dict:
@@ -241,6 +257,15 @@ def test_agent_visible_sources_are_unchanged_and_recoverability_is_present():
         "tie_break_order": "manifest_schema.plate_order",
     }
     assert set(spec["plate_registry"]) == {"C", "M", "Y", "K", "SC", "OW", "V"}
+
+
+def test_verifier_uses_the_relocated_application_root():
+    """The verifier must exercise its non-default root instead of silently reading /app."""
+    configured_root = os.environ.get("CARTON_APP_ROOT")
+    assert configured_root is not None
+    assert APP.resolve() == Path(configured_root).resolve()
+    assert APP.resolve() != Path("/app").resolve()
+    assert app_path("/app/input/job_ticket.json") == INPUT / "job_ticket.json"
 
 
 def test_plate_archive_schema_and_numeric_types():
@@ -549,7 +574,9 @@ def test_pdf_has_functional_production_structure_and_matching_render():
         assert str(intents[0]["/OutputConditionIdentifier"]) == spec["output_intent"]["identifier"]
         embedded_profile = intents[0]["/DestOutputProfile"]
         assert int(embedded_profile["/N"]) == 4
-        assert embedded_profile.read_bytes() == Path(spec["output_intent"]["profile"]).read_bytes()
+        assert embedded_profile.read_bytes() == app_path(
+            spec["output_intent"]["profile"]
+        ).read_bytes()
 
         page = pdf.pages[0]
         expected_media = [value * 72.0 / 25.4 for value in spec["canvas"]["media_box_mm"]]
@@ -563,6 +590,10 @@ def test_pdf_has_functional_production_structure_and_matching_render():
         separation_contract = spec["output_intent"]["separation_color_space"]
         color_spaces = page.Resources["/ColorSpace"]
         separations = {}
+        plate_id_by_colorant = {
+            "/" + spec["plate_registry"][plate_id]["canonical_name"]: plate_id
+            for plate_id in separation_contract["plate_ids"]
+        }
         for resource_name, value in color_spaces.items():
             if not value or str(value[0]) != "/Separation":
                 continue
@@ -570,6 +601,7 @@ def test_pdf_has_functional_production_structure_and_matching_render():
             colorant_name = str(value[1])
             assert colorant_name not in separations
             alternate_name = str(value[2])
+            assert alternate_name == "/" + separation_contract["alternate_space"]
             alternate_components = {
                 "/" + name: count
                 for name, count in separation_contract[
@@ -600,9 +632,28 @@ def test_pdf_has_functional_production_structure_and_matching_render():
                 math.isfinite(item) and component_min <= item <= component_max
                 for item in start + end
             )
-            if separation_contract["require_nontrivial_endpoints"]:
-                assert not np.allclose(start, end, atol=1e-12)
-            separations[colorant_name] = str(resource_name)
+            plate_id = plate_id_by_colorant.get(colorant_name)
+            if plate_id is not None:
+                assert np.allclose(
+                    start,
+                    separation_contract["no_ink_alternate_rgb"],
+                    atol=separation_contract["endpoint_absolute_tolerance"],
+                )
+                expected_end = linear_to_srgb(
+                    np.asarray(
+                        spec["plate_registry"][plate_id]["transmission_linear_rgb"],
+                        dtype=np.float64,
+                    )
+                )
+                assert np.allclose(
+                    end,
+                    expected_end,
+                    atol=separation_contract["endpoint_absolute_tolerance"],
+                )
+            separations[colorant_name] = {
+                "resource_name": str(resource_name),
+                "object_generation": value.objgen,
+            }
 
         expected_separations = {
             "/" + spec["plate_registry"][plate_id]["canonical_name"]
@@ -610,30 +661,60 @@ def test_pdf_has_functional_production_structure_and_matching_render():
         }
         assert expected_separations.issubset(separations)
 
-        # A resource dictionary entry alone is inert. Require the page program to
-        # select, tint, and invoke a fill operation with every required spot space.
-        graphics_stack = []
-        fill_space = None
-        fill_tint_set = False
-        painted_spaces = set()
-        fill_operators = {"f", "F", "f*", "B", "B*", "b", "b*"}
+        # Require each Separation to carry the corresponding submitted coverage
+        # samples in a full-canvas image XObject, then require the page program to
+        # invoke that exact image. A zero-area path or unrelated fill cannot pass.
+        usage_contract = separation_contract["painted_usage"]
+        spot_images = {}
+        submitted_plates = load_plates()
+        for image_name, image in page.Resources["/XObject"].items():
+            if str(image.get("/Subtype", "")) != "/" + usage_contract["xobject_subtype"]:
+                continue
+            image_color_space = image.get("/ColorSpace")
+            if image_color_space is None:
+                continue
+            try:
+                is_required_separation = (
+                    len(image_color_space) == separation_contract["array_length"]
+                    and str(image_color_space[0]) == "/Separation"
+                )
+            except TypeError:
+                is_required_separation = False
+            if not is_required_separation:
+                continue
+            colorant_name = str(image_color_space[1])
+            plate_id = plate_id_by_colorant.get(colorant_name)
+            if plate_id is None:
+                continue
+            assert image_color_space.objgen == separations[colorant_name][
+                "object_generation"
+            ]
+            assert int(image["/Width"]) == spec["canvas"]["width_px"]
+            assert int(image["/Height"]) == spec["canvas"]["height_px"]
+            assert int(image["/BitsPerComponent"]) == usage_contract[
+                "bits_per_component"
+            ]
+            assert np.allclose(
+                [float(item) for item in image["/Decode"]],
+                usage_contract["decode"],
+                atol=1e-12,
+            )
+            samples = np.frombuffer(image.read_bytes(), dtype=np.uint8).reshape(
+                spec["canvas"]["height_px"], spec["canvas"]["width_px"]
+            )
+            assert np.array_equal(samples, submitted_plates[plate_id])
+            assert plate_id not in spot_images
+            spot_images[plate_id] = str(image_name)
+        assert set(spot_images) == set(separation_contract["plate_ids"])
+
+        invoked_xobjects = set()
         for operands, operator in pikepdf.parse_content_stream(page):
             operation = str(operator)
-            if operation == "q":
-                graphics_stack.append((fill_space, fill_tint_set))
-            elif operation == "Q":
-                fill_space, fill_tint_set = graphics_stack.pop()
-            elif operation == "cs" and len(operands) == 1:
-                fill_space = str(operands[0])
-                fill_tint_set = False
-            elif operation in {"sc", "scn"}:
-                fill_tint_set = True
-            elif operation in fill_operators and fill_space and fill_tint_set:
-                painted_spaces.add(fill_space)
+            if operation == usage_contract["operator"] and len(operands) == 1:
+                invoked_xobjects.add(str(operands[0]))
         if separation_contract["require_painted_usage"]:
             for plate_id in separation_contract["plate_ids"]:
-                colorant_name = "/" + spec["plate_registry"][plate_id]["canonical_name"]
-                assert separations[colorant_name] in painted_spaces
+                assert spot_images[plate_id] in invoked_xobjects
         ocg_names = {str(item["/Name"]) for item in pdf.Root["/OCProperties"]["/OCGs"]}
         assert set(spec["svg_contract"]["required_data_roles"]).issubset(ocg_names)
 

@@ -753,6 +753,7 @@ def build(root: Path) -> None:
             "separation_color_space": {
                 "plate_ids": ["SC", "OW", "V"],
                 "array_length": 4,
+                "alternate_space": "DeviceRGB",
                 "alternate_space_component_counts": {
                     "DeviceGray": 1,
                     "DeviceRGB": 3,
@@ -762,8 +763,19 @@ def build(root: Path) -> None:
                 "tint_domain": [0.0, 1.0],
                 "tint_exponent_min_exclusive": 0.0,
                 "component_value_range": [0.0, 1.0],
-                "require_nontrivial_endpoints": True,
+                "no_ink_alternate_rgb": [1.0, 1.0, 1.0],
+                "full_tint_alternate_rgb_rule": "apply the IEC 61966-2-1 sRGB transfer function independently to plate_registry.<plate_id>.transmission_linear_rgb",
+                "endpoint_absolute_tolerance": 1e-6,
                 "require_painted_usage": True,
+                "painted_usage": {
+                    "operator": "Do",
+                    "xobject_subtype": "Image",
+                    "bits_per_component": 8,
+                    "decode": [0.0, 1.0],
+                    "width_field": "canvas.width_px",
+                    "height_field": "canvas.height_px",
+                    "sample_semantics": "the image's decompressed one-byte samples must equal that plate's submitted uint8 coverage plane in row-major order",
+                },
             },
         },
         "acceptance_tolerances": {

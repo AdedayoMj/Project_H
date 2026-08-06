@@ -29,6 +29,14 @@ EVIDENCE = APP / "evidence"
 OUTPUT = APP / "output"
 
 
+def app_path(declared_path: str) -> Path:
+    """Resolve normative /app paths against the selected application root."""
+    path = Path(declared_path)
+    if path.is_absolute() and len(path.parts) >= 2 and path.parts[1] == "app":
+        return APP.joinpath(*path.parts[2:])
+    return path
+
+
 def prepare_output_directory(path: Path) -> None:
     """Create an empty output directory without following directory symlinks."""
     if path.is_symlink() or (path.exists() and not path.is_dir()):
@@ -436,6 +444,7 @@ def write_svg(ticket: dict, text_values: dict[str, str], barcode_payload: str, p
 def write_pdf(
     ticket: dict,
     proof_path: Path,
+    plates: dict[str, np.ndarray],
     text_values: dict[str, str],
     destination: Path,
 ) -> None:
@@ -483,7 +492,9 @@ def write_pdf(
         with pikepdf.open(base_path) as pdf:
             pdf.docinfo["/GTS_PDFXVersion"] = ticket["output_intent"]["pdfx_version"]
             pdf.docinfo["/Title"] = "Northstar folding-carton production proof"
-            profile = pdf.make_stream(Path(ticket["output_intent"]["profile"]).read_bytes())
+            profile = pdf.make_stream(
+                app_path(ticket["output_intent"]["profile"]).read_bytes()
+            )
             profile["/N"] = 4
             output_intent = pdf.make_indirect(
                 Dictionary(
@@ -505,35 +516,58 @@ def write_pdf(
             resources = page.Resources
             color_spaces = Dictionary()
             separation_usage = []
-            for plate_id in ("SC", "OW", "V"):
+            separation_contract = ticket["output_intent"]["separation_color_space"]
+            xobjects = resources.get("/XObject", Dictionary())
+            for plate_id in separation_contract["plate_ids"]:
                 registry = ticket["plate_registry"][plate_id]
+                start = np.asarray(
+                    separation_contract["no_ink_alternate_rgb"], dtype=np.float64
+                )
+                end = linear_to_srgb(
+                    np.asarray(registry["transmission_linear_rgb"], dtype=np.float64)
+                )
                 function = pdf.make_indirect(
                     Dictionary(
                         FunctionType=2,
                         Domain=Array([0.0, 1.0]),
-                        C0=Array([0.0, 0.0, 0.0, 0.0]),
-                        C1=Array([0.15, 0.55, 0.75, 0.12]),
+                        C0=Array(start.tolist()),
+                        C1=Array(end.tolist()),
                         N=1.0,
                     )
                 )
-                color_spaces[Name("/CS_" + plate_id)] = Array(
-                    [
-                        Name("/Separation"),
-                        Name("/" + registry["canonical_name"]),
-                        Name("/DeviceCMYK"),
-                        function,
-                    ]
+                color_space_name = Name("/CS_" + plate_id)
+                color_space = pdf.make_indirect(
+                    Array(
+                        [
+                            Name("/Separation"),
+                            Name("/" + registry["canonical_name"]),
+                            Name("/" + separation_contract["alternate_space"]),
+                            function,
+                        ]
+                    )
                 )
+                color_spaces[color_space_name] = color_space
+                image_name = Name("/DYN_SPOT_" + plate_id)
+                plate = np.ascontiguousarray(plates[plate_id], dtype=np.uint8)
+                plate_image = pdf.make_stream(plate.tobytes())
+                plate_image["/Type"] = Name("/XObject")
+                plate_image["/Subtype"] = Name("/Image")
+                plate_image["/Width"] = int(plate.shape[1])
+                plate_image["/Height"] = int(plate.shape[0])
+                plate_image["/ColorSpace"] = color_space
+                plate_image["/BitsPerComponent"] = 8
+                plate_image["/Decode"] = Array([0.0, 1.0])
+                xobjects[image_name] = plate_image
                 separation_usage.extend(
                     [
                         "q",
-                        f"/CS_{plate_id} cs",
-                        "1 scn",
-                        "0 0 0 0 re f",
+                        f"{page_width:.12g} 0 0 {page_height:.12g} 0 0 cm",
+                        f"/DYN_SPOT_{plate_id} Do",
                         "Q",
                     ]
                 )
             resources["/ColorSpace"] = color_spaces
+            resources["/XObject"] = xobjects
 
             roles = ticket["svg_contract"]["required_data_roles"]
             ocgs = []
@@ -560,14 +594,26 @@ def write_pdf(
                 page.Contents = Array([marker_stream, current])
 
             pdfx_version = ticket["output_intent"]["pdfx_version"]
+            xmp_contract = ticket["output_intent"]["xmp_pdfx"]
+            xmpmeta = ET.Element("{adobe:ns:meta/}xmpmeta")
+            rdf = ET.SubElement(
+                xmpmeta,
+                "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}RDF",
+            )
+            description = ET.SubElement(
+                rdf,
+                "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}Description",
+            )
+            description.set(
+                "{" + xmp_contract["namespace_uri"] + "}"
+                + xmp_contract["version_property"],
+                pdfx_version,
+            )
             xmp = (
-                '<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>'
-                '<x:xmpmeta xmlns:x="adobe:ns:meta/">'
-                '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
-                '<rdf:Description xmlns:pdfxid="http://www.npes.org/pdfx/ns/id/" '
-                f'pdfxid:GTS_PDFXVersion="{pdfx_version}"/>'
-                "</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>"
-            ).encode("utf-8")
+                b'<?xpacket begin="\xef\xbb\xbf" id="W5M0MpCehiHzreSzNTczkc9d"?>'
+                + ET.tostring(xmpmeta, encoding="utf-8", xml_declaration=False)
+                + b'<?xpacket end="w"?>'
+            )
             metadata = pdf.make_stream(xmp)
             metadata["/Type"] = Name("/Metadata")
             metadata["/Subtype"] = Name("/XML")
@@ -595,7 +641,7 @@ def main() -> None:
     manifest = make_manifest(ticket, sources, text_values, barcode_payload)
     (OUTPUT / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     write_svg(ticket, text_values, barcode_payload, OUTPUT / "production.svg")
-    write_pdf(ticket, proof_path, text_values, OUTPUT / "production.pdf")
+    write_pdf(ticket, proof_path, plates, text_values, OUTPUT / "production.pdf")
 
 
 if __name__ == "__main__":
