@@ -15,7 +15,8 @@ from functools import lru_cache
 from pathlib import Path
 
 import pytest
-from shapely.geometry import shape
+from shapely import affinity
+from shapely.geometry import mapping, shape
 
 from reference_model import SCENARIO_IDS, calculate
 
@@ -28,6 +29,7 @@ GEOJSON_PATH = OUTPUT / "allocation-frontier.geojson"
 CSV_PATH = OUTPUT / "allocation-frontier.csv"
 CERTIFICATE_PATH = OUTPUT / "optimality-certificate.json"
 SOLVER_PATH = OUTPUT / "solver.py"
+RESTRICTED_RUNNER = TESTS / "restricted_solver_runner.py"
 
 BASE_FIELDS = [
     "campaign_id",
@@ -242,6 +244,26 @@ def mutate_csv(path, transforms):
         writer.writerows(rows)
 
 
+def transform_geojson(path, x_factor, y_factor, x_offset, y_offset):
+    """Apply the same invertible affine transform to every GeoJSON geometry."""
+    document = json.loads(path.read_text())
+    features = (
+        document["features"]
+        if document["type"] == "FeatureCollection"
+        else [document]
+    )
+    for feature in features:
+        geometry = affinity.scale(
+            shape(feature["geometry"]),
+            xfact=x_factor,
+            yfact=y_factor,
+            origin=(0.0, 0.0),
+        )
+        geometry = affinity.translate(geometry, xoff=x_offset, yoff=y_offset)
+        feature["geometry"] = mapping(geometry)
+    path.write_text(json.dumps(document, separators=(",", ":")) + "\n")
+
+
 def build_counterfactual_input(destination):
     manifest = json.loads((INPUT / "manifest.json").read_text())
     campaign = min(
@@ -257,8 +279,28 @@ def build_counterfactual_input(destination):
     shutil.copytree(source, target)
     shutil.copy2(INPUT / "specification.md", destination / "specification.md")
 
+    x_factor, y_factor = 1.071, 0.943
+    x_offset, y_offset = 137.25, -83.75
+    for filename in (
+        "field_boundary.geojson",
+        "soil_map_units.geojson",
+        "irrigation_events.geojson",
+    ):
+        transform_geojson(
+            target / filename,
+            x_factor,
+            y_factor,
+            x_offset,
+            y_offset,
+        )
+
     ticket_path = target / "job_ticket.json"
     ticket = json.loads(ticket_path.read_text())
+    grid = ticket["grid"]
+    grid["origin_x"] = x_factor * float(grid["origin_x"]) + x_offset
+    grid["origin_y"] = y_factor * float(grid["origin_y"]) + y_offset
+    grid["cell_width_m"] = x_factor * float(grid["cell_width_m"])
+    grid["cell_height_m"] = y_factor * float(grid["cell_height_m"])
     ticket["crop"]["kc_intercept"] = float(ticket["crop"]["kc_intercept"]) + 0.017
     ticket["pump"]["volume_budget_m3"] *= 0.82
     ticket["salinity"]["rainfall_ec_ds_m"] += 0.037
@@ -298,6 +340,32 @@ def build_counterfactual_input(destination):
         + "\n"
     )
     return campaign_id
+
+
+def run_restricted_solver(solver_path, input_root, output_root, cwd, timeout=180):
+    """Execute a solver in isolated mode with verifier access denied by an audit hook."""
+    environment = os.environ.copy()
+    environment.pop("IRRIGATION_APP_ROOT", None)
+    environment.pop("PYTHONPATH", None)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    return subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            str(RESTRICTED_RUNNER),
+            str(solver_path),
+            "--input-root",
+            str(input_root),
+            "--output-root",
+            str(output_root),
+        ],
+        cwd=cwd,
+        env=environment,
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        check=False,
+    )
 
 
 def validate_complete_output(output_root, input_root):
@@ -648,8 +716,41 @@ def test_csv_is_a_lossless_flat_view_of_geojson_properties():
             close(float(csv_row[field]), geo_row[field], 1e-10, 1e-10)
 
 
-def test_reusable_solver_generalizes_to_private_state_and_policy_changes(tmp_path):
-    """A fixed published frontier fails when state drivers and contingency policy both change."""
+def test_restricted_runner_denies_the_oracle_and_process_escape(tmp_path):
+    """A solver cannot import/read the verifier oracle or spawn an escape process."""
+    oracle_probe = tmp_path / "oracle_probe.py"
+    oracle_probe.write_text(
+        "from pathlib import Path\n"
+        f"Path({str(TESTS / 'reference_model.py')!r}).read_text()\n"
+    )
+    completed = run_restricted_solver(
+        oracle_probe,
+        tmp_path / "unused-input",
+        tmp_path / "unused-output",
+        tmp_path,
+        timeout=30,
+    )
+    assert completed.returncode != 0
+    assert "submitted solvers cannot read verifier files" in completed.stderr
+
+    process_probe = tmp_path / "process_probe.py"
+    process_probe.write_text(
+        "import subprocess, sys\n"
+        "subprocess.run([sys.executable, '-c', 'pass'], check=True)\n"
+    )
+    completed = run_restricted_solver(
+        process_probe,
+        tmp_path / "unused-input",
+        tmp_path / "unused-output",
+        tmp_path,
+        timeout=30,
+    )
+    assert completed.returncode != 0
+    assert "submitted solvers cannot use subprocess.Popen" in completed.stderr
+
+
+def test_reusable_solver_generalizes_to_private_geometry_state_and_policy(tmp_path):
+    """The solver must handle unseen geometry plus changed state and contingency policy."""
     challenge_input = tmp_path / "counterfactual-input"
     challenge_output = tmp_path / "counterfactual-output"
     campaign_id = build_counterfactual_input(challenge_input)
@@ -659,6 +760,18 @@ def test_reusable_solver_generalizes_to_private_state_and_policy_changes(tmp_pat
     assert [row["unit_id"] for row in counterfactual_rows] == [
         row["unit_id"] for row in published_campaign
     ]
+    source = INPUT / "campaigns" / campaign_id
+    challenge = challenge_input / "campaigns" / campaign_id
+    source_field = shape(json.loads((source / "field_boundary.geojson").read_text())["geometry"])
+    challenge_field = shape(
+        json.loads((challenge / "field_boundary.geojson").read_text())["geometry"]
+    )
+    assert source_field.symmetric_difference(challenge_field).area > 1.0
+    source_grid = json.loads((source / "job_ticket.json").read_text())["grid"]
+    challenge_grid = json.loads((challenge / "job_ticket.json").read_text())["grid"]
+    assert challenge_grid != source_grid
+    assert challenge_grid["cell_width_m"] != source_grid["cell_width_m"]
+    assert challenge_grid["cell_height_m"] != source_grid["cell_height_m"]
     changed = 0
     for counterfactual, published in zip(
         counterfactual_rows, published_campaign, strict=True
@@ -680,25 +793,11 @@ def test_reusable_solver_generalizes_to_private_state_and_policy_changes(tmp_pat
         "satisfaction_ratio"
     ]
 
-    environment = os.environ.copy()
-    environment.pop("IRRIGATION_APP_ROOT", None)
-    environment.pop("PYTHONPATH", None)
-    environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(SOLVER_PATH),
-            "--input-root",
-            str(challenge_input),
-            "--output-root",
-            str(challenge_output),
-        ],
-        cwd=tmp_path,
-        env=environment,
-        text=True,
-        capture_output=True,
-        timeout=180,
-        check=False,
+    completed = run_restricted_solver(
+        SOLVER_PATH,
+        challenge_input,
+        challenge_output,
+        tmp_path,
     )
     assert completed.returncode == 0, (completed.stdout[-2000:], completed.stderr[-2000:])
     validate_complete_output(challenge_output, challenge_input)
