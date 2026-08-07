@@ -21,8 +21,8 @@ TESTS = Path(__file__).parent
 POLICY_PATH = OUTPUT / "rescue_policy.json"
 SOLVER_PATH = OUTPUT / "solver.py"
 
-TOP_FIELDS = {"schema_version", "arenas"}
-ARENA_FIELDS = {
+DOCUMENT_KEYS = {"schema_version", "arenas"}
+ARENA_KEYS = {
     "arena_id",
     "root_node_id",
     "worst_case_turns",
@@ -32,7 +32,7 @@ ARENA_FIELDS = {
     "policy_sha256",
     "nodes",
 }
-NODE_FIELDS = {
+CONTEXT_KEYS = {
     "node_id",
     "team_a_node",
     "team_b_node",
@@ -48,134 +48,190 @@ NODE_FIELDS = {
     "action",
     "outcomes",
 }
-OUTCOME_FIELDS = {"observation", "next_node_id"}
+BRANCH_KEYS = {"observation", "next_node_id"}
 
 
 @lru_cache(maxsize=1)
-def submitted():
-    return json.loads(POLICY_PATH.read_text())
+def candidate_policy():
+    """Load the submitted policy once for all read-only checks."""
+    return read_json(POLICY_PATH)
 
 
 @lru_cache(maxsize=1)
-def reference():
+def oracle_policy():
+    """Compute the independent answer and retain its arena engines."""
     return calculate(INPUT)
 
 
-def regular_file(path):
+def read_json(path):
+    """Decode one UTF-8 JSON artifact."""
+    return json.loads(path.read_text())
+
+
+def ordinary_file(path):
+    """Reject missing files, symlinks, sockets, and other special paths."""
     return path.exists() and not path.is_symlink() and stat.S_ISREG(path.stat().st_mode)
 
 
-def sha256(path):
+def file_sha256(path):
+    """Hash a file exactly as it appears in the generated input tree."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def source_arenas(input_root=INPUT):
-    manifest = json.loads((input_root / "manifest.json").read_text())
-    return [json.loads((input_root / row["file"]).read_text()) for row in manifest["arenas"]]
+def arena_inputs(input_root=INPUT):
+    """Yield generated arena documents in manifest order."""
+    manifest = read_json(input_root / "manifest.json")
+    return [read_json(input_root / item["file"]) for item in manifest["arenas"]]
 
 
-def validate_complete_document(document, input_root):
-    expected, engines = calculate(input_root)
-    assert document == expected
-    assert set(document) == TOP_FIELDS
-    assert type(document["schema_version"]) is int
-    assert document["schema_version"] == 1
-    for arena_row in document["arenas"]:
-        assert set(arena_row) == ARENA_FIELDS
-        engine = engines[arena_row["arena_id"]]
-        by_id = {node["node_id"]: node for node in arena_row["nodes"]}
-        assert len(by_id) == arena_row["policy_node_count"] == len(arena_row["nodes"])
-        assert arena_row["root_node_id"] in by_id
-        assert arena_row["policy_sha256"] == hashlib.sha256(
-            encoded(arena_row["nodes"]).encode()
+class PolicyAudit:
+    """Reconstruct and replay a complete policy against one input directory."""
+
+    def __init__(self, document, input_root):
+        self.document = document
+        self.expected, self.engines = calculate(input_root)
+
+    def run(self):
+        """Apply deep equality plus independent identity and transition checks."""
+        assert set(self.document) == DOCUMENT_KEYS
+        assert type(self.document["schema_version"]) is int
+        assert self.document["schema_version"] == 1
+        assert self.document == self.expected
+        for arena in self.document["arenas"]:
+            self.audit_arena(arena)
+
+    def audit_arena(self, arena):
+        """Check one arena's summary, node index, digest, and closed branches."""
+        assert set(arena) == ARENA_KEYS
+        engine = self.engines[arena["arena_id"]]
+        node_index = {row["node_id"]: row for row in arena["nodes"]}
+        assert len(node_index) == len(arena["nodes"])
+        assert arena["policy_node_count"] == len(node_index)
+        assert arena["root_node_id"] in node_index
+        assert arena["policy_sha256"] == hashlib.sha256(
+            encoded(arena["nodes"]).encode()
         ).hexdigest()
-        for node in arena_row["nodes"]:
-            assert set(node) == NODE_FIELDS
-            context = engine.context_from_json(node)
-            state, turns, energy = context
-            assert node["node_id"] == engine.identifier(*context)
-            value = engine.contextual_value(*context)
-            _, action, branches, action_count = engine.choice(*context)
-            assert (
-                node["remaining_worst_case_turns"],
-                node["remaining_worst_case_energy"],
-                node["remaining_worst_case_handoffs"],
-            ) == value
-            assert node["optimal_action_count"] == action_count
-            assert node["action"] == action
-            elapsed, consumed = (0, 0)
-            if action is not None:
-                elapsed, consumed, _ = engine.cost(state, action)
-            expected_outcomes = [
-                {
-                    "observation": observation,
-                    "next_node_id": engine.identifier(
-                        child, turns - elapsed, energy - consumed
-                    ),
-                }
-                for observation, child in branches
-            ]
-            assert node["outcomes"] == expected_outcomes
-            assert all(outcome["next_node_id"] in by_id for outcome in node["outcomes"])
-        engine.clear_caches()
+        try:
+            for row in arena["nodes"]:
+                self.audit_context(engine, node_index, row)
+        finally:
+            engine.clear_caches()
+
+    @staticmethod
+    def audit_context(engine, node_index, row):
+        """Re-derive one contextual decision and all of its observation targets."""
+        assert set(row) == CONTEXT_KEYS
+        state, turn_room, energy_room = engine.context_from_json(row)
+        context = state, turn_room, energy_room
+        assert row["node_id"] == engine.identifier(*context)
+
+        remaining = engine.contextual_value(*context)
+        _, selected, branches, tie_count = engine.choice(*context)
+        recorded = (
+            row["remaining_worst_case_turns"],
+            row["remaining_worst_case_energy"],
+            row["remaining_worst_case_handoffs"],
+        )
+        assert recorded == remaining
+        assert row["action"] == selected
+        assert row["optimal_action_count"] == tie_count
+
+        turn_charge = energy_charge = 0
+        if selected is not None:
+            turn_charge, energy_charge, _ = engine.cost(state, selected)
+        derived_branches = [
+            {
+                "observation": observation,
+                "next_node_id": engine.identifier(
+                    successor,
+                    turn_room - turn_charge,
+                    energy_room - energy_charge,
+                ),
+            }
+            for observation, successor in branches
+        ]
+        assert row["outcomes"] == derived_branches
+        assert all(branch["next_node_id"] in node_index for branch in derived_branches)
 
 
-def build_counterfactual(destination):
-    arena = json.loads((INPUT / "arenas" / "rescue_02.json").read_text())
-    arena["arena_id"] = "private_contingency"
-    node_ids = [node["node_id"] for node in arena["nodes"]]
-    arena["teams"][0]["start_node"] = node_ids[2]
-    arena["teams"][1]["start_node"] = node_ids[-2]
-    arena["teams"][0]["scan_energy"] += 2
-    arena["teams"][1]["move_energy_multiplier"] += 1
-    victim_nodes = [node_ids[-1], node_ids[-3], node_ids[4], node_ids[6]]
-    for victim, node_id in zip(arena["victims"], victim_nodes, strict=True):
-        victim["node"] = node_id
-    modes = arena["mode_ids"]
-    for edge_number, edge in enumerate(arena["edges"]):
-        edge["energy_cost"] += 1 + edge_number % 2
-        if len(edge["safe_modes"]) != len(modes):
-            edge["safe_modes"] = sorted(
-                modes[(modes.index(mode) + 1 + edge_number % 2) % len(modes)]
-                for mode in edge["safe_modes"]
+def write_unseen_incident(destination):
+    """Materialize a schema-compatible rescue case not present in the image."""
+    incident = read_json(INPUT / "arenas" / "rescue_02.json")
+    incident["arena_id"] = "private_contingency"
+    places = [row["node_id"] for row in incident["nodes"]]
+    team_a, team_b = incident["teams"]
+    team_a["start_node"], team_b["start_node"] = places[2], places[-2]
+    team_a["scan_energy"] += 2
+    team_b["move_energy_multiplier"] += 1
+
+    relocated = (places[-1], places[-3], places[4], places[6])
+    for victim, place in zip(incident["victims"], relocated, strict=True):
+        victim["node"] = place
+
+    modes = incident["mode_ids"]
+    mode_position = {mode: index for index, mode in enumerate(modes)}
+    for number, road in enumerate(incident["edges"]):
+        road["energy_cost"] += 1 + number % 2
+        if len(road["safe_modes"]) < len(modes):
+            road["safe_modes"] = sorted(
+                modes[(mode_position[mode] + 1 + number % 2) % len(modes)]
+                for mode in road["safe_modes"]
             )
-    for node_number, node in enumerate(arena["nodes"]):
-        if node["signals"] is not None:
-            old = node["signals"]
-            node["signals"] = {
-                mode: old[modes[-1 - modes.index(mode)]] + f"_P{node_number % 2}"
+
+    for number, place in enumerate(incident["nodes"]):
+        signals = place["signals"]
+        if signals is not None:
+            place["signals"] = {
+                mode: signals[modes[-1 - mode_position[mode]]] + f"_P{number % 2}"
                 for mode in modes
             }
 
-    arena_root = destination / "arenas"
-    arena_root.mkdir(parents=True)
-    arena_path = arena_root / "private_contingency.json"
-    arena_path.write_text(json.dumps(arena, indent=2, sort_keys=True) + "\n")
-    (destination / "manifest.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "arenas": [
-                    {
-                        "arena_id": "private_contingency",
-                        "file": "arenas/private_contingency.json",
-                    }
-                ],
-            },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n"
-    )
+    arena_directory = destination / "arenas"
+    arena_directory.mkdir(parents=True)
+    payloads = {
+        arena_directory / "private_contingency.json": incident,
+        destination / "manifest.json": {
+            "schema_version": 1,
+            "arenas": [
+                {
+                    "arena_id": "private_contingency",
+                    "file": "arenas/private_contingency.json",
+                }
+            ],
+        },
+    }
+    for path, payload in payloads.items():
+        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     shutil.copy2(INPUT / "rules.json", destination / "rules.json")
-    return arena
+    return incident
+
+
+def arena_engine_pairs():
+    """Pair each submitted arena record with its independent replay engine."""
+    _, engines = oracle_policy()
+    return [
+        (record, engines[record["arena_id"]])
+        for record in candidate_policy()["arenas"]
+    ]
+
+
+def remaining_value(context_row):
+    """Read the three trace maxima recorded at one policy context."""
+    return tuple(
+        context_row[field]
+        for field in (
+            "remaining_worst_case_turns",
+            "remaining_worst_case_energy",
+            "remaining_worst_case_handoffs",
+        )
+    )
 
 
 def test_required_artifacts_are_regular_parseable_files():
     """The policy and reusable solver exist as ordinary top-level artifacts."""
-    assert regular_file(POLICY_PATH)
-    assert regular_file(SOLVER_PATH)
-    assert isinstance(submitted(), dict)
+    assert ordinary_file(POLICY_PATH)
+    assert ordinary_file(SOLVER_PATH)
+    assert isinstance(candidate_policy(), dict)
     compile(SOLVER_PATH.read_text(), str(SOLVER_PATH), "exec")
 
 
@@ -183,7 +239,7 @@ def test_generated_input_tree_is_immutable_and_hash_locked():
     """Every agent-visible arena and rule file retains its generated bytes."""
     expected = json.loads((TESTS / "expected.json").read_text())["input_sha256"]
     found = {
-        path.relative_to(INPUT).as_posix(): sha256(path)
+        path.relative_to(INPUT).as_posix(): file_sha256(path)
         for path in sorted(INPUT.rglob("*"))
         if path.is_file()
     }
@@ -206,7 +262,7 @@ def test_manifest_and_arena_schemas_are_exact():
     assert [row["arena_id"] for row in manifest["arenas"]] == sorted(
         row["arena_id"] for row in manifest["arenas"]
     )
-    for record, arena in zip(manifest["arenas"], source_arenas(), strict=True):
+    for record, arena in zip(manifest["arenas"], arena_inputs(), strict=True):
         assert set(record) == {"arena_id", "file"}
         assert arena["arena_id"] == record["arena_id"]
         assert set(arena) == {
@@ -230,7 +286,7 @@ def test_fixtures_exercise_partial_observation_and_asymmetric_resources():
     mode_counts = set()
     node_counts = set()
     sensor_partitions = set()
-    for arena in source_arenas():
+    for arena in arena_inputs():
         modes = arena["mode_ids"]
         mode_counts.add(len(modes))
         node_counts.add(len(arena["nodes"]))
@@ -255,7 +311,7 @@ def test_fixtures_exercise_partial_observation_and_asymmetric_resources():
 
 def test_reference_policies_activate_branching_scans_failures_and_ties():
     """Calibrated optima contain genuine observation branches and all policy cruxes."""
-    document, _ = reference()
+    document, _ = oracle_policy()
     calibration = json.loads((TESTS / "expected.json").read_text())["calibration"]
     assert len(document["arenas"]) == calibration["arena_count"]
     assert sum(row["policy_node_count"] for row in document["arenas"]) == calibration[
@@ -282,141 +338,141 @@ def test_reference_policies_activate_branching_scans_failures_and_ties():
     assert branching_nodes >= 10
 
 
-def test_output_uses_exact_nested_schemas_and_canonical_order():
-    """No undeclared fields, malformed types, or reordered policy records are accepted."""
-    document = submitted()
-    assert set(document) == TOP_FIELDS
-    assert type(document["schema_version"]) is int
-    assert document["schema_version"] == 1
-    manifest = json.loads((INPUT / "manifest.json").read_text())
-    assert [row["arena_id"] for row in document["arenas"]] == [
-        row["arena_id"] for row in manifest["arenas"]
+def test_policy_serialization_has_the_exact_typed_contract():
+    """Reject Boolean integers, extra keys, bad ordering, and malformed contexts."""
+    policy = candidate_policy()
+    assert set(policy) == DOCUMENT_KEYS
+    assert type(policy["schema_version"]) is int and policy["schema_version"] == 1
+
+    manifest_order = [
+        item["arena_id"] for item in read_json(INPUT / "manifest.json")["arenas"]
     ]
-    for arena in document["arenas"]:
-        assert set(arena) == ARENA_FIELDS
-        assert type(arena["worst_case_turns"]) is int
-        assert type(arena["worst_case_energy"]) is int
-        assert type(arena["worst_case_handoffs"]) is int
-        assert type(arena["policy_node_count"]) is int
-        assert len(arena["policy_sha256"]) == 64
-        assert [node["node_id"] for node in arena["nodes"]] == sorted(
-            node["node_id"] for node in arena["nodes"]
-        )
-        for node in arena["nodes"]:
-            assert set(node) == NODE_FIELDS
-            assert node["last_actor"] in (None, "A", "B")
-            assert type(node["turn_budget"]) is int and node["turn_budget"] >= 0
-            assert type(node["energy_budget"]) is int and node["energy_budget"] >= 0
-            assert type(node["remaining_worst_case_turns"]) is int
-            assert type(node["remaining_worst_case_energy"]) is int
-            assert type(node["remaining_worst_case_handoffs"]) is int
-            assert node["remaining_worst_case_turns"] <= node["turn_budget"]
-            assert node["remaining_worst_case_energy"] <= node["energy_budget"]
-            assert type(node["optimal_action_count"]) is int
-            assert node["optimal_action_count"] >= 1
-            assert [row["observation"] for row in node["outcomes"]] == sorted(
-                row["observation"] for row in node["outcomes"]
-            )
-            assert all(set(outcome) == OUTCOME_FIELDS for outcome in node["outcomes"])
+    assert [item["arena_id"] for item in policy["arenas"]] == manifest_order
+
+    summary_integers = (
+        "worst_case_turns",
+        "worst_case_energy",
+        "worst_case_handoffs",
+        "policy_node_count",
+    )
+    context_integers = (
+        "turn_budget",
+        "energy_budget",
+        "remaining_worst_case_turns",
+        "remaining_worst_case_energy",
+        "remaining_worst_case_handoffs",
+        "optimal_action_count",
+    )
+    for report in policy["arenas"]:
+        assert set(report) == ARENA_KEYS
+        assert all(type(report[field]) is int for field in summary_integers)
+        assert all(report[field] >= 0 for field in summary_integers)
+        assert len(report["policy_sha256"]) == 64
+        identifiers = [row["node_id"] for row in report["nodes"]]
+        assert identifiers == sorted(identifiers)
+
+        for context in report["nodes"]:
+            assert set(context) == CONTEXT_KEYS
+            assert context["last_actor"] in (None, "A", "B")
+            assert all(type(context[field]) is int for field in context_integers)
+            assert all(context[field] >= 0 for field in context_integers)
+            assert context["optimal_action_count"] >= 1
+            assert context["remaining_worst_case_turns"] <= context["turn_budget"]
+            assert context["remaining_worst_case_energy"] <= context["energy_budget"]
+            observations = [branch["observation"] for branch in context["outcomes"]]
+            assert observations == sorted(observations)
+            assert all(set(branch) == BRANCH_KEYS for branch in context["outcomes"])
 
 
 def test_arena_summaries_and_complete_policy_values_match_independent_model():
     """Every root value, action, local value, multiplicity, and observation target is pinned."""
-    expected, _ = reference()
-    assert submitted() == expected
+    expected, _ = oracle_policy()
+    assert candidate_policy() == expected
 
 
-def test_state_ids_roots_and_policy_digests_are_functional():
-    """Context identities and whole-policy digests are recomputed from submitted content."""
-    _, engines = reference()
-    for arena in submitted()["arenas"]:
-        engine = engines[arena["arena_id"]]
-        root = engine.initial()
-        root_context = (root, *engine.initial_budgets(root))
-        assert arena["root_node_id"] == engine.identifier(*root_context)
-        assert arena["policy_node_count"] == len(arena["nodes"])
-        assert arena["policy_sha256"] == hashlib.sha256(
-            encoded(arena["nodes"]).encode()
-        ).hexdigest()
-        for node in arena["nodes"]:
-            assert node["node_id"] == engine.identifier(*engine.context_from_json(node))
+def test_context_hashes_root_identity_and_policy_digest_are_rederived():
+    """Bind every identifier to state plus envelopes and bind each arena to its nodes."""
+    for report, engine in arena_engine_pairs():
+        initial_state = engine.initial()
+        initial_context = initial_state, *engine.initial_budgets(initial_state)
+        assert report["root_node_id"] == engine.identifier(*initial_context)
+        assert report["policy_node_count"] == len(report["nodes"])
+        digest = hashlib.sha256(encoded(report["nodes"]).encode()).hexdigest()
+        assert report["policy_sha256"] == digest
+        for context in report["nodes"]:
+            decoded = engine.context_from_json(context)
+            assert context["node_id"] == engine.identifier(*decoded)
         engine.clear_caches()
 
 
-def test_submitted_actions_reproduce_exact_belief_partitions_and_costs():
-    """Every policy edge is a legal scan or move with complete mode-observation coverage."""
-    _, engines = reference()
-    for arena in submitted()["arenas"]:
-        engine = engines[arena["arena_id"]]
-        node_ids = {node["node_id"] for node in arena["nodes"]}
-        for node in arena["nodes"]:
-            state, turns, energy = engine.context_from_json(node)
+def test_actions_replay_every_mode_partition_into_the_reported_successors():
+    """Re-execute each move or scan and account for its turn and energy charges."""
+    for report, engine in arena_engine_pairs():
+        identifiers = {context["node_id"] for context in report["nodes"]}
+        for context in report["nodes"]:
+            state, turn_room, energy_room = engine.context_from_json(context)
             if engine.goal(state):
-                assert node["action"] is None and node["outcomes"] == []
+                assert context["action"] is None
+                assert context["outcomes"] == []
                 continue
-            assert node["action"] in engine.available(state)
-            elapsed, consumed, _ = engine.cost(state, node["action"])
-            expected = [
+            action = context["action"]
+            assert action in engine.available(state)
+            turn_charge, energy_charge, _ = engine.cost(state, action)
+            replayed = [
                 {
                     "observation": observation,
                     "next_node_id": engine.identifier(
-                        child, turns - elapsed, energy - consumed
+                        successor,
+                        turn_room - turn_charge,
+                        energy_room - energy_charge,
                     ),
                 }
-                for observation, child in engine.advance(state, node["action"])
+                for observation, successor in engine.advance(state, action)
             ]
-            assert node["outcomes"] == expected
-            assert all(row["next_node_id"] in node_ids for row in expected)
+            assert context["outcomes"] == replayed
+            assert all(branch["next_node_id"] in identifiers for branch in replayed)
         engine.clear_caches()
 
 
-def test_policy_graph_is_closed_acyclic_and_strong_for_every_mode():
-    """Every compatible observation trace stays in the graph and reaches a rescue goal."""
-    _, engines = reference()
-    for arena in submitted()["arenas"]:
-        engine = engines[arena["arena_id"]]
-        nodes = {node["node_id"]: node for node in arena["nodes"]}
-        reachable = set()
-        pending = deque([arena["root_node_id"]])
-        while pending:
-            node_id = pending.popleft()
-            if node_id in reachable:
+def test_incident_policy_is_closed_and_descends_to_rescue_on_every_observation():
+    """Walk the graph and prove resource descent, reachability, and terminal rescue."""
+    for report, engine in arena_engine_pairs():
+        contexts = {row["node_id"]: row for row in report["nodes"]}
+        visited = set()
+        frontier = deque([report["root_node_id"]])
+        while frontier:
+            identifier = frontier.popleft()
+            if identifier in visited:
                 continue
-            reachable.add(node_id)
-            node = nodes[node_id]
-            state, turns, energy = engine.context_from_json(node)
+            visited.add(identifier)
+            context = contexts[identifier]
+            state, turn_room, energy_room = engine.context_from_json(context)
             if engine.goal(state):
-                assert node["remaining_worst_case_turns"] == 0
+                assert remaining_value(context) == (0, 0, 0)
                 continue
-            turn_cost, energy_cost, _ = engine.cost(state, node["action"])
-            for outcome in node["outcomes"]:
-                child = nodes[outcome["next_node_id"]]
-                assert child["turn_budget"] == turns - turn_cost
-                assert child["energy_budget"] == energy - energy_cost
-                assert child["remaining_worst_case_turns"] <= (
-                    node["remaining_worst_case_turns"] - turn_cost
+            turn_charge, energy_charge, _ = engine.cost(state, context["action"])
+            for branch in context["outcomes"]:
+                successor = contexts[branch["next_node_id"]]
+                assert successor["turn_budget"] == turn_room - turn_charge
+                assert successor["energy_budget"] == energy_room - energy_charge
+                assert successor["remaining_worst_case_turns"] <= (
+                    context["remaining_worst_case_turns"] - turn_charge
                 )
-                pending.append(outcome["next_node_id"])
-        assert reachable == set(nodes)
+                frontier.append(branch["next_node_id"])
+        assert visited == set(contexts)
         engine.clear_caches()
 
 
-def test_canonical_action_and_local_optimal_action_count_are_exact():
-    """Each budget context uses the canonical action and exact tied-action count."""
-    _, engines = reference()
-    for arena in submitted()["arenas"]:
-        engine = engines[arena["arena_id"]]
-        for node in arena["nodes"]:
-            context = engine.context_from_json(node)
-            value = engine.contextual_value(*context)
-            _, action, _, count = engine.choice(*context)
-            assert node["action"] == action
-            assert node["optimal_action_count"] == count
-            assert (
-                node["remaining_worst_case_turns"],
-                node["remaining_worst_case_energy"],
-                node["remaining_worst_case_handoffs"],
-            ) == value
+def test_each_residual_envelope_uses_the_canonical_handoff_minimizer():
+    """Pin the contextual action, tie multiplicity, and selected subtree maxima."""
+    for report, engine in arena_engine_pairs():
+        for row in report["nodes"]:
+            context = engine.context_from_json(row)
+            expected_value = engine.contextual_value(*context)
+            _, expected_action, _, expected_count = engine.choice(*context)
+            assert row["action"] == expected_action
+            assert row["optimal_action_count"] == expected_count
+            assert remaining_value(row) == expected_value
         engine.clear_caches()
 
 
@@ -508,10 +564,10 @@ def test_reusable_solver_generalizes_to_private_contingency(tmp_path):
     """Fixed published policies fail when starts, rescues, observations, modes, and costs change."""
     hidden_input = tmp_path / "hidden-input"
     hidden_output = tmp_path / "hidden-output"
-    hidden_arena = build_counterfactual(hidden_input)
+    hidden_arena = write_unseen_incident(hidden_input)
     expected, _ = calculate(hidden_input)
     published = next(
-        arena for arena in submitted()["arenas"] if arena["arena_id"] == "rescue_02"
+        arena for arena in candidate_policy()["arenas"] if arena["arena_id"] == "rescue_02"
     )
     assert expected["arenas"][0]["arena_id"] == hidden_arena["arena_id"]
     assert expected["arenas"][0]["root_node_id"] != published["root_node_id"]
@@ -539,9 +595,9 @@ def test_reusable_solver_generalizes_to_private_contingency(tmp_path):
     )
     assert completed.returncode == 0, (completed.stdout[-2000:], completed.stderr[-2000:])
     actual = json.loads((hidden_output / "rescue_policy.json").read_text())
-    validate_complete_document(actual, hidden_input)
+    PolicyAudit(actual, hidden_input).run()
 
 
 def test_complete_value_level_validator_accepts_published_oracle():
     """The reusable full validator covers the published output without special paths."""
-    validate_complete_document(submitted(), INPUT)
+    PolicyAudit(candidate_policy(), INPUT).run()
