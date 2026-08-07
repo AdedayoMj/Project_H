@@ -1,7 +1,7 @@
 artifacts = ["/app/output/first_push_frontier.json"]
 
 [task]
-name = "dynamo/sokoban-first-push-frontier"
+name = "dynamo/sokoban-push-frontier"
 description = "Audit every reachable Sokoban opening push for conditional optimality, regret, solvability, and completion multiplicity."
 
 [metadata]

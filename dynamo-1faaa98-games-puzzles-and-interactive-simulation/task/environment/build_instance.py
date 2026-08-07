@@ -30,7 +30,6 @@ CAMPAIGNS = (
         "depletion_fraction": 0.48,
         "efficiency": 0.83,
         "max_application_mm": 34.0,
-        "zone_edges_mm": (0.0, 8.0, 16.0, 24.0, 32.0),
         "soil_rotation_degrees": 8.0,
         "split_field": False,
         "drainage_storm": (2, 72.0),
@@ -52,7 +51,6 @@ CAMPAIGNS = (
         "depletion_fraction": 0.44,
         "efficiency": 0.79,
         "max_application_mm": 27.0,
-        "zone_edges_mm": (0.0, 7.5, 15.0, 22.5),
         "soil_rotation_degrees": -13.0,
         "split_field": True,
         "drainage_storm": (0, 84.0),
@@ -74,7 +72,6 @@ CAMPAIGNS = (
         "depletion_fraction": 0.51,
         "efficiency": 0.86,
         "max_application_mm": 58.0,
-        "zone_edges_mm": (0.0, 12.0, 24.0, 36.0, 48.0, 56.0),
         "soil_rotation_degrees": 21.0,
         "split_field": False,
         "drainage_storm": (5, 96.0),
@@ -96,7 +93,6 @@ CAMPAIGNS = (
         "depletion_fraction": 0.46,
         "efficiency": 0.81,
         "max_application_mm": 43.0,
-        "zone_edges_mm": (0.0, 10.0, 20.0, 30.0, 40.0),
         "soil_rotation_degrees": -27.0,
         "split_field": False,
         "drainage_storm": (1, 78.0),
@@ -118,7 +114,6 @@ CAMPAIGNS = (
         "depletion_fraction": 0.43,
         "efficiency": 0.77,
         "max_application_mm": 39.0,
-        "zone_edges_mm": (0.0, 9.0, 18.0, 27.0, 36.0),
         "soil_rotation_degrees": 16.0,
         "split_field": True,
         "drainage_storm": (4, 88.0),
@@ -140,7 +135,6 @@ CAMPAIGNS = (
         "depletion_fraction": 0.49,
         "efficiency": 0.84,
         "max_application_mm": 51.0,
-        "zone_edges_mm": (0.0, 11.0, 22.0, 33.0, 44.0),
         "soil_rotation_degrees": -19.0,
         "split_field": False,
         "drainage_storm": (3, 91.0),
@@ -425,6 +419,7 @@ def build_campaign(root: Path, config: dict) -> dict:
 
     rain_ec, threshold_ec, yield_slope, minimum_k_sal, leaching_efficiency, new_root_ec, leaching_requirement, _ = config["salinity"]
     budget_depth, water_weight, salinity_weight, history_weight = config["pump"]
+    frontier_variation = (config["seed"] % 5) * 0.01
     job = {
         "campaign_id": campaign_id,
         "crs": "EPSG:32614",
@@ -477,7 +472,39 @@ def build_campaign(root: Path, config: dict) -> dict:
             "salinity_priority_weight": salinity_weight,
             "stress_history_priority_weight": history_weight,
         },
-        "management_zone_edges_mm": list(config["zone_edges_mm"]),
+        "response_frontier": {
+            "satisfaction_ratio": 0.9,
+            "scenarios": [
+                {
+                    "scenario_id": "critical",
+                    "nominal_budget_fraction": 0.28 + frontier_variation,
+                    "water_weight_multiplier": 1.75,
+                    "salinity_weight_multiplier": 0.65,
+                    "history_weight_multiplier": 1.35,
+                },
+                {
+                    "scenario_id": "severe",
+                    "nominal_budget_fraction": 0.50 + frontier_variation,
+                    "water_weight_multiplier": 1.40,
+                    "salinity_weight_multiplier": 0.85,
+                    "history_weight_multiplier": 1.20,
+                },
+                {
+                    "scenario_id": "restricted",
+                    "nominal_budget_fraction": 0.72 + frontier_variation,
+                    "water_weight_multiplier": 1.15,
+                    "salinity_weight_multiplier": 1.05,
+                    "history_weight_multiplier": 1.08,
+                },
+                {
+                    "scenario_id": "nominal",
+                    "nominal_budget_fraction": 1.0,
+                    "water_weight_multiplier": 1.0,
+                    "salinity_weight_multiplier": 1.0,
+                    "history_weight_multiplier": 1.0,
+                },
+            ],
+        },
     }
     dump_json(directory / "job_ticket.json", job)
     dump_json(

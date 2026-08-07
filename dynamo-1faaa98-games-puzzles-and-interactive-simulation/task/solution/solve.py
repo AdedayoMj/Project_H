@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reference implementation of the prescribed agricultural world simulation."""
+"""Reference implementation of the irrigation response-frontier contract."""
 from __future__ import annotations
 
 import argparse
@@ -15,12 +15,12 @@ from shapely.geometry import box, mapping, shape
 
 DEFAULT_INPUT = Path("/app/input")
 DEFAULT_OUTPUT = Path("/app/output")
-UNIT_FIELDS = [
+SCENARIO_IDS = ("critical", "severe", "restricted", "nominal", "recovery")
+BASE_FIELDS = [
     "campaign_id",
     "unit_id",
     "row",
     "column",
-    "zone_id",
     "clipped_area_m2",
     "area_fraction",
     "taw_mm",
@@ -29,10 +29,10 @@ UNIT_FIELDS = [
     "final_kc",
     "final_ec_ds_m",
     "minimum_k_sal",
-    "recommended_gross_mm",
-    "unconstrained_gross_mm",
-    "allocation_priority",
-    "allocation_shortfall_mm",
+    "request_mm",
+    "water_need_index",
+    "salt_need_index",
+    "history_need_index",
     "seasonal_etc_mm",
     "seasonal_effective_irrigation_mm",
     "seasonal_drainage_mm",
@@ -41,8 +41,22 @@ UNIT_FIELDS = [
     "salinity_stress_days",
     "minimum_ks",
 ]
+UNIT_FIELDS = BASE_FIELDS + [
+    field
+    for scenario_id in SCENARIO_IDS
+    for field in (
+        f"{scenario_id}_priority",
+        f"{scenario_id}_depth_mm",
+        f"{scenario_id}_shortfall_mm",
+    )
+] + [
+    "activation_scenario",
+    "satisfaction_scenario",
+    "robustness_score",
+    "frontier_gain_mm",
+]
 INTEGER_FIELDS = {"row", "column", "stress_days", "salinity_stress_days"}
-TEXT_FIELDS = {"campaign_id", "unit_id", "zone_id"}
+TEXT_FIELDS = {"campaign_id", "unit_id", "activation_scenario", "satisfaction_scenario"}
 
 
 def decimal_text(value: float) -> str:
@@ -180,13 +194,84 @@ def interpolate(observations: list[tuple[int, float]], ordinal: int) -> float:
     return value_zero + fraction * (value_one - value_zero)
 
 
-def zone_for(depth: float, edges: list[float]) -> str:
-    index = 0
-    for candidate in range(1, len(edges)):
-        if depth < edges[candidate]:
-            break
-        index = candidate
-    return f"Z{index}"
+def allocate_scenario(
+    records: list[dict], scenario_id: str, budget: float, satisfaction_ratio: float
+) -> dict:
+    """Solve one weighted quadratic allocation and return its KKT certificate."""
+    requested_volume = math.fsum(
+        record["clipped_area_m2"] * record["request_mm"] / 1000.0
+        for record in records
+    )
+    binding = requested_volume > budget
+    if binding:
+        low = 0.0
+        high = max(
+            2.0 * record[f"{scenario_id}_priority"] * record["request_mm"]
+            for record in records
+        )
+        for _ in range(100):
+            shadow = (low + high) / 2.0
+            volume = math.fsum(
+                record["clipped_area_m2"]
+                * max(
+                    0.0,
+                    record["request_mm"]
+                    - shadow / (2.0 * record[f"{scenario_id}_priority"]),
+                )
+                / 1000.0
+                for record in records
+            )
+            if volume > budget:
+                low = shadow
+            else:
+                high = shadow
+        shadow = high
+    else:
+        shadow = 0.0
+
+    allocated_volume = 0.0
+    weighted_cost = 0.0
+    service_ratios = []
+    active = 0
+    for record in records:
+        depth = max(
+            0.0,
+            record["request_mm"]
+            - shadow / (2.0 * record[f"{scenario_id}_priority"]),
+        )
+        shortfall = record["request_mm"] - depth
+        record[f"{scenario_id}_depth_mm"] = depth
+        record[f"{scenario_id}_shortfall_mm"] = shortfall
+        allocated_volume += record["clipped_area_m2"] * depth / 1000.0
+        weighted_cost += (
+            record["clipped_area_m2"]
+            * record[f"{scenario_id}_priority"]
+            * shortfall
+            * shortfall
+        )
+        active += int(depth > 1e-12)
+        service_ratios.append(
+            1.0 if record["request_mm"] <= 1e-12 else depth / record["request_mm"]
+        )
+
+    satisfied = sum(
+        record[f"{scenario_id}_depth_mm"]
+        >= satisfaction_ratio * record["request_mm"]
+        for record in records
+    )
+    return {
+        "scenario_id": scenario_id,
+        "budget_m3": budget,
+        "allocated_volume_m3": allocated_volume,
+        "shortfall_volume_m3": requested_volume - allocated_volume,
+        "binding": binding,
+        "depth_shadow_price": shadow,
+        "weighted_shortfall_cost": weighted_cost,
+        "active_unit_count": active,
+        "satisfied_unit_count": satisfied,
+        "mean_service_ratio": math.fsum(service_ratios) / len(service_ratios),
+        "transition_volume_m3": 0.0,
+    }
 
 
 def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
@@ -257,7 +342,17 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
     new_root_ec = float(salinity["new_root_zone_ec_ds_m"])
     minimum_solution = float(salinity["minimum_solution_depth_mm"])
     leaching_requirement = float(salinity["leaching_requirement_mm_per_ds_m"])
-    edges = [float(value) for value in job["management_zone_edges_mm"]]
+    response_frontier = job["response_frontier"]
+    satisfaction_ratio = float(response_frontier["satisfaction_ratio"])
+    scenario_definitions = list(response_frontier["scenarios"]) + [
+        {
+            "scenario_id": "recovery",
+            "nominal_budget_fraction": None,
+            "water_weight_multiplier": 1.0,
+            "salinity_weight_multiplier": 1.0,
+            "history_weight_multiplier": 1.0,
+        }
+    ]
     campaign_id = campaign["campaign_id"]
     properties_records: list[dict] = []
     features: list[dict] = []
@@ -353,24 +448,15 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
         leaching_request = (
             max(final_ec - threshold_ec, 0.0) * leaching_requirement / efficiency
         )
-        unconstrained_recommendation = min(maximum, deficit_request + leaching_request)
-        priority = (
-            1.0
-            + float(job["pump"]["water_deficit_priority_weight"])
-            * depletion
-            / max(taw, minimum_solution)
-            + float(job["pump"]["salinity_priority_weight"])
-            * max(final_ec / threshold_ec - 1.0, 0.0)
-            + float(job["pump"]["stress_history_priority_weight"])
-            * (stress_days + salinity_stress_days)
-            / len(days)
-        )
+        request = min(maximum, deficit_request + leaching_request)
+        water_need = depletion / max(taw, minimum_solution)
+        salt_need = max(final_ec / threshold_ec - 1.0, 0.0)
+        history_need = (stress_days + salinity_stress_days) / len(days)
         properties = {
             "campaign_id": campaign_id,
             "unit_id": unit["unit_id"],
             "row": unit["row"],
             "column": unit["column"],
-            "zone_id": "",
             "clipped_area_m2": area,
             "area_fraction": area / field_area,
             "taw_mm": taw,
@@ -379,10 +465,10 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
             "final_kc": final_kc,
             "final_ec_ds_m": final_ec,
             "minimum_k_sal": minimum_salinity_stress,
-            "recommended_gross_mm": 0.0,
-            "unconstrained_gross_mm": unconstrained_recommendation,
-            "allocation_priority": priority,
-            "allocation_shortfall_mm": unconstrained_recommendation,
+            "request_mm": request,
+            "water_need_index": water_need,
+            "salt_need_index": salt_need,
+            "history_need_index": history_need,
             "seasonal_etc_mm": seasonal_etc,
             "seasonal_effective_irrigation_mm": seasonal_irrigation,
             "seasonal_drainage_mm": seasonal_drainage,
@@ -391,115 +477,115 @@ def simulate_campaign(campaign: dict) -> tuple[list[dict], list[dict], dict]:
             "salinity_stress_days": salinity_stress_days,
             "minimum_ks": minimum_ks,
         }
+        for definition in scenario_definitions:
+            scenario_id = definition["scenario_id"]
+            properties[f"{scenario_id}_priority"] = (
+                1.0
+                + float(job["pump"]["water_deficit_priority_weight"])
+                * water_need
+                * float(definition["water_weight_multiplier"])
+                + float(job["pump"]["salinity_priority_weight"])
+                * salt_need
+                * float(definition["salinity_weight_multiplier"])
+                + float(job["pump"]["stress_history_priority_weight"])
+                * history_need
+                * float(definition["history_weight_multiplier"])
+            )
         properties_records.append(properties)
         features.append({"type": "Feature", "geometry": mapping(geometry), "properties": properties})
 
-    requested_volume = sum(
-        record["clipped_area_m2"] * record["unconstrained_gross_mm"] / 1000.0
+    requested_volume = math.fsum(
+        record["clipped_area_m2"] * record["request_mm"] / 1000.0
         for record in properties_records
     )
-    pump_budget = float(job["pump"]["volume_budget_m3"])
-    quota_binding = requested_volume > pump_budget
-    if quota_binding:
-        low = 0.0
-        high = max(
-            2.0 * record["allocation_priority"] * record["unconstrained_gross_mm"]
-            for record in properties_records
+    nominal_budget = float(job["pump"]["volume_budget_m3"])
+    scenario_certificates = []
+    previous_volume = 0.0
+    for definition in scenario_definitions:
+        scenario_id = definition["scenario_id"]
+        budget = (
+            requested_volume
+            if scenario_id == "recovery"
+            else nominal_budget * float(definition["nominal_budget_fraction"])
         )
-        for _ in range(100):
-            lagrange = (low + high) / 2.0
-            volume = sum(
-                record["clipped_area_m2"]
-                * max(
-                    0.0,
-                    record["unconstrained_gross_mm"]
-                    - lagrange / (2.0 * record["allocation_priority"]),
-                )
-                / 1000.0
-                for record in properties_records
-            )
-            if volume > pump_budget:
-                low = lagrange
-            else:
-                high = lagrange
-        lagrange = high
-    else:
-        lagrange = 0.0
+        certificate = allocate_scenario(
+            properties_records, scenario_id, budget, satisfaction_ratio
+        )
+        certificate["transition_volume_m3"] = (
+            certificate["allocated_volume_m3"] - previous_volume
+        )
+        previous_volume = certificate["allocated_volume_m3"]
+        scenario_certificates.append(certificate)
 
     for record in properties_records:
-        recommendation = max(
-            0.0,
-            record["unconstrained_gross_mm"]
-            - lagrange / (2.0 * record["allocation_priority"]),
+        if record["request_mm"] <= 1e-12:
+            record["activation_scenario"] = "none"
+            record["satisfaction_scenario"] = "none"
+            record["robustness_score"] = 1.0
+        else:
+            record["activation_scenario"] = next(
+                scenario_id
+                for scenario_id in SCENARIO_IDS
+                if record[f"{scenario_id}_depth_mm"] > 1e-12
+            )
+            record["satisfaction_scenario"] = next(
+                scenario_id
+                for scenario_id in SCENARIO_IDS
+                if record[f"{scenario_id}_depth_mm"]
+                >= satisfaction_ratio * record["request_mm"]
+            )
+            record["robustness_score"] = math.fsum(
+                record[f"{scenario_id}_depth_mm"] / record["request_mm"]
+                for scenario_id in SCENARIO_IDS[:-1]
+            ) / 4.0
+        record["frontier_gain_mm"] = (
+            record["recovery_depth_mm"] - record["critical_depth_mm"]
         )
-        record["recommended_gross_mm"] = recommendation
-        record["allocation_shortfall_mm"] = (
-            record["unconstrained_gross_mm"] - recommendation
-        )
-        record["zone_id"] = zone_for(recommendation, edges)
 
-    zone_records = []
-    for zone_index in range(len(edges)):
-        zone_id = f"Z{zone_index}"
-        members = [record for record in properties_records if record["zone_id"] == zone_id]
-        zone_area = sum(record["clipped_area_m2"] for record in members)
-        zone_weighted_depth = sum(
-            record["clipped_area_m2"] * record["recommended_gross_mm"] for record in members
-        )
-        zone_records.append(
-            {
-                "zone_id": zone_id,
-                "unit_count": len(members),
-                "area_m2": zone_area,
-                "area_fraction": zone_area / field_area,
-                "mean_depth_mm": zone_weighted_depth / zone_area if zone_area else 0.0,
-            }
-        )
-    weighted_depth = sum(
-        record["clipped_area_m2"] * record["recommended_gross_mm"]
-        for record in properties_records
-    )
-    summary = {
+    certificate = {
         "campaign_id": campaign_id,
         "analysis_unit_count": len(properties_records),
         "field_area_m2": field_area,
-        "irrigated_area_m2": sum(
-            record["clipped_area_m2"]
-            for record in properties_records
-            if record["recommended_gross_mm"] > 0.0
-        ),
-        "area_weighted_mean_depth_mm": weighted_depth / field_area,
-        "total_gross_volume_m3": weighted_depth / 1000.0,
-        "requested_gross_volume_m3": requested_volume,
-        "pump_budget_m3": pump_budget,
-        "allocation_shortfall_volume_m3": requested_volume - weighted_depth / 1000.0,
-        "quota_binding": quota_binding,
-        "zones": zone_records,
+        "requested_volume_m3": requested_volume,
+        "satisfaction_ratio": satisfaction_ratio,
+        "scenarios": scenario_certificates,
     }
-    return properties_records, features, summary
+    ordered_records = [
+        {field: record[field] for field in UNIT_FIELDS}
+        for record in properties_records
+    ]
+    for feature, ordered in zip(features, ordered_records, strict=True):
+        feature["properties"] = ordered
+    return ordered_records, features, certificate
 
 
 def main(input_root: Path = DEFAULT_INPUT, output_root: Path = DEFAULT_OUTPUT) -> None:
     manifest = read_json(input_root / "manifest.json")
     records: list[dict] = []
     features: list[dict] = []
-    summaries: list[dict] = []
+    certificates: list[dict] = []
     for campaign in manifest["campaigns"]:
-        campaign_records, campaign_features, campaign_summary = simulate_campaign(campaign)
+        relocated = {
+            **campaign,
+            "directory": str(input_root / "campaigns" / campaign["campaign_id"]),
+        }
+        campaign_records, campaign_features, campaign_certificate = simulate_campaign(
+            relocated
+        )
         records.extend(campaign_records)
         features.extend(campaign_features)
-        summaries.append(campaign_summary)
+        certificates.append(campaign_certificate)
 
     output_root.mkdir(parents=True, exist_ok=True)
-    (output_root / "prescription.geojson").write_text(
+    (output_root / "allocation-frontier.geojson").write_text(
         json.dumps({"type": "FeatureCollection", "features": features}, separators=(",", ":")) + "\n"
     )
-    with (output_root / "units.csv").open("w", newline="") as handle:
+    with (output_root / "allocation-frontier.csv").open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=UNIT_FIELDS, lineterminator="\n")
         writer.writeheader()
         writer.writerows(csv_record(record) for record in records)
-    (output_root / "summary.json").write_text(
-        json.dumps({"schema_version": 1, "campaigns": summaries}, separators=(",", ":")) + "\n"
+    (output_root / "optimality-certificate.json").write_text(
+        json.dumps({"schema_version": 2, "campaigns": certificates}, separators=(",", ":")) + "\n"
     )
 
 

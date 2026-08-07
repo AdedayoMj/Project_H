@@ -11,6 +11,8 @@ from pathlib import Path
 
 from shapely.geometry import box, shape
 
+SCENARIO_IDS = ("critical", "severe", "restricted", "nominal", "recovery")
+
 
 def load_json(path: Path):
     with path.open() as handle:
@@ -101,8 +103,80 @@ def interpolate_series(series, wanted_ordinal):
     return value0 + (value1 - value0) * (wanted_ordinal - day0) / (day1 - day0)
 
 
-def classify_zone(value, edges):
-    return f"Z{bisect.bisect_right(edges, value) - 1}"
+def allocate_frontier_point(rows, scenario_id, budget, satisfaction_ratio):
+    requested_volume = math.fsum(
+        row["clipped_area_m2"] * row["request_mm"] / 1000.0 for row in rows
+    )
+    binding = requested_volume > budget
+    if binding:
+        lower = 0.0
+        upper = max(
+            2.0 * row[f"{scenario_id}_priority"] * row["request_mm"]
+            for row in rows
+        )
+        for _ in range(100):
+            shadow = (lower + upper) / 2.0
+            used = math.fsum(
+                row["clipped_area_m2"]
+                * max(
+                    0.0,
+                    row["request_mm"]
+                    - shadow / (2.0 * row[f"{scenario_id}_priority"]),
+                )
+                / 1000.0
+                for row in rows
+            )
+            if used > budget:
+                lower = shadow
+            else:
+                upper = shadow
+        shadow = upper
+    else:
+        shadow = 0.0
+
+    for row in rows:
+        allocated = max(
+            0.0,
+            row["request_mm"]
+            - shadow / (2.0 * row[f"{scenario_id}_priority"]),
+        )
+        row[f"{scenario_id}_depth_mm"] = allocated
+        row[f"{scenario_id}_shortfall_mm"] = row["request_mm"] - allocated
+
+    allocated_volume = math.fsum(
+        row["clipped_area_m2"] * row[f"{scenario_id}_depth_mm"] / 1000.0
+        for row in rows
+    )
+    return {
+        "scenario_id": scenario_id,
+        "budget_m3": budget,
+        "allocated_volume_m3": allocated_volume,
+        "shortfall_volume_m3": requested_volume - allocated_volume,
+        "binding": binding,
+        "depth_shadow_price": shadow,
+        "weighted_shortfall_cost": math.fsum(
+            row["clipped_area_m2"]
+            * row[f"{scenario_id}_priority"]
+            * row[f"{scenario_id}_shortfall_mm"] ** 2
+            for row in rows
+        ),
+        "active_unit_count": sum(
+            row[f"{scenario_id}_depth_mm"] > 1e-12 for row in rows
+        ),
+        "satisfied_unit_count": sum(
+            row[f"{scenario_id}_depth_mm"]
+            >= satisfaction_ratio * row["request_mm"]
+            for row in rows
+        ),
+        "mean_service_ratio": math.fsum(
+            1.0
+            if row["request_mm"] <= 1e-12
+            else row[f"{scenario_id}_depth_mm"] / row["request_mm"]
+            for row in rows
+        )
+        / len(rows),
+        "transition_volume_m3": 0.0,
+    }
 
 
 def calculate_campaign(campaign):
@@ -171,7 +245,17 @@ def calculate_campaign(campaign):
     new_root_ec = float(salt_contract["new_root_zone_ec_ds_m"])
     solution_floor = float(salt_contract["minimum_solution_depth_mm"])
     leaching_requirement = float(salt_contract["leaching_requirement_mm_per_ds_m"])
-    edges = [float(value) for value in ticket["management_zone_edges_mm"]]
+    frontier = ticket["response_frontier"]
+    satisfaction_ratio = float(frontier["satisfaction_ratio"])
+    scenario_definitions = list(frontier["scenarios"]) + [
+        {
+            "scenario_id": "recovery",
+            "nominal_budget_fraction": None,
+            "water_weight_multiplier": 1.0,
+            "salinity_weight_multiplier": 1.0,
+            "history_weight_multiplier": 1.0,
+        }
+    ]
     results = []
     for cell in cells:
         geometry = cell["geometry"]
@@ -251,24 +335,14 @@ def calculate_campaign(campaign):
         water_request = 0.0 if depletion <= raw else depletion / efficiency
         salt_request = max(final_ec - threshold_ec, 0.0) * leaching_requirement / efficiency
         requested = min(maximum, water_request + salt_request)
-        priority = (
-            1.0
-            + float(ticket["pump"]["water_deficit_priority_weight"])
-            * depletion
-            / max(taw, solution_floor)
-            + float(ticket["pump"]["salinity_priority_weight"])
-            * max(final_ec / threshold_ec - 1.0, 0.0)
-            + float(ticket["pump"]["stress_history_priority_weight"])
-            * (stressed + salt_stressed)
-            / len(calendar)
-        )
-        results.append(
-            {
+        water_need = depletion / max(taw, solution_floor)
+        salt_need = max(final_ec / threshold_ec - 1.0, 0.0)
+        history_need = (stressed + salt_stressed) / len(calendar)
+        result = {
                 "campaign_id": campaign["campaign_id"],
                 "unit_id": cell["unit_id"],
                 "row": cell["row"],
                 "column": cell["column"],
-                "zone_id": None,
                 "clipped_area_m2": area,
                 "area_fraction": area / field_area,
                 "taw_mm": taw,
@@ -277,10 +351,10 @@ def calculate_campaign(campaign):
                 "final_kc": final_kc,
                 "final_ec_ds_m": final_ec,
                 "minimum_k_sal": minimum_salt_stress,
-                "recommended_gross_mm": 0.0,
-                "unconstrained_gross_mm": requested,
-                "allocation_priority": priority,
-                "allocation_shortfall_mm": requested,
+                "request_mm": requested,
+                "water_need_index": water_need,
+                "salt_need_index": salt_need,
+                "history_need_index": history_need,
                 "seasonal_etc_mm": accumulated_etc,
                 "seasonal_effective_irrigation_mm": accumulated_irrigation,
                 "seasonal_drainage_mm": accumulated_drainage,
@@ -290,82 +364,75 @@ def calculate_campaign(campaign):
                 "minimum_ks": minimum_stress,
                 "geometry": geometry,
             }
-        )
+        for definition in scenario_definitions:
+            scenario_id = definition["scenario_id"]
+            result[f"{scenario_id}_priority"] = (
+                1.0
+                + float(ticket["pump"]["water_deficit_priority_weight"])
+                * water_need
+                * float(definition["water_weight_multiplier"])
+                + float(ticket["pump"]["salinity_priority_weight"])
+                * salt_need
+                * float(definition["salinity_weight_multiplier"])
+                + float(ticket["pump"]["stress_history_priority_weight"])
+                * history_need
+                * float(definition["history_weight_multiplier"])
+            )
+        results.append(result)
 
     requested_volume = math.fsum(
-        row["clipped_area_m2"] * row["unconstrained_gross_mm"] / 1000.0
+        row["clipped_area_m2"] * row["request_mm"] / 1000.0
         for row in results
     )
-    budget = float(ticket["pump"]["volume_budget_m3"])
-    binding = requested_volume > budget
-    if binding:
-        lower = 0.0
-        upper = max(
-            2.0 * row["allocation_priority"] * row["unconstrained_gross_mm"]
-            for row in results
+    nominal_budget = float(ticket["pump"]["volume_budget_m3"])
+    scenario_certificates = []
+    previous_volume = 0.0
+    for definition in scenario_definitions:
+        scenario_id = definition["scenario_id"]
+        budget = (
+            requested_volume
+            if scenario_id == "recovery"
+            else nominal_budget * float(definition["nominal_budget_fraction"])
         )
-        for _ in range(100):
-            multiplier = (lower + upper) / 2.0
-            used = math.fsum(
-                row["clipped_area_m2"]
-                * max(
-                    0.0,
-                    row["unconstrained_gross_mm"]
-                    - multiplier / (2.0 * row["allocation_priority"]),
-                )
-                / 1000.0
-                for row in results
-            )
-            if used > budget:
-                lower = multiplier
-            else:
-                upper = multiplier
-        multiplier = upper
-    else:
-        multiplier = 0.0
+        point = allocate_frontier_point(
+            results, scenario_id, budget, satisfaction_ratio
+        )
+        point["transition_volume_m3"] = point["allocated_volume_m3"] - previous_volume
+        previous_volume = point["allocated_volume_m3"]
+        scenario_certificates.append(point)
 
     for row in results:
-        allocated = max(
-            0.0,
-            row["unconstrained_gross_mm"]
-            - multiplier / (2.0 * row["allocation_priority"]),
-        )
-        row["recommended_gross_mm"] = allocated
-        row["allocation_shortfall_mm"] = row["unconstrained_gross_mm"] - allocated
-        row["zone_id"] = classify_zone(allocated, edges)
+        if row["request_mm"] <= 1e-12:
+            row["activation_scenario"] = "none"
+            row["satisfaction_scenario"] = "none"
+            row["robustness_score"] = 1.0
+        else:
+            row["activation_scenario"] = next(
+                scenario_id
+                for scenario_id in SCENARIO_IDS
+                if row[f"{scenario_id}_depth_mm"] > 1e-12
+            )
+            row["satisfaction_scenario"] = next(
+                scenario_id
+                for scenario_id in SCENARIO_IDS
+                if row[f"{scenario_id}_depth_mm"]
+                >= satisfaction_ratio * row["request_mm"]
+            )
+            row["robustness_score"] = math.fsum(
+                row[f"{scenario_id}_depth_mm"] / row["request_mm"]
+                for scenario_id in SCENARIO_IDS[:-1]
+            ) / 4.0
+        row["frontier_gain_mm"] = row["recovery_depth_mm"] - row["critical_depth_mm"]
 
-    zone_rows = []
-    for number in range(len(edges)):
-        zone_id = f"Z{number}"
-        members = [row for row in results if row["zone_id"] == zone_id]
-        area = math.fsum(row["clipped_area_m2"] for row in members)
-        depth_area = math.fsum(row["clipped_area_m2"] * row["recommended_gross_mm"] for row in members)
-        zone_rows.append(
-            {
-                "zone_id": zone_id,
-                "unit_count": len(members),
-                "area_m2": area,
-                "area_fraction": area / field_area,
-                "mean_depth_mm": depth_area / area if area else 0.0,
-            }
-        )
-    total_depth_area = math.fsum(row["clipped_area_m2"] * row["recommended_gross_mm"] for row in results)
-    summary = {
+    certificate = {
         "campaign_id": campaign["campaign_id"],
         "analysis_unit_count": len(results),
         "field_area_m2": field_area,
-        "irrigated_area_m2": math.fsum(
-            row["clipped_area_m2"] for row in results if row["recommended_gross_mm"] > 0
-        ),
-        "area_weighted_mean_depth_mm": total_depth_area / field_area,
-        "total_gross_volume_m3": total_depth_area / 1000.0,
-        "requested_gross_volume_m3": requested_volume,
-        "pump_budget_m3": budget,
-        "allocation_shortfall_volume_m3": requested_volume - total_depth_area / 1000.0,
-        "quota_binding": binding,
-        "zones": zone_rows,
+        "requested_volume_m3": requested_volume,
+        "satisfaction_ratio": satisfaction_ratio,
+        "scenarios": scenario_certificates,
     }
-    return results, summary
+    return results, certificate
 
 
 def calculate(input_root: Path):
