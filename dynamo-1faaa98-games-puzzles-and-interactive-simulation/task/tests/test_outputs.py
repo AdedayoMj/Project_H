@@ -12,8 +12,6 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 
-import pytest
-
 from reference_model import (
     CLASS_IDS,
     SCENARIO_IDS,
@@ -35,16 +33,16 @@ CERTIFICATE_PATH = OUTPUT / "robustness-certificate.json"
 SOLVER_PATH = OUTPUT / "solver.py"
 RESTRICTED_RUNNER = TESTS / "restricted_solver_runner.py"
 
-MISSION_FIELDS = {"mission_id", "slots", "outcomes"}
-SLOT_FIELD_SET = set(SLOT_FIELDS)
-OUTCOME_FIELDS = {
+MISSION_KEYS = {"mission_id", "slots", "outcomes"}
+SLOT_KEYS = set(SLOT_FIELDS)
+RESULT_KEYS = {
     "scenario_id",
     "weighted_loss",
     "delivered_packets",
     "lost_packets_by_class",
     "delivered_packets_by_class",
 }
-CERTIFICATE_FIELDS = {
+CERTIFICATE_KEYS = {
     "mission_id",
     "objective_prefix",
     "total_energy_units",
@@ -54,7 +52,7 @@ CERTIFICATE_FIELDS = {
     "plan_sha256",
     "outcomes",
 }
-INTEGER_FIELDS = {
+SLOT_INTEGER_KEYS = {
     "slot",
     "pointing_step",
     "slew_steps",
@@ -62,158 +60,202 @@ INTEGER_FIELDS = {
     "battery_units",
     "thermal_units",
 }
-TEXT_FIELDS = {"mission_id", "action_id", "station_id"}
-INTEGER_TEXT = re.compile(r"[+-]?[0-9]+\Z")
-SHA256_TEXT = re.compile(r"[0-9a-f]{64}\Z")
+SLOT_TEXT_KEYS = {"mission_id", "action_id", "station_id"}
+DECIMAL_INTEGER = re.compile(r"[+-]?[0-9]+\Z")
+HEX_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 
 
-def regular_file(path: Path) -> bool:
+def ordinary_file(path: Path) -> bool:
+    """Accept an existing regular file while rejecting symlinks and devices."""
     return path.exists() and not path.is_symlink() and stat.S_ISREG(path.stat().st_mode)
 
 
-@lru_cache(maxsize=1)
-def submitted_plan():
-    return json.loads(PLAN_PATH.read_text())
+def read_json(path: Path):
+    """Decode one UTF-8 JSON artifact."""
+    return json.loads(path.read_text())
 
 
 @lru_cache(maxsize=1)
-def submitted_certificate():
-    return json.loads(CERTIFICATE_PATH.read_text())
+def candidate_plan():
+    """Load the submitted slot plan once."""
+    return read_json(PLAN_PATH)
 
 
 @lru_cache(maxsize=1)
-def submitted_csv():
+def candidate_certificate():
+    """Load the submitted robustness certificate once."""
+    return read_json(CERTIFICATE_PATH)
+
+
+@lru_cache(maxsize=1)
+def candidate_table():
+    """Load the submitted flat slot table once."""
     with CSV_PATH.open(newline="") as handle:
         reader = csv.DictReader(handle)
         return reader.fieldnames, list(reader)
 
 
 @lru_cache(maxsize=1)
-def expected():
+def oracle_outputs():
+    """Compute all optimal mission plans with the independent implementation."""
     return calculate(INPUT)
 
 
-def manifest_entries(input_root: Path):
-    return json.loads((input_root / "manifest.json").read_text())["missions"]
+def mission_entries(input_root: Path):
+    """Return the manifest's ordered mission references."""
+    return read_json(input_root / "manifest.json")["missions"]
 
 
-def validate_outcome(outcome: dict) -> None:
-    assert set(outcome) == OUTCOME_FIELDS
-    assert outcome["scenario_id"] in SCENARIO_IDS
-    assert type(outcome["weighted_loss"]) is int
-    assert type(outcome["delivered_packets"]) is int
-    assert list(outcome["lost_packets_by_class"]) == list(CLASS_IDS)
-    assert list(outcome["delivered_packets_by_class"]) == list(CLASS_IDS)
-    for class_id in CLASS_IDS:
-        assert type(outcome["lost_packets_by_class"][class_id]) is int
-        assert type(outcome["delivered_packets_by_class"][class_id]) is int
+class DownlinkAudit:
+    """Validate the three linked data products for one input root."""
 
+    def __init__(self, plan: dict, certificate: dict, table_path: Path):
+        self.plan = plan
+        self.certificate = certificate
+        self.table_path = table_path
 
-def validate_documents(plan: dict, certificate: dict) -> None:
-    assert set(plan) == {"schema_version", "missions"}
-    assert plan["schema_version"] == 1
-    assert set(certificate) == {"schema_version", "missions"}
-    assert certificate["schema_version"] == 1
-    assert len(plan["missions"]) == len(certificate["missions"])
-    for mission, mission_certificate in zip(
-        plan["missions"], certificate["missions"], strict=True
-    ):
-        assert set(mission) == MISSION_FIELDS
-        assert set(mission_certificate) == CERTIFICATE_FIELDS
-        assert mission["mission_id"] == mission_certificate["mission_id"]
-        assert [row["slot"] for row in mission["slots"]] == list(
+    def check_contract(self) -> None:
+        """Enforce document shape, scalar types, canonical order, and cross-links."""
+        for document in (self.plan, self.certificate):
+            assert set(document) == {"schema_version", "missions"}
+            assert type(document["schema_version"]) is int
+            assert document["schema_version"] == 1
+        assert len(self.plan["missions"]) == len(self.certificate["missions"])
+
+        pairs = zip(
+            self.plan["missions"], self.certificate["missions"], strict=True
+        )
+        for mission, proof in pairs:
+            self.check_mission(mission, proof)
+        self.check_flat_table()
+
+    @staticmethod
+    def check_mission(mission: dict, proof: dict) -> None:
+        """Check one mission's slots, scenario ledgers, and certificate fields."""
+        assert set(mission) == MISSION_KEYS
+        assert set(proof) == CERTIFICATE_KEYS
+        assert mission["mission_id"] == proof["mission_id"]
+        assert [record["slot"] for record in mission["slots"]] == list(
             range(len(mission["slots"]))
         )
-        for row in mission["slots"]:
-            assert set(row) == SLOT_FIELD_SET
-            assert row["mission_id"] == mission["mission_id"]
-            for field in INTEGER_FIELDS:
-                assert type(row[field]) is int
-            for field in TEXT_FIELDS:
-                assert type(row[field]) is str
-            if row["action_id"] == "idle":
-                assert row["station_id"] == "none"
-                assert row["pointing_step"] == 0
-                assert row["slew_steps"] == 0
-        assert [row["scenario_id"] for row in mission["outcomes"]] == list(
-            SCENARIO_IDS
-        )
-        for outcome in mission["outcomes"]:
-            validate_outcome(outcome)
-        assert mission_certificate["outcomes"] == mission["outcomes"]
-        assert len(mission_certificate["objective_prefix"]) == 6
-        assert all(type(value) is int for value in mission_certificate["objective_prefix"])
-        for field in (
+        for record in mission["slots"]:
+            assert set(record) == SLOT_KEYS
+            assert record["mission_id"] == mission["mission_id"]
+            assert all(type(record[key]) is int for key in SLOT_INTEGER_KEYS)
+            assert all(type(record[key]) is str for key in SLOT_TEXT_KEYS)
+            if record["action_id"] == "idle":
+                assert (
+                    record["station_id"],
+                    record["pointing_step"],
+                    record["slew_steps"],
+                ) == ("none", 0, 0)
+
+        scenario_order = [result["scenario_id"] for result in mission["outcomes"]]
+        assert scenario_order == list(SCENARIO_IDS)
+        for result in mission["outcomes"]:
+            DownlinkAudit.check_scenario_result(result)
+        assert proof["outcomes"] == mission["outcomes"]
+        assert len(proof["objective_prefix"]) == 6
+        assert all(type(value) is int for value in proof["objective_prefix"])
+        summary_keys = (
             "total_energy_units",
             "minimum_battery_units",
             "peak_thermal_units",
             "contact_count",
+        )
+        assert all(type(proof[key]) is int for key in summary_keys)
+        assert HEX_DIGEST.fullmatch(proof["plan_sha256"])
+
+    @staticmethod
+    def check_scenario_result(result: dict) -> None:
+        """Require complete exact loss and delivery ledgers in class order."""
+        assert set(result) == RESULT_KEYS
+        assert result["scenario_id"] in SCENARIO_IDS
+        assert type(result["weighted_loss"]) is int
+        assert type(result["delivered_packets"]) is int
+        for ledger_name in (
+            "lost_packets_by_class",
+            "delivered_packets_by_class",
         ):
-            assert type(mission_certificate[field]) is int
-        assert SHA256_TEXT.fullmatch(mission_certificate["plan_sha256"])
+            ledger = result[ledger_name]
+            assert list(ledger) == list(CLASS_IDS)
+            assert all(type(ledger[class_id]) is int for class_id in CLASS_IDS)
+
+    def check_flat_table(self) -> None:
+        """Match every CSV cell to the corresponding JSON slot record."""
+        with self.table_path.open(newline="") as handle:
+            reader = csv.DictReader(handle)
+            header, rows = reader.fieldnames, list(reader)
+        assert header == list(SLOT_FIELDS)
+        json_rows = [
+            record
+            for mission in self.plan["missions"]
+            for record in mission["slots"]
+        ]
+        assert len(rows) == len(json_rows)
+        for table_row, json_row in zip(rows, json_rows, strict=True):
+            assert list(table_row) == list(SLOT_FIELDS)
+            assert all(
+                table_row[key] == json_row[key] for key in SLOT_TEXT_KEYS
+            )
+            for key in SLOT_INTEGER_KEYS:
+                assert DECIMAL_INTEGER.fullmatch(table_row[key])
+                assert int(table_row[key]) == json_row[key]
+
+    def check_against_oracle(self, input_root: Path) -> None:
+        """Require complete equality with an independently optimized answer."""
+        self.check_contract()
+        optimal_plans, optimal_certificates = calculate(input_root)
+        assert self.plan == {"schema_version": 1, "missions": optimal_plans}
+        assert self.certificate == {
+            "schema_version": 1,
+            "missions": optimal_certificates,
+        }
 
 
-def validate_csv(plan: dict, csv_path: Path) -> None:
-    with csv_path.open(newline="") as handle:
-        reader = csv.DictReader(handle)
-        header, rows = reader.fieldnames, list(reader)
-    assert header == list(SLOT_FIELDS)
-    expected_rows = [
-        row for mission in plan["missions"] for row in mission["slots"]
-    ]
-    assert len(rows) == len(expected_rows)
-    for csv_row, json_row in zip(rows, expected_rows, strict=True):
-        assert list(csv_row) == list(SLOT_FIELDS)
-        for field in TEXT_FIELDS:
-            assert csv_row[field] == json_row[field]
-        for field in INTEGER_FIELDS:
-            assert INTEGER_TEXT.fullmatch(csv_row[field])
-            assert int(csv_row[field]) == json_row[field]
-
-
-def validate_complete_output(output_root: Path, input_root: Path) -> None:
+def audit_output_directory(output_root: Path, input_root: Path) -> None:
+    """Load and completely audit an output directory produced by a solver run."""
     plan_path = output_root / "downlink-plan.json"
-    csv_path = output_root / "downlink-plan.csv"
-    certificate_path = output_root / "robustness-certificate.json"
-    assert all(regular_file(path) for path in (plan_path, csv_path, certificate_path))
-    plan = json.loads(plan_path.read_text())
-    certificate = json.loads(certificate_path.read_text())
-    validate_documents(plan, certificate)
-    validate_csv(plan, csv_path)
-    expected_plans, expected_certificates = calculate(input_root)
-    assert plan == {"schema_version": 1, "missions": expected_plans}
-    assert certificate == {"schema_version": 1, "missions": expected_certificates}
+    table_path = output_root / "downlink-plan.csv"
+    proof_path = output_root / "robustness-certificate.json"
+    assert all(ordinary_file(path) for path in (plan_path, table_path, proof_path))
+    DownlinkAudit(
+        read_json(plan_path),
+        read_json(proof_path),
+        table_path,
+    ).check_against_oracle(input_root)
 
 
-def transform_csv(path: Path, transform) -> None:
+def rewrite_csv(path: Path, mutation) -> None:
+    """Apply a deterministic row mutation while preserving a table's header."""
     with path.open(newline="") as handle:
         reader = csv.DictReader(handle)
-        fields, rows = reader.fieldnames, list(reader)
-    assert fields is not None
-    transform(rows)
+        fieldnames, rows = reader.fieldnames, list(reader)
+    assert fieldnames is not None
+    mutation(rows)
     with path.open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
 
-def build_counterfactual_input(destination: Path) -> str:
-    entries = manifest_entries(INPUT)
-    entry = min(
-        entries,
-        key=lambda row: json.loads(
-            (INPUT / row["directory"] / "mission.json").read_text()
+def write_unseen_mission(destination: Path) -> str:
+    """Create a held-out mission with changed queues, resources, and geometry."""
+    source_entry = min(
+        mission_entries(INPUT),
+        key=lambda item: read_json(
+            INPUT / item["directory"] / "mission.json"
         )["horizon_slots"],
     )
-    mission_id = entry["mission_id"]
-    source = INPUT / entry["directory"]
-    target = destination / "missions" / mission_id
+    mission_id = source_entry["mission_id"]
+    public_directory = INPUT / source_entry["directory"]
+    private_directory = destination / "missions" / mission_id
     destination.mkdir(parents=True)
-    shutil.copytree(source, target)
+    shutil.copytree(public_directory, private_directory)
     shutil.copy2(INPUT / "specification.md", destination / "specification.md")
 
-    ticket_path = target / "mission.json"
-    ticket = json.loads(ticket_path.read_text())
+    ticket_path = private_directory / "mission.json"
+    ticket = read_json(ticket_path)
     ticket["storage_capacity_packets"] -= 2
     ticket["battery"]["initial_units"] += 3
     ticket["battery"]["reserve_units"] += 1
@@ -221,44 +263,56 @@ def build_counterfactual_input(destination: Path) -> str:
     ticket["slew"]["max_steps_per_slot"] = max(
         2, ticket["slew"]["max_steps_per_slot"] - 1
     )
-    point_by_station = {}
-    for index, station in enumerate(ticket["stations"]):
-        station["pointing_step"] = -int(station["pointing_step"]) + (index % 2)
-        point_by_station[station["station_id"]] = station["pointing_step"]
+    station_pointing = {}
+    for station_number, station in enumerate(ticket["stations"]):
+        station["pointing_step"] = -int(station["pointing_step"]) + (
+            station_number % 2
+        )
+        station_pointing[station["station_id"]] = station["pointing_step"]
     ticket_path.write_text(json.dumps(ticket, indent=2) + "\n")
 
-    def alter_timeline(rows):
-        for index, row in enumerate(rows):
-            value = int(row["solar_units"])
-            row["solar_units"] = max(0, value + ((index * 3 + 1) % 5) - 2)
+    def perturb_solar(rows):
+        for slot, row in enumerate(rows):
+            public_value = int(row["solar_units"])
+            row["solar_units"] = max(
+                0, public_value + ((slot * 3 + 1) % 5) - 2
+            )
 
-    def alter_packets(rows):
+    def perturb_packet_calendar(rows):
         horizon = ticket["horizon_slots"]
-        for index, row in enumerate(rows):
+        for batch_number, row in enumerate(rows):
             release = int(row["release_slot"])
             deadline = int(row["deadline_slot"])
-            if index % 4 == 1 and release < deadline:
+            if batch_number % 4 == 1 and release < deadline:
                 release += 1
-            if index % 3 == 0:
+            if batch_number % 3 == 0:
                 deadline = min(horizon - 1, deadline + 1)
-            elif index % 3 == 2:
+            elif batch_number % 3 == 2:
                 deadline = max(release, deadline - 1)
             row["release_slot"] = release
             row["deadline_slot"] = deadline
-            row["packet_count"] = int(row["packet_count"]) + 1 + (index % 2)
-
-    def alter_contacts(rows):
-        for index, row in enumerate(rows):
-            row["pointing_step"] = point_by_station[row["station_id"]]
-            row["nominal_capacity_packets"] = max(
-                2, int(row["nominal_capacity_packets"]) + (index % 3) - 1
+            row["packet_count"] = int(row["packet_count"]) + 1 + (
+                batch_number % 2
             )
-            row["energy_units"] = max(2, int(row["energy_units"]) + (index % 2))
-            row["heat_units"] = max(1, int(row["heat_units"]) + ((index + 1) % 3) - 1)
 
-    transform_csv(target / "timeline.csv", alter_timeline)
-    transform_csv(target / "packets.csv", alter_packets)
-    transform_csv(target / "contacts.csv", alter_contacts)
+    def perturb_contacts(rows):
+        for contact_number, row in enumerate(rows):
+            row["pointing_step"] = station_pointing[row["station_id"]]
+            row["nominal_capacity_packets"] = max(
+                2,
+                int(row["nominal_capacity_packets"]) + (contact_number % 3) - 1,
+            )
+            row["energy_units"] = max(
+                2, int(row["energy_units"]) + (contact_number % 2)
+            )
+            row["heat_units"] = max(
+                1,
+                int(row["heat_units"]) + ((contact_number + 1) % 3) - 1,
+            )
+
+    rewrite_csv(private_directory / "timeline.csv", perturb_solar)
+    rewrite_csv(private_directory / "packets.csv", perturb_packet_calendar)
+    rewrite_csv(private_directory / "contacts.csv", perturb_contacts)
     (destination / "manifest.json").write_text(
         json.dumps(
             {
@@ -274,13 +328,14 @@ def build_counterfactual_input(destination: Path) -> str:
     return mission_id
 
 
-def run_restricted_solver(
+def invoke_submitted_solver(
     solver_path: Path,
     input_root: Path,
     output_root: Path,
     cwd: Path,
     timeout: int = 180,
-):
+) -> subprocess.CompletedProcess[str]:
+    """Execute a solver behind the verifier-read/process/network audit hook."""
     environment = os.environ.copy()
     environment.pop("DOWNLINK_APP_ROOT", None)
     environment.pop("PYTHONPATH", None)
@@ -308,15 +363,15 @@ def run_restricted_solver(
 def test_requested_artifacts_are_regular_parseable_files():
     """All three data products and the reusable solver are ordinary files."""
     for path in (PLAN_PATH, CSV_PATH, CERTIFICATE_PATH, SOLVER_PATH):
-        assert regular_file(path)
-    assert isinstance(submitted_plan(), dict)
-    assert submitted_csv()[0] == list(SLOT_FIELDS)
-    assert isinstance(submitted_certificate(), dict)
+        assert ordinary_file(path)
+    assert isinstance(candidate_plan(), dict)
+    assert candidate_table()[0] == list(SLOT_FIELDS)
+    assert isinstance(candidate_certificate(), dict)
 
 
 def test_generated_mission_evidence_is_hash_locked_and_builder_is_absent():
     """Published evidence cannot be edited and its generator is not agent-visible."""
-    expected_hashes = json.loads((TESTS / "input-manifest.json").read_text())
+    expected_hashes = read_json(TESTS / "input-manifest.json")
     actual_hashes = {}
     for path in sorted(INPUT.rglob("*")):
         if path.is_dir():
@@ -331,7 +386,7 @@ def test_generated_mission_evidence_is_hash_locked_and_builder_is_absent():
 
 def test_input_worlds_are_structurally_diverse_and_closed():
     """Missions vary horizons, resource limits, contacts, and packet calendars."""
-    manifest = json.loads((INPUT / "manifest.json").read_text())
+    manifest = read_json(INPUT / "manifest.json")
     assert set(manifest) == {"schema_version", "missions"}
     assert manifest["schema_version"] == 1
     assert len(manifest["missions"]) == 5
@@ -341,7 +396,7 @@ def test_input_worlds_are_structurally_diverse_and_closed():
     for entry in manifest["missions"]:
         assert set(entry) == {"mission_id", "directory"}
         root = INPUT / entry["directory"]
-        ticket = json.loads((root / "mission.json").read_text())
+        ticket = read_json(root / "mission.json")
         assert ticket["mission_id"] == entry["mission_id"]
         assert [row["scenario_id"] for row in ticket["scenarios"]] == list(SCENARIO_IDS)
         assert [row["class_id"] for row in ticket["classes"]] == list(CLASS_IDS)
@@ -353,78 +408,84 @@ def test_input_worlds_are_structurally_diverse_and_closed():
     assert len(packet_counts) >= 3
 
 
-def test_plan_and_certificate_schemas_are_exact():
-    """No undeclared fields, weak types, or alternate scenario structures are accepted."""
-    validate_documents(submitted_plan(), submitted_certificate())
+def test_linked_artifacts_use_the_exact_typed_contract():
+    """Reject undeclared fields, Boolean integers, bad ordering, and CSV drift."""
+    DownlinkAudit(
+        candidate_plan(), candidate_certificate(), CSV_PATH
+    ).check_contract()
 
 
-def test_unique_robust_action_sequence_matches_independent_optimizer():
-    """Every slot action equals the unique global optimum, including final tie-breaking."""
-    expected_plans, _ = expected()
-    actual_missions = submitted_plan()["missions"]
-    assert [row["mission_id"] for row in actual_missions] == [
-        row["mission_id"] for row in expected_plans
+def test_shared_action_tapes_match_the_independent_robust_optimizer():
+    """Pin every contact choice and the final action-rank tie-break."""
+    optimal_plans, _ = oracle_outputs()
+    submitted_missions = candidate_plan()["missions"]
+    assert [mission["mission_id"] for mission in submitted_missions] == [
+        mission["mission_id"] for mission in optimal_plans
     ]
-    for actual, reference in zip(actual_missions, expected_plans, strict=True):
-        assert [row["action_id"] for row in actual["slots"]] == [
-            row["action_id"] for row in reference["slots"]
+    for submitted, optimal in zip(submitted_missions, optimal_plans, strict=True):
+        assert [record["action_id"] for record in submitted["slots"]] == [
+            record["action_id"] for record in optimal["slots"]
         ]
 
 
-def test_every_resource_transition_and_slew_audit_is_exact():
-    """Battery, heat, energy and pointing history match an independent replay."""
-    expected_plans, _ = expected()
-    for actual, reference in zip(
-        submitted_plan()["missions"], expected_plans, strict=True
+def test_spacecraft_state_audit_matches_an_independent_slot_replay():
+    """Pin battery saturation, heat recovery, energy use, and pointing memory."""
+    optimal_plans, _ = oracle_outputs()
+    for submitted, optimal in zip(
+        candidate_plan()["missions"], optimal_plans, strict=True
     ):
-        assert actual["slots"] == reference["slots"]
+        assert submitted["slots"] == optimal["slots"]
 
 
-def test_all_scenario_losses_and_deliveries_are_exact():
-    """One action sequence is replayed in every capacity world with exact class ledgers."""
-    expected_plans, _ = expected()
-    for actual, reference in zip(
-        submitted_plan()["missions"], expected_plans, strict=True
+def test_one_tape_has_exact_ledgers_in_all_four_capacity_worlds():
+    """Pin overflow, service, expiry, class delivery, and weighted loss."""
+    optimal_plans, _ = oracle_outputs()
+    for submitted, optimal in zip(
+        candidate_plan()["missions"], optimal_plans, strict=True
     ):
-        assert actual["outcomes"] == reference["outcomes"]
-        weighted = [row["weighted_loss"] for row in actual["outcomes"]]
+        assert submitted["outcomes"] == optimal["outcomes"]
+        weighted = [result["weighted_loss"] for result in submitted["outcomes"]]
         assert weighted[0] >= weighted[1] >= weighted[2] >= weighted[3]
 
 
-def test_certificate_matches_optimum_resources_outcomes_and_digest():
-    """The certificate is fully pinned and its digest is derived from submitted actions."""
-    _, expected_certificates = expected()
-    actual_certificates = submitted_certificate()["missions"]
-    assert actual_certificates == expected_certificates
-    for mission, certificate in zip(
-        submitted_plan()["missions"], actual_certificates, strict=True
+def test_robustness_certificate_reconciles_actions_resources_and_digest():
+    """Derive every certificate summary from the submitted tape and slot states."""
+    _, optimal_certificates = oracle_outputs()
+    submitted_certificates = candidate_certificate()["missions"]
+    assert submitted_certificates == optimal_certificates
+    for mission, proof in zip(
+        candidate_plan()["missions"], submitted_certificates, strict=True
     ):
-        action_text = "\n".join(row["action_id"] for row in mission["slots"]) + "\n"
-        assert certificate["plan_sha256"] == hashlib.sha256(action_text.encode()).hexdigest()
-        assert certificate["total_energy_units"] == sum(
-            row["energy_used_units"] for row in mission["slots"]
+        action_bytes = (
+            "\n".join(record["action_id"] for record in mission["slots"]) + "\n"
+        ).encode()
+        assert proof["plan_sha256"] == hashlib.sha256(action_bytes).hexdigest()
+        assert proof["total_energy_units"] == sum(
+            record["energy_used_units"] for record in mission["slots"]
         )
-        assert certificate["minimum_battery_units"] == min(
-            row["battery_units"] for row in mission["slots"]
+        assert proof["minimum_battery_units"] == min(
+            record["battery_units"] for record in mission["slots"]
         )
-        assert certificate["peak_thermal_units"] == max(
-            row["thermal_units"] for row in mission["slots"]
+        assert proof["peak_thermal_units"] == max(
+            record["thermal_units"] for record in mission["slots"]
         )
 
 
-def test_csv_is_a_lossless_flat_view_in_manifest_slot_order():
-    """The table cannot disagree with any JSON decision or resource state."""
-    validate_csv(submitted_plan(), CSV_PATH)
+def test_slot_table_is_the_lossless_manifest_order_plan_projection():
+    """Match every CSV cell to its JSON decision and spacecraft state."""
+    DownlinkAudit(
+        candidate_plan(), candidate_certificate(), CSV_PATH
+    ).check_flat_table()
 
 
 def test_published_optima_exercise_all_coupled_constraints():
     """Fixtures require idle gaps, station changes, losses, and binding resource tradeoffs."""
-    certificates = submitted_certificate()["missions"]
+    certificates = candidate_certificate()["missions"]
     assert all(7 <= row["contact_count"] < 14 for row in certificates)
     assert all(row["objective_prefix"][0] > 0 for row in certificates)
     assert any(row["objective_prefix"][2] > 0 for row in certificates)
     assert any(row["peak_thermal_units"] >= 29 for row in certificates)
-    for mission in submitted_plan()["missions"]:
+    for mission in candidate_plan()["missions"]:
         action_ids = [row["action_id"] for row in mission["slots"]]
         stations = {row["station_id"] for row in mission["slots"] if row["action_id"] != "idle"}
         assert "idle" in action_ids
@@ -434,17 +495,16 @@ def test_published_optima_exercise_all_coupled_constraints():
 
 def test_feasible_last_contact_deletion_is_rejected_as_nonoptimal():
     """A resource-feasible schedule still fails when it is not the unique robust optimum."""
-    entry = manifest_entries(INPUT)[0]
+    entry = mission_entries(INPUT)[0]
     world = parse_mission(INPUT, entry)
     optimal_actions, objective = exact_plan(world)
     last_contact = max(index for index, action in enumerate(optimal_actions) if action != "idle")
     mutated_actions = list(optimal_actions)
     mutated_actions[last_contact] = "idle"
     mutated_plan, _ = replay_plan(world, tuple(mutated_actions), objective)
-    expected_plan = expected()[0][0]
-    assert mutated_plan["slots"] != expected_plan["slots"]
-    with pytest.raises(AssertionError):
-        assert mutated_plan == expected_plan
+    optimal_plan = oracle_outputs()[0][0]
+    assert mutated_plan["slots"] != optimal_plan["slots"]
+    assert mutated_plan != optimal_plan
 
 
 def test_restricted_runner_denies_oracle_reads_and_process_escape(tmp_path):
@@ -454,7 +514,7 @@ def test_restricted_runner_denies_oracle_reads_and_process_escape(tmp_path):
         "from pathlib import Path\n"
         f"Path({str(TESTS / 'reference_model.py')!r}).read_text()\n"
     )
-    completed = run_restricted_solver(
+    completed = invoke_submitted_solver(
         oracle_probe,
         tmp_path / "unused-input",
         tmp_path / "unused-output",
@@ -469,7 +529,7 @@ def test_restricted_runner_denies_oracle_reads_and_process_escape(tmp_path):
         "import subprocess, sys\n"
         "subprocess.run([sys.executable, '-c', 'pass'], check=True)\n"
     )
-    completed = run_restricted_solver(
+    completed = invoke_submitted_solver(
         process_probe,
         tmp_path / "unused-input",
         tmp_path / "unused-output",
@@ -484,25 +544,25 @@ def test_reusable_solver_optimizes_a_private_changed_mission(tmp_path):
     """Published schedules fail when timing, contacts, pointing and resources all change."""
     private_input = tmp_path / "private-input"
     private_output = tmp_path / "private-output"
-    mission_id = build_counterfactual_input(private_input)
+    mission_id = write_unseen_mission(private_input)
     private_plans, private_certificates = calculate(private_input)
     public_plan = next(
-        row for row in submitted_plan()["missions"] if row["mission_id"] == mission_id
+        row for row in candidate_plan()["missions"] if row["mission_id"] == mission_id
     )
     assert [row["action_id"] for row in private_plans[0]["slots"]] != [
         row["action_id"] for row in public_plan["slots"]
     ]
     assert private_certificates[0]["objective_prefix"] != next(
         row["objective_prefix"]
-        for row in submitted_certificate()["missions"]
+        for row in candidate_certificate()["missions"]
         if row["mission_id"] == mission_id
     )
 
-    completed = run_restricted_solver(
+    completed = invoke_submitted_solver(
         SOLVER_PATH,
         private_input,
         private_output,
         tmp_path,
     )
     assert completed.returncode == 0, (completed.stdout[-2000:], completed.stderr[-2000:])
-    validate_complete_output(private_output, private_input)
+    audit_output_directory(private_output, private_input)
