@@ -3,327 +3,423 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import stat
-from collections import deque
+import subprocess
+import sys
+from collections import Counter, deque
+from functools import lru_cache
 from pathlib import Path
 
+from reference_model import VerifierEngine, calculate, encoded
 
-APP = Path(os.environ.get("SOKOBAN_APP_ROOT", "/app"))
+
+APP = Path(os.environ.get("RESCUE_APP_ROOT", "/app"))
 INPUT = APP / "input"
-PUZZLES = INPUT / "puzzles"
-FRONTIER = APP / "output" / "first_push_frontier.json"
-EXPECTED = json.loads((Path(__file__).parent / "expected.json").read_text())
+OUTPUT = APP / "output"
+TESTS = Path(__file__).parent
+POLICY_PATH = OUTPUT / "rescue_policy.json"
+SOLVER_PATH = OUTPUT / "solver.py"
 
-DIRECTIONS = {"U": (-1, 0), "D": (1, 0), "L": (0, -1), "R": (0, 1)}
-ORDER = ("D", "L", "R", "U")
-OPPOSITE = {"U": "D", "D": "U", "L": "R", "R": "L"}
-ALPHABET = set(DIRECTIONS)
-
-
-def rules() -> dict:
-    return json.loads((INPUT / "rules.json").read_text())
-
-
-def submitted() -> dict:
-    return json.loads(FRONTIER.read_text())
-
-
-def parse(text: str) -> dict:
-    """Independent board reader, sharing no implementation with the Oracle."""
-    rows = text.split("\n")
-    while rows and not rows[-1].strip():
-        rows.pop()
-    width = max(len(row) for row in rows)
-    walls, goals, boxes = set(), set(), set()
-    player = None
-    for row_index, row in enumerate(rows):
-        for column_index, glyph in enumerate(row.ljust(width)):
-            cell = (row_index, column_index)
-            if glyph == "#":
-                walls.add(cell)
-                continue
-            if glyph in (".", "*", "+"):
-                goals.add(cell)
-            if glyph in ("$", "*"):
-                boxes.add(cell)
-            if glyph in ("@", "+"):
-                player = cell
-    return {
-        "height": len(rows),
-        "width": width,
-        "walls": walls,
-        "goals": goals,
-        "boxes": boxes,
-        "player": player,
-    }
+TOP_FIELDS = {"schema_version", "arenas"}
+ARENA_FIELDS = {
+    "arena_id",
+    "root_node_id",
+    "worst_case_turns",
+    "worst_case_energy",
+    "worst_case_handoffs",
+    "policy_node_count",
+    "policy_sha256",
+    "nodes",
+}
+NODE_FIELDS = {
+    "node_id",
+    "team_a_node",
+    "team_b_node",
+    "rescued_victims",
+    "possible_modes",
+    "last_actor",
+    "remaining_worst_case_turns",
+    "remaining_worst_case_energy",
+    "remaining_worst_case_handoffs",
+    "optimal_action_count",
+    "action",
+    "outcomes",
+}
+OUTCOME_FIELDS = {"observation", "next_node_id"}
 
 
-def inside(board: dict, cell: tuple[int, int]) -> bool:
-    return 0 <= cell[0] < board["height"] and 0 <= cell[1] < board["width"]
+@lru_cache(maxsize=1)
+def submitted():
+    return json.loads(POLICY_PATH.read_text())
 
 
-def add(cell: tuple[int, int], key: str) -> tuple[int, int]:
-    delta_row, delta_column = DIRECTIONS[key]
-    return cell[0] + delta_row, cell[1] + delta_column
+@lru_cache(maxsize=1)
+def reference():
+    return calculate(INPUT)
 
 
-def reachable_first_pushes(board: dict) -> list[tuple[int, int, str]]:
-    """Derive the complete opening frontier from only the published board."""
-    reachable = {board["player"]}
-    queue = deque([board["player"]])
-    while queue:
-        cell = queue.popleft()
-        for key in ORDER:
-            target = add(cell, key)
-            if (
-                not inside(board, target)
-                or target in board["walls"]
-                or target in board["boxes"]
-                or target in reachable
-            ):
-                continue
-            reachable.add(target)
-            queue.append(target)
-
-    result = []
-    for box in sorted(board["boxes"]):
-        for key in ORDER:
-            destination = add(box, key)
-            standing = add(box, OPPOSITE[key])
-            if (
-                inside(board, destination)
-                and destination not in board["walls"]
-                and destination not in board["boxes"]
-                and standing in reachable
-            ):
-                result.append((box[0], box[1], key))
-    return result
+def regular_file(path):
+    return path.exists() and not path.is_symlink() and stat.S_ISREG(path.stat().st_mode)
 
 
-def replay(
-    board: dict, moves: str
-) -> tuple[set, tuple[int, int], int, int, tuple[int, int, str] | None]:
-    """Replay a completion and identify the box/direction of its first push."""
-    boxes = set(board["boxes"])
-    player = board["player"]
-    pushes = 0
-    direction_changes = 0
-    last_push = None
-    first_push = None
-    for index, key in enumerate(moves):
-        target = add(player, key)
-        if not inside(board, target):
-            raise ValueError(f"move {index} leaves the grid")
-        if target in board["walls"]:
-            raise ValueError(f"move {index} walks into a wall")
-        if target in boxes:
-            destination = add(target, key)
-            if not inside(board, destination):
-                raise ValueError(f"move {index} pushes a box off the grid")
-            if destination in board["walls"]:
-                raise ValueError(f"move {index} pushes a box into a wall")
-            if destination in boxes:
-                raise ValueError(f"move {index} pushes a box into another box")
-            if first_push is None:
-                first_push = (target[0], target[1], key)
-            boxes.remove(target)
-            boxes.add(destination)
-            pushes += 1
-            if last_push is not None and last_push != key:
-                direction_changes += 1
-            last_push = key
-        player = target
-    return boxes, player, pushes, direction_changes, first_push
+def sha256(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_frontier_document_is_a_regular_file():
-    """The one requested artifact exists at the documented path as a real file."""
-    assert FRONTIER.exists()
-    assert not FRONTIER.is_symlink()
-    assert stat.S_ISREG(FRONTIER.stat().st_mode)
-    assert isinstance(json.loads(FRONTIER.read_text()), dict)
+def source_arenas(input_root=INPUT):
+    manifest = json.loads((input_root / "manifest.json").read_text())
+    return [json.loads((input_root / row["file"]).read_text()) for row in manifest["arenas"]]
 
 
-def test_published_fixture_and_hidden_contract_are_unchanged():
-    """Hash-pin inputs and validate the generated frontier-coverage contract."""
-    specification = rules()
-    fixture = EXPECTED["fixture_contract"]
-    expected_ids = [record["puzzle_id"] for record in EXPECTED["puzzles"]]
-    assert EXPECTED["schema_version"] == specification["schema_version"] == 2
-    assert fixture["rules_schema_version"] == specification["schema_version"]
-    assert fixture["puzzle_count"] == len(expected_ids)
-    assert fixture["puzzle_ids"] == expected_ids == specification["puzzle_ids"]
-    assert fixture["expected_puzzle_keys"] == [
-        "puzzle_id",
-        "minimum_moves",
-        "commitments",
-        "board_sha256",
-    ]
-    assert fixture["expected_commitment_keys"] == [
-        *specification["output_contract"]["commitment_keys"][:-1],
-        "canonical_completion_sha256",
-    ]
-    assert (
-        fixture["output_puzzle_keys"] == specification["output_contract"]["puzzle_keys"]
-    )
-    assert (
-        fixture["output_commitment_keys"]
-        == specification["output_contract"]["commitment_keys"]
-    )
-    assert fixture["count_modulus"] == specification["first_push_frontier"]["modulus"]
-    bounds = specification["instance_bounds"]
-    assert (
-        fixture["push_direction_discriminating_puzzle_count"]
-        >= bounds["push_direction_discriminating_puzzles_min"]
-    )
-    assert (
-        fixture["hard_tail_push_direction_discriminating_puzzle_count"]
-        >= bounds["hard_tail_push_direction_discriminating_puzzles_min"]
-    )
-    assert (
-        fixture["frontier_unsolvable_commitment_count"]
-        >= bounds["frontier_unsolvable_commitments_min"]
-    )
-    assert (
-        fixture["frontier_positive_regret_commitment_count"]
-        >= bounds["frontier_positive_regret_commitments_min"]
-    )
-    assert (
-        fixture["frontier_multi_best_puzzle_count"]
-        >= bounds["frontier_multi_best_puzzles_min"]
-    )
-    assert fixture["frontier_commitment_count"] == sum(
-        len(record["commitments"]) for record in EXPECTED["puzzles"]
-    )
-    assert all(
-        set(record) == set(fixture["expected_puzzle_keys"])
-        and all(
-            set(commitment) == set(fixture["expected_commitment_keys"])
-            for commitment in record["commitments"]
-        )
-        for record in EXPECTED["puzzles"]
-    )
-    assert (
-        hashlib.sha256((INPUT / "rules.json").read_bytes()).hexdigest()
-        == EXPECTED["rules_sha256"]
-    )
-    for record in EXPECTED["puzzles"]:
-        path = PUZZLES / f"{record['puzzle_id']}.txt"
-        assert path.is_file()
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == record["board_sha256"]
-    assert {path.name for path in PUZZLES.iterdir() if path.is_file()} == {
-        f"{puzzle_id}.txt" for puzzle_id in expected_ids
-    }
+def validate_complete_document(document, input_root):
+    expected, engines = calculate(input_root)
+    assert document == expected
+    assert set(document) == TOP_FIELDS
+    assert document["schema_version"] == 1
+    for arena_row in document["arenas"]:
+        assert set(arena_row) == ARENA_FIELDS
+        engine = engines[arena_row["arena_id"]]
+        by_id = {node["node_id"]: node for node in arena_row["nodes"]}
+        assert len(by_id) == arena_row["policy_node_count"] == len(arena_row["nodes"])
+        assert arena_row["root_node_id"] in by_id
+        assert arena_row["policy_sha256"] == hashlib.sha256(
+            encoded(arena_row["nodes"]).encode()
+        ).hexdigest()
+        for node in arena_row["nodes"]:
+            assert set(node) == NODE_FIELDS
+            state = engine.state_from_json(node)
+            assert node["node_id"] == engine.identifier(state)
+            value, action, branches, action_count = engine.exact(state)
+            assert (
+                node["remaining_worst_case_turns"],
+                node["remaining_worst_case_energy"],
+                node["remaining_worst_case_handoffs"],
+            ) == value
+            assert node["optimal_action_count"] == action_count
+            assert node["action"] == action
+            expected_outcomes = [
+                {"observation": observation, "next_node_id": engine.identifier(child)}
+                for observation, child in branches
+            ]
+            assert node["outcomes"] == expected_outcomes
+            assert all(outcome["next_node_id"] in by_id for outcome in node["outcomes"])
 
 
-def test_document_schema_ordering_and_frontier_membership_are_exact():
-    """Require the nested schema and independently derived set of first pushes."""
-    specification = rules()
-    contract = specification["output_contract"]
-    document = submitted()
-    assert set(document) == set(contract["top_level_keys"])
-    assert type(document["schema_version"]) is int
-    assert document["schema_version"] == contract["schema_version"]
-    assert isinstance(document["puzzles"], list)
-    identifiers = [record["puzzle_id"] for record in document["puzzles"]]
-    assert identifiers == specification["puzzle_ids"]
-    assert identifiers == sorted(identifiers, key=lambda value: value.encode())
-
-    for record in document["puzzles"]:
-        assert set(record) == set(contract["puzzle_keys"])
-        assert type(record["minimum_moves"]) is int and record["minimum_moves"] >= 0
-        assert isinstance(record["commitments"], list)
-        board = parse((PUZZLES / f"{record['puzzle_id']}.txt").read_text())
-        identities = [
-            (item["box_row"], item["box_column"], item["direction"])
-            for item in record["commitments"]
-        ]
-        assert identities == reachable_first_pushes(board)
-        for item in record["commitments"]:
-            assert set(item) == set(contract["commitment_keys"])
-            assert type(item["box_row"]) is int and item["box_row"] >= 0
-            assert type(item["box_column"]) is int and item["box_column"] >= 0
-            assert item["direction"] in ORDER
-            assert type(item["solvable"]) is bool
-            assert type(item["optimal_completion_count_mod"]) is int
-            assert 0 <= item["optimal_completion_count_mod"] < 1_000_000_007
-            nullable = (
-                "conditional_moves",
-                "move_regret",
-                "conditional_pushes",
-                "conditional_push_direction_changes",
+def build_counterfactual(destination):
+    arena = json.loads((INPUT / "arenas" / "rescue_02.json").read_text())
+    arena["arena_id"] = "private_contingency"
+    node_ids = [node["node_id"] for node in arena["nodes"]]
+    arena["teams"][0]["start_node"] = node_ids[2]
+    arena["teams"][1]["start_node"] = node_ids[-2]
+    arena["teams"][0]["scan_energy"] += 2
+    arena["teams"][1]["move_energy_multiplier"] += 1
+    victim_nodes = [node_ids[-1], node_ids[-3], node_ids[4], node_ids[6]]
+    for victim, node_id in zip(arena["victims"], victim_nodes, strict=True):
+        victim["node"] = node_id
+    modes = arena["mode_ids"]
+    for edge_number, edge in enumerate(arena["edges"]):
+        edge["energy_cost"] += 1 + edge_number % 2
+        if len(edge["safe_modes"]) != len(modes):
+            edge["safe_modes"] = sorted(
+                modes[(modes.index(mode) + 1 + edge_number % 2) % len(modes)]
+                for mode in edge["safe_modes"]
             )
-            if item["solvable"]:
-                assert all(
-                    type(item[key]) is int and item[key] >= 0 for key in nullable
-                )
-                assert isinstance(item["canonical_completion"], str)
-                assert item["canonical_completion"]
-                assert set(item["canonical_completion"]) <= ALPHABET
-            else:
-                assert all(item[key] is None for key in nullable)
-                assert item["canonical_completion"] is None
-                assert item["optimal_completion_count_mod"] == 0
-
-
-def test_every_solvable_completion_is_functional_and_matches_its_commitment():
-    """Replay each branch and verify its first push, solution, and reported metrics."""
-    for record in submitted()["puzzles"]:
-        board = parse((PUZZLES / f"{record['puzzle_id']}.txt").read_text())
-        for item in record["commitments"]:
-            if not item["solvable"]:
-                continue
-            moves = item["canonical_completion"]
-            boxes, _, pushes, changes, first_push = replay(board, moves)
-            assert boxes == board["goals"], (record["puzzle_id"], first_push)
-            assert first_push == (
-                item["box_row"],
-                item["box_column"],
-                item["direction"],
-            )
-            assert len(moves) == item["conditional_moves"]
-            assert pushes == item["conditional_pushes"]
-            assert changes == item["conditional_push_direction_changes"]
-
-
-def test_hidden_conditional_optima_canonical_strings_and_counts_match():
-    """Pin every conditional result while keeping canonical completions undisclosed."""
-    actual_puzzles = {record["puzzle_id"]: record for record in submitted()["puzzles"]}
-    for expected_puzzle in EXPECTED["puzzles"]:
-        actual_puzzle = actual_puzzles[expected_puzzle["puzzle_id"]]
-        assert actual_puzzle["minimum_moves"] == expected_puzzle["minimum_moves"]
-        assert len(actual_puzzle["commitments"]) == len(expected_puzzle["commitments"])
-        for actual, expected in zip(
-            actual_puzzle["commitments"], expected_puzzle["commitments"], strict=True
-        ):
-            assert {
-                key: value
-                for key, value in actual.items()
-                if key != "canonical_completion"
-            } == {
-                key: value
-                for key, value in expected.items()
-                if key != "canonical_completion_sha256"
+    for node_number, node in enumerate(arena["nodes"]):
+        if node["signals"] is not None:
+            old = node["signals"]
+            node["signals"] = {
+                mode: old[modes[-1 - modes.index(mode)]] + f"_P{node_number % 2}"
+                for mode in modes
             }
-            if actual["canonical_completion"] is None:
-                assert expected["canonical_completion_sha256"] is None
-            else:
-                assert (
-                    hashlib.sha256(actual["canonical_completion"].encode()).hexdigest()
-                    == expected["canonical_completion_sha256"]
-                )
 
-
-def test_regret_is_derived_from_each_complete_conditional_frontier():
-    """Cross-check the coupling between branch costs, best opening, and regret."""
-    for record in submitted()["puzzles"]:
-        solvable = [item for item in record["commitments"] if item["solvable"]]
-        assert solvable
-        assert record["minimum_moves"] == min(
-            item["conditional_moves"] for item in solvable
+    arena_root = destination / "arenas"
+    arena_root.mkdir(parents=True)
+    arena_path = arena_root / "private_contingency.json"
+    arena_path.write_text(json.dumps(arena, indent=2, sort_keys=True) + "\n")
+    (destination / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "arenas": [
+                    {
+                        "arena_id": "private_contingency",
+                        "file": "arenas/private_contingency.json",
+                    }
+                ],
+            },
+            indent=2,
+            sort_keys=True,
         )
-        assert any(item["move_regret"] == 0 for item in solvable)
-        for item in solvable:
-            assert item["move_regret"] == (
-                item["conditional_moves"] - record["minimum_moves"]
+        + "\n"
+    )
+    shutil.copy2(INPUT / "rules.json", destination / "rules.json")
+    return arena
+
+
+def test_required_artifacts_are_regular_parseable_files():
+    """The policy and reusable solver exist as ordinary top-level artifacts."""
+    assert regular_file(POLICY_PATH)
+    assert regular_file(SOLVER_PATH)
+    assert isinstance(submitted(), dict)
+    compile(SOLVER_PATH.read_text(), str(SOLVER_PATH), "exec")
+
+
+def test_generated_input_tree_is_immutable_and_hash_locked():
+    """Every agent-visible arena and rule file retains its generated bytes."""
+    expected = json.loads((TESTS / "expected.json").read_text())["input_sha256"]
+    found = {
+        path.relative_to(INPUT).as_posix(): sha256(path)
+        for path in sorted(INPUT.rglob("*"))
+        if path.is_file()
+    }
+    assert found == expected
+
+
+def test_environment_contains_no_generator_or_hidden_policy_engine():
+    """Build-time generation and hidden verifier material are absent."""
+    forbidden = {"build_instance.py", "reference_model.py", "expected.json"}
+    found = {path.name for path in APP.rglob("*") if path.is_file()}
+    assert forbidden.isdisjoint(found)
+
+
+def test_manifest_and_arena_schemas_are_exact():
+    """Published evidence uses the documented graph, mode, team, and sensor schemas."""
+    manifest = json.loads((INPUT / "manifest.json").read_text())
+    assert set(manifest) == {"schema_version", "arenas"}
+    assert manifest["schema_version"] == 1
+    assert len(manifest["arenas"]) == 10
+    assert [row["arena_id"] for row in manifest["arenas"]] == sorted(
+        row["arena_id"] for row in manifest["arenas"]
+    )
+    for record, arena in zip(manifest["arenas"], source_arenas(), strict=True):
+        assert set(record) == {"arena_id", "file"}
+        assert arena["arena_id"] == record["arena_id"]
+        assert set(arena) == {
+            "schema_version", "arena_id", "mode_ids", "teams", "victims",
+            "nodes", "edges", "max_worst_case_turns", "generation_seed",
+        }
+        assert arena["schema_version"] == 1
+        assert [team["team_id"] for team in arena["teams"]] == ["A", "B"]
+        assert all(set(team) == {
+            "team_id", "start_node", "move_energy_multiplier", "scan_energy"
+        } for team in arena["teams"])
+        assert all(set(victim) == {"victim_id", "node"} for victim in arena["victims"])
+        assert all(set(node) == {"node_id", "signals"} for node in arena["nodes"])
+        assert all(set(edge) == {
+            "edge_id", "a", "b", "turn_cost", "energy_cost", "safe_modes"
+        } for edge in arena["edges"])
+
+
+def test_fixtures_exercise_partial_observation_and_asymmetric_resources():
+    """The generated worlds require beliefs, conditional routes, sensors, and team costing."""
+    mode_counts = set()
+    node_counts = set()
+    sensor_partitions = set()
+    for arena in source_arenas():
+        modes = arena["mode_ids"]
+        mode_counts.add(len(modes))
+        node_counts.add(len(arena["nodes"]))
+        assert len(modes) >= 6
+        assert len(arena["victims"]) == 4
+        uncertain = [
+            edge for edge in arena["edges"] if 0 < len(edge["safe_modes"]) < len(modes)
+        ]
+        assert len(uncertain) >= len(arena["nodes"])
+        assert any(len(edge["safe_modes"]) == len(modes) for edge in arena["edges"])
+        assert arena["teams"][0]["move_energy_multiplier"] != arena["teams"][1][
+            "move_energy_multiplier"
+        ]
+        for node in arena["nodes"]:
+            if node["signals"] is not None:
+                assert set(node["signals"]) == set(modes)
+                sensor_partitions.add(tuple(node["signals"][mode] for mode in modes))
+    assert mode_counts == {6, 7, 8}
+    assert len(node_counts) == 4
+    assert len(sensor_partitions) >= 12
+
+
+def test_reference_policies_activate_branching_scans_failures_and_ties():
+    """Calibrated optima contain genuine observation branches and all policy cruxes."""
+    document, _ = reference()
+    calibration = json.loads((TESTS / "expected.json").read_text())["calibration"]
+    assert len(document["arenas"]) == calibration["arena_count"]
+    assert sum(row["policy_node_count"] for row in document["arenas"]) == calibration[
+        "total_policy_nodes"
+    ]
+    actions = Counter()
+    observations = Counter()
+    tied_nodes = 0
+    branching_nodes = 0
+    for arena in document["arenas"]:
+        assert arena["worst_case_turns"] >= 10
+        assert arena["policy_node_count"] >= 5
+        for node in arena["nodes"]:
+            if node["action"]:
+                team, kind, *_ = node["action"].split(":")
+                actions[(team, kind)] += 1
+            observations.update(row["observation"] for row in node["outcomes"])
+            tied_nodes += node["optimal_action_count"] > 1
+            branching_nodes += len(node["outcomes"]) > 1
+    assert actions[("A", "MOVE")] > 0 and actions[("B", "MOVE")] > 0
+    assert actions[("A", "SCAN")] + actions[("B", "SCAN")] >= 3
+    assert observations["ARRIVED"] > 0 and observations["BLOCKED"] >= 10
+    assert tied_nodes >= 5
+    assert branching_nodes >= 10
+
+
+def test_output_uses_exact_nested_schemas_and_canonical_order():
+    """No undeclared fields, malformed types, or reordered policy records are accepted."""
+    document = submitted()
+    assert set(document) == TOP_FIELDS and document["schema_version"] == 1
+    manifest = json.loads((INPUT / "manifest.json").read_text())
+    assert [row["arena_id"] for row in document["arenas"]] == [
+        row["arena_id"] for row in manifest["arenas"]
+    ]
+    for arena in document["arenas"]:
+        assert set(arena) == ARENA_FIELDS
+        assert type(arena["worst_case_turns"]) is int
+        assert type(arena["worst_case_energy"]) is int
+        assert type(arena["worst_case_handoffs"]) is int
+        assert type(arena["policy_node_count"]) is int
+        assert len(arena["policy_sha256"]) == 64
+        assert [node["node_id"] for node in arena["nodes"]] == sorted(
+            node["node_id"] for node in arena["nodes"]
+        )
+        for node in arena["nodes"]:
+            assert set(node) == NODE_FIELDS
+            assert node["last_actor"] in (None, "A", "B")
+            assert type(node["optimal_action_count"]) is int
+            assert node["optimal_action_count"] >= 1
+            assert [row["observation"] for row in node["outcomes"]] == sorted(
+                row["observation"] for row in node["outcomes"]
             )
+            assert all(set(outcome) == OUTCOME_FIELDS for outcome in node["outcomes"])
+
+
+def test_arena_summaries_and_complete_policy_values_match_independent_model():
+    """Every root value, action, local value, multiplicity, and observation target is pinned."""
+    expected, _ = reference()
+    assert submitted() == expected
+
+
+def test_state_ids_roots_and_policy_digests_are_functional():
+    """State identities and whole-policy digests are recomputed from submitted content."""
+    _, engines = reference()
+    for arena in submitted()["arenas"]:
+        engine = engines[arena["arena_id"]]
+        assert arena["root_node_id"] == engine.identifier(engine.initial())
+        assert arena["policy_node_count"] == len(arena["nodes"])
+        assert arena["policy_sha256"] == hashlib.sha256(
+            encoded(arena["nodes"]).encode()
+        ).hexdigest()
+        for node in arena["nodes"]:
+            assert node["node_id"] == engine.identifier(engine.state_from_json(node))
+
+
+def test_submitted_actions_reproduce_exact_belief_partitions_and_costs():
+    """Every policy edge is a legal scan or move with complete mode-observation coverage."""
+    _, engines = reference()
+    for arena in submitted()["arenas"]:
+        engine = engines[arena["arena_id"]]
+        node_ids = {node["node_id"] for node in arena["nodes"]}
+        for node in arena["nodes"]:
+            state = engine.state_from_json(node)
+            if engine.goal(state):
+                assert node["action"] is None and node["outcomes"] == []
+                continue
+            assert node["action"] in engine.available(state)
+            expected = [
+                {"observation": observation, "next_node_id": engine.identifier(child)}
+                for observation, child in engine.advance(state, node["action"])
+            ]
+            assert node["outcomes"] == expected
+            assert all(row["next_node_id"] in node_ids for row in expected)
+
+
+def test_policy_graph_is_closed_acyclic_and_strong_for_every_mode():
+    """Every compatible observation trace stays in the graph and reaches a rescue goal."""
+    _, engines = reference()
+    for arena in submitted()["arenas"]:
+        engine = engines[arena["arena_id"]]
+        nodes = {node["node_id"]: node for node in arena["nodes"]}
+        reachable = set()
+        pending = deque([arena["root_node_id"]])
+        while pending:
+            node_id = pending.popleft()
+            if node_id in reachable:
+                continue
+            reachable.add(node_id)
+            node = nodes[node_id]
+            state = engine.state_from_json(node)
+            if engine.goal(state):
+                assert node["remaining_worst_case_turns"] == 0
+                continue
+            turn_cost = engine.cost(state, node["action"])[0]
+            for outcome in node["outcomes"]:
+                child = nodes[outcome["next_node_id"]]
+                assert child["remaining_worst_case_turns"] <= (
+                    node["remaining_worst_case_turns"] - turn_cost
+                )
+                pending.append(outcome["next_node_id"])
+        assert reachable == set(nodes)
+
+
+def test_canonical_action_and_local_optimal_action_count_are_exact():
+    """The policy uses the published action tie-break and reports every tied optimum."""
+    _, engines = reference()
+    for arena in submitted()["arenas"]:
+        engine = engines[arena["arena_id"]]
+        for node in arena["nodes"]:
+            state = engine.state_from_json(node)
+            value, action, _, count = engine.exact(state)
+            assert node["action"] == action
+            assert node["optimal_action_count"] == count
+            assert (
+                node["remaining_worst_case_turns"],
+                node["remaining_worst_case_energy"],
+                node["remaining_worst_case_handoffs"],
+            ) == value
+
+
+def test_reusable_solver_generalizes_to_private_contingency(tmp_path):
+    """Fixed published policies fail when starts, rescues, observations, modes, and costs change."""
+    hidden_input = tmp_path / "hidden-input"
+    hidden_output = tmp_path / "hidden-output"
+    hidden_arena = build_counterfactual(hidden_input)
+    expected, _ = calculate(hidden_input)
+    published = next(
+        arena for arena in submitted()["arenas"] if arena["arena_id"] == "rescue_02"
+    )
+    assert expected["arenas"][0]["arena_id"] == hidden_arena["arena_id"]
+    assert expected["arenas"][0]["root_node_id"] != published["root_node_id"]
+    assert expected["arenas"][0]["policy_sha256"] != published["policy_sha256"]
+
+    environment = os.environ.copy()
+    environment.pop("RESCUE_APP_ROOT", None)
+    environment.pop("PYTHONPATH", None)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SOLVER_PATH),
+            "--input-root",
+            str(hidden_input),
+            "--output-root",
+            str(hidden_output),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        text=True,
+        capture_output=True,
+        timeout=180,
+        check=False,
+    )
+    assert completed.returncode == 0, (completed.stdout[-2000:], completed.stderr[-2000:])
+    actual = json.loads((hidden_output / "rescue_policy.json").read_text())
+    validate_complete_document(actual, hidden_input)
+
+
+def test_complete_value_level_validator_accepts_published_oracle():
+    """The reusable full validator covers the published output without special paths."""
+    validate_complete_document(submitted(), INPUT)

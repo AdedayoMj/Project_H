@@ -4,13 +4,13 @@ RUN pip install --no-cache-dir \
         pytest==8.4.1 \
         pytest-json-ctrf==0.3.5
 
-COPY build_instance.py sokoban.py /tmp/dynamo-sokoban-build/
-RUN PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/tmp/dynamo-sokoban-build \
-        python3 /tmp/dynamo-sokoban-build/build_instance.py --root /app \
-    && rm -rf /tmp/dynamo-sokoban-build \
+COPY build_instance.py /tmp/dynamo-rescue-build/
+RUN PYTHONDONTWRITEBYTECODE=1 \
+        python3 /tmp/dynamo-rescue-build/build_instance.py --root /app \
+    && rm -rf /tmp/dynamo-rescue-build \
     && ! find / -type f \
-        \( -name 'sokoban.py' -o -name 'sokoban*.pyc' \
-        -o -name 'build_instance.py' -o -name 'build_instance*.pyc' \) \
-        -print -quit | grep -q .
+        \( -name 'build_instance.py' -o -name 'build_instance*.pyc' \) \
+        -print -quit | grep -q . \
+    && mkdir -p /app/output
 
 WORKDIR /app

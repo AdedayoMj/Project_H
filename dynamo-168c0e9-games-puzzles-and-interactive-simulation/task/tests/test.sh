@@ -4,7 +4,7 @@ trap 'rm -rf "$verification_root"' EXIT
 cp -a /app/input "$verification_root/input"
 cp -a /app/output "$verification_root/output"
 
-SOKOBAN_APP_ROOT="$verification_root" \
+RESCUE_APP_ROOT="$verification_root" \
     pytest -p no:cacheprovider --ctrf /logs/verifier/ctrf.json /tests/test_outputs.py -rA
 
 if [ $? -eq 0 ]; then

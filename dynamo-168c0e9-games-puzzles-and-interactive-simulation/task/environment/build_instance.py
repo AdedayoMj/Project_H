@@ -1,625 +1,197 @@
 #!/usr/bin/env python3
-"""Generate the hidden Sokoban benchmark and its canonical optimal answers."""
-
+"""Generate deterministic partially observable rescue-network instances."""
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
 import random
-import time
 from pathlib import Path
 
-from sokoban import (
-    COUNT_MODULUS,
-    INFINITY,
-    Board,
-    DIRECTIONS,
-    DIRECTION_ORDER,
-    matching_bound,
-    reachable_first_pushes,
-    screen_move_optimal,
-    solve_first_push_frontier,
-    solve_move_optimal,
-    walk_distances,
-)
 
-SEED = 168_0_9_431
-PUZZLE_COUNT = 10
-
-# Calibration envelopes. The caps are on expansions, not wall-clock, so the
-# accepted instance set is identical on every machine; measured seconds are
-# informational. Most puzzles retain the original breadth, while the hard tail
-# makes the tighter push-distance matching bound genuinely load-bearing.
-STANDARD_PUZZLE_COUNT = 8
-STANDARD_EXPANSION_LIMIT = 150_000
-STANDARD_MIN_OPTIMAL_MOVES = 40
-STANDARD_MIN_EXPANSIONS = 2_500
-STANDARD_INTERIOR_MIN = 10
-STANDARD_INTERIOR_MAX = 16
-STANDARD_BOX_MIN = 4
-STANDARD_BOX_MAX = 5
-
-HARD_PUZZLE_COUNT = PUZZLE_COUNT - STANDARD_PUZZLE_COUNT
-HARD_SEED_OFFSETS = (101, 211)
-HARD_EXPANSION_LIMIT = 450_000
-HARD_MIN_OPTIMAL_MOVES = 40
-HARD_MIN_EXPANSIONS = 120_000
-HARD_INTERIOR_MIN = 12
-HARD_INTERIOR_MAX = 18
-HARD_BOX_COUNT = 6
-HARD_REVERSE_PULLS = 180
-HARD_FRONTIER_COMMITMENTS_MIN = 2
-HARD_FRONTIER_COMMITMENTS_MAX = 4
-CANONICAL_PROOF_EXPANSION_LIMIT = 1_800_000
-FRONTIER_PROOF_EXPANSION_LIMIT = 1_800_000
-MIN_PUSH_DIRECTION_DISCRIMINATING_PUZZLES = 5
-MIN_HARD_PUSH_DIRECTION_DISCRIMINATING_PUZZLES = 1
-MIN_UNSOLVABLE_FIRST_PUSHES = 8
-MIN_POSITIVE_REGRET_FIRST_PUSHES = 10
-MIN_MULTI_BEST_FRONTIER_PUZZLES = 3
-
-assert len(HARD_SEED_OFFSETS) == HARD_PUZZLE_COUNT
-
-OPPOSITE = {"U": "D", "D": "U", "L": "R", "R": "L"}
+INSTANCE_COUNT = 10
+BASE_SEED = 0x5EEDC0DE
 
 
-def carve(rng: random.Random, height: int, width: int, rooms: int) -> set[int]:
-    """Carve rectangular rooms joined by one-wide corridors.
+def dump(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 
-    Open blobs give the forward search an enormous push branching factor, so the
-    deep-but-provable band is empty. Room-and-corridor layouts keep branching low
-    while still admitting long optimal solutions, which is what real levels look like.
-    """
-    stride = width + 2
-    floor: set[int] = set()
-    centres: list[tuple[int, int]] = []
-    for _ in range(rooms):
-        room_h = rng.randint(2, 4)
-        room_w = rng.randint(2, 4)
-        top = rng.randint(1, max(1, height - room_h + 1))
-        left = rng.randint(1, max(1, width - room_w + 1))
-        for r in range(top, min(top + room_h, height + 1)):
-            for c in range(left, min(left + room_w, width + 1)):
-                floor.add(r * stride + c)
-        centres.append((top + room_h // 2, left + room_w // 2))
-    for index in range(1, len(centres)):
-        (r0, c0), (r1, c1) = centres[index - 1], centres[index]
-        if rng.random() < 0.5:
-            for c in range(min(c0, c1), max(c0, c1) + 1):
-                floor.add(min(r0, height) * stride + c)
-            for r in range(min(r0, r1), max(r0, r1) + 1):
-                floor.add(r * stride + min(c1, width))
-        else:
-            for r in range(min(r0, r1), max(r0, r1) + 1):
-                floor.add(r * stride + min(c0, width))
-            for c in range(min(c0, c1), max(c0, c1) + 1):
-                floor.add(min(r1, height) * stride + c)
-    return {
-        cell
-        for cell in floor
-        if 1 <= cell // stride <= height and 1 <= cell % stride <= width
+
+def stable_number(*parts: object) -> int:
+    payload = "|".join(map(str, parts)).encode()
+    return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big")
+
+
+def victim_nodes(node_count: int, starts: set[int], seed: int) -> list[int]:
+    order = sorted(
+        (node for node in range(node_count) if node not in starts),
+        key=lambda node: stable_number(seed, "victim", node),
+    )
+    return sorted(order[:4])
+
+
+def add_edge(
+    edges: dict[tuple[int, int], dict],
+    a: int,
+    b: int,
+    turn_cost: int,
+    energy_cost: int,
+    safe_modes: list[str],
+) -> None:
+    key = tuple(sorted((a, b)))
+    if key in edges:
+        return
+    edges[key] = {
+        "a": f"N{key[0]:02d}",
+        "b": f"N{key[1]:02d}",
+        "turn_cost": turn_cost,
+        "energy_cost": energy_cost,
+        "safe_modes": sorted(safe_modes),
     }
 
 
-def add_obstacles(
-    rng: random.Random, floor: set[int], stride: int, count: int
-) -> set[int]:
-    """Re-wall isolated floor cells while keeping the region connected."""
-    result = set(floor)
-    candidates = sorted(result)
-    rng.shuffle(candidates)
-    for cell in candidates:
-        if count <= 0:
-            break
-        trial = result - {cell}
-        if not trial or not connected(trial, stride):
-            continue
-        result = trial
-        count -= 1
-    return result
+def build_arena(index: int) -> dict:
+    seed = BASE_SEED + 104729 * index
+    rng = random.Random(seed)
+    node_count = 10 + index % 4
+    mode_count = 6 + index % 3
+    mode_ids = [f"M{number:02d}" for number in range(mode_count)]
+    start_a = index % 2
+    start_b = node_count // 2 + index % 2
+    victims = victim_nodes(node_count, {start_a, start_b}, seed)
 
-
-def connected(floor: set[int], stride: int) -> bool:
-    start = next(iter(floor))
-    seen = {start}
-    stack = [start]
-    while stack:
-        cell = stack.pop()
-        for delta_r, delta_c in DIRECTIONS.values():
-            nxt = cell + delta_r * stride + delta_c
-            if nxt in floor and nxt not in seen:
-                seen.add(nxt)
-                stack.append(nxt)
-    return len(seen) == len(floor)
-
-
-def compose(
-    height: int,
-    width: int,
-    floor: set[int],
-    goals: set[int],
-    boxes: set[int],
-    player: int,
-    crop: bool = False,
-) -> list[str]:
-    """Render the board, optionally cropped to the floor region plus a wall border.
-
-    Cropping must stay off while building the Board used for generation: Board derives
-    its cell ids from the rendered row width, so a cropped render would put its
-    coordinates out of step with this function's. Only the published board is cropped,
-    which is a pure translation and leaves the optimum unchanged.
-    """
-    stride = width + 2
-    if crop:
-        rows_used = [cell // stride for cell in floor]
-        cols_used = [cell % stride for cell in floor]
-        top, bottom = min(rows_used) - 1, max(rows_used) + 1
-        left, right = min(cols_used) - 1, max(cols_used) + 1
-    else:
-        top, bottom = 0, height + 1
-        left, right = 0, stride - 1
-    rows = []
-    for r in range(top, bottom + 1):
-        row = []
-        for c in range(left, right + 1):
-            cell = r * stride + c
-            if cell not in floor:
-                row.append("#")
-            elif cell == player:
-                row.append("+" if cell in goals else "@")
-            elif cell in boxes:
-                row.append("*" if cell in goals else "$")
-            elif cell in goals:
-                row.append(".")
-            else:
-                row.append(" ")
-        rows.append("".join(row))
-    return rows
-
-
-def scatter(
-    rng: random.Random, board: Board, pulls: int
-) -> tuple[frozenset[int], int] | None:
-    """Walk backwards from the solved state so forward solvability is guaranteed.
-
-    A random backward walk drifts back towards the goals, so keep the deepest state
-    it visits, scored by the same admissible bound the forward search uses.
-    """
-    boxes = frozenset(board.goals)
-    free = sorted(board.floor - boxes)
-    if not free:
-        return None
-    player = rng.choice(free)
-    best_score = -1.0
-    best_state = None
-    for _ in range(pulls):
-        reach = walk_distances(board, boxes, player)
-        options = []
-        for box in sorted(boxes):
-            for key in DIRECTION_ORDER:
-                stand = board.step(box, key)
-                if stand is None or stand in board.walls or stand in boxes:
-                    continue
-                landing = board.step(stand, key)
-                if landing is None or landing in board.walls or landing in boxes:
-                    continue
-                if stand not in reach:
-                    continue
-                options.append((box, stand, landing))
-        if not options:
-            break
-        box, stand, landing = rng.choice(options)
-        boxes = frozenset(boxes - {box} | {stand})
-        player = landing
-        if boxes == frozenset(board.goals):
-            continue
-        bound = matching_bound(board, boxes)
-        if bound == INFINITY:
-            continue
-        offgoal = len(boxes - board.goals)
-        score = bound + offgoal
-        if score > best_score:
-            best_score = score
-            best_state = (boxes, player)
-    return best_state
-
-
-def build_one(rng: random.Random, puzzle_id: str, *, hard: bool = False) -> dict | None:
-    if hard:
-        interior_min = HARD_INTERIOR_MIN
-        interior_max = HARD_INTERIOR_MAX
-        box_min = box_max = HARD_BOX_COUNT
-        expansion_limit = HARD_EXPANSION_LIMIT
-        min_optimal_moves = HARD_MIN_OPTIMAL_MOVES
-        min_expansions = HARD_MIN_EXPANSIONS
-    else:
-        interior_min = STANDARD_INTERIOR_MIN
-        interior_max = STANDARD_INTERIOR_MAX
-        box_min = STANDARD_BOX_MIN
-        box_max = STANDARD_BOX_MAX
-        expansion_limit = STANDARD_EXPANSION_LIMIT
-        min_optimal_moves = STANDARD_MIN_OPTIMAL_MOVES
-        min_expansions = STANDARD_MIN_EXPANSIONS
-
-    height = rng.randint(interior_min, interior_max)
-    width = rng.randint(interior_min, interior_max)
-    stride = width + 2
-    floor = carve(rng, height, width, rng.randint(3, 6))
-    if len(floor) < 32 or not connected(floor, stride):
-        return None
-    box_count = rng.randint(box_min, box_max)
-    if len(floor) < box_count * 7:
-        return None
-    goals = set(rng.sample(sorted(floor), box_count))
-
-    solved = compose(
-        height, width, floor, goals, goals, next(iter(sorted(floor - goals)))
-    )
-    try:
-        board = Board(solved)
-    except ValueError:
-        return None
-    if any(goal in board.dead for goal in board.goals):
-        return None
-
-    state = scatter(rng, board, HARD_REVERSE_PULLS if hard else 300)
-    if state is None:
-        return None
-    boxes, player = state
-    if any(cell in board.dead for cell in boxes):
-        return None
-    if hard:
-        frontier_size = len(reachable_first_pushes(board, boxes, player))
-        if (
-            not HARD_FRONTIER_COMMITMENTS_MIN
-            <= frontier_size
-            <= HARD_FRONTIER_COMMITMENTS_MAX
-        ):
-            return None
-
-    started = time.monotonic()
-    screening = screen_move_optimal(
-        board,
-        boxes,
-        player,
-        expansion_limit=expansion_limit,
-    )
-    screening_elapsed = time.monotonic() - started
-    if hard:
-        print(
-            f"{puzzle_id} hard candidate: optimal={screening['optimal_moves']} "
-            f"expansions={screening['expansions']} "
-            f"screen_seconds={screening_elapsed:.3f}",
-            flush=True,
-        )
-    if screening["optimal_moves"] is None:
-        return None
-    if (
-        screening["optimal_moves"] < min_optimal_moves
-        or screening["expansions"] < min_expansions
-    ):
-        return None
-
-    moves, stats = solve_move_optimal(
-        board,
-        boxes,
-        player,
-        expansion_limit=CANONICAL_PROOF_EXPANSION_LIMIT,
-    )
-    legacy_moves, legacy_stats = solve_move_optimal(
-        board,
-        boxes,
-        player,
-        expansion_limit=CANONICAL_PROOF_EXPANSION_LIMIT,
-        optimize_push_direction_changes=False,
-    )
-    elapsed = time.monotonic() - started
-    if moves is None or stats["optimal_moves"] != screening["optimal_moves"]:
-        raise RuntimeError(f"canonical proof disagrees with screening for {puzzle_id}")
-    if (
-        legacy_moves is None
-        or legacy_stats["optimal_moves"] != stats["optimal_moves"]
-        or legacy_stats["optimal_pushes"] != stats["optimal_pushes"]
-    ):
-        raise RuntimeError(
-            f"legacy objective disagrees on primary costs for {puzzle_id}"
+    edges: dict[tuple[int, int], dict] = {}
+    # A universally traversable but deliberately expensive cycle guarantees that every
+    # hidden mode is winnable. Conditional chords make the minimax optimum non-trivial.
+    for node in range(node_count):
+        other = (node + 1) % node_count
+        add_edge(
+            edges,
+            node,
+            other,
+            2 + stable_number(seed, "ring-turn", node) % 3,
+            3 + stable_number(seed, "ring-energy", node) % 6,
+            mode_ids,
         )
 
-    push_direction_criterion_discriminates = (
-        moves != legacy_moves
-        or stats["optimal_solution_count_mod"]
-        != legacy_stats["optimal_solution_count_mod"]
-    )
-
-    rows = compose(height, width, floor, goals, set(boxes), player, crop=True)
-    return {
-        "puzzle_id": puzzle_id,
-        "rows": rows,
-        "optimal_moves": int(stats["optimal_moves"]),
-        "optimal_pushes": int(stats["optimal_pushes"]),
-        "optimal_push_direction_changes": int(stats["optimal_push_direction_changes"]),
-        "optimal_solution_count_mod": int(stats["optimal_solution_count_mod"]),
-        "push_direction_criterion_discriminates": push_direction_criterion_discriminates,
-        "box_count": box_count,
-        "interior": [height, width],
-        "expansions": screening["expansions"],
-        "proof_seconds": round(elapsed, 3),
-        "reference_moves": moves,
-    }
-
-
-def rules_document() -> dict:
-    return {
-        "schema_version": 2,
-        "puzzle_directory": "/app/input/puzzles",
-        "puzzle_ids": [f"p{index:02d}" for index in range(1, PUZZLE_COUNT + 1)],
-        "board_format": {
-            "encoding": "UTF-8 text, one line per board row, trailing spaces stripped",
-            "glyphs": {
-                "#": "wall",
-                " ": "floor",
-                ".": "goal",
-                "$": "box",
-                "*": "box on goal",
-                "@": "player",
-                "+": "player on goal",
-            },
-            "geometry": "rows and columns are zero-based; rows are padded with floor to the maximum text width for coordinate calculations; the outer border is wall",
-        },
-        "move_rules": {
-            "characters": ["U", "D", "L", "R"],
-            "semantics": "U decreases the row, D increases the row, L decreases the column, R increases the column",
-            "walk": "the player may step onto floor or goal",
-            "push": "stepping into a box moves that box one cell in the same direction; the destination must be floor or goal and must not hold another box",
-            "illegal": "stepping into a wall, pushing into a wall, pushing into a second box, or leaving the grid",
-            "solved": "every box occupies a goal",
-        },
-        "first_push_frontier": {
-            "commitment_identity": "a first-push commitment is identified by the zero-based row and column of the box before it moves plus its U/D/L/R push direction",
-            "membership": "include every box/direction pair whose destination is empty floor or goal and whose required standing cell the player can reach from the initial position without moving any box",
-            "walking_choice": "the commitment fixes the first box and push direction, not the walk used to reach it; only shortest setup walks can attain that commitment's conditional move optimum",
-            "conditional_order": [
-                "minimum total player moves in a complete solution whose first push is the commitment",
-                "minimum total pushes among those move-optimal completions",
-                "minimum changes between consecutive push directions among those tied completions",
-                "lexicographically smallest complete move string under D < L < R < U",
-            ],
-            "direction_change_rule": "inspect only moves that push a box; the first push adds zero and each later push adds one exactly when its direction differs from the preceding push direction",
-            "solvable": "true exactly when at least one complete solution has this first push; legal first pushes that make the puzzle unsolvable remain in the frontier",
-            "minimum_moves": "the smallest conditional_moves value among all solvable commitments for the puzzle",
-            "move_regret": "conditional_moves minus the puzzle's minimum_moves; it is zero for every globally move-optimal commitment",
-            "count": "optimal_completion_count_mod is the number of distinct complete move strings tied on that commitment's first three conditional priorities, modulo 1000000007; different shortest setup walks are distinct strings and are counted",
-            "unsolvable_values": "when solvable is false, canonical_completion, conditional_moves, move_regret, conditional_pushes, and conditional_push_direction_changes are null, and optimal_completion_count_mod is 0",
-            "modulus": COUNT_MODULUS,
-        },
-        "output_contract": {
-            "path": "/app/output/first_push_frontier.json",
-            "top_level_keys": ["schema_version", "puzzles"],
-            "schema_version": 2,
-            "puzzle_keys": ["puzzle_id", "minimum_moves", "commitments"],
-            "commitment_keys": [
-                "box_row",
-                "box_column",
-                "direction",
-                "solvable",
-                "conditional_moves",
-                "move_regret",
-                "conditional_pushes",
-                "conditional_push_direction_changes",
-                "optimal_completion_count_mod",
-                "canonical_completion",
-            ],
-            "ordering": "puzzles ascending by puzzle_id UTF-8 bytes; commitments ascending by box_row, then box_column, then the explicit direction order D < L < R < U",
-            "canonical_completion": "the complete uppercase U/D/L/R move string selected by the four-level conditional order, or null for an unsolvable commitment",
-            "count_range": "optimal_completion_count_mod is an integer from 0 through 1000000006",
-        },
-        "instance_bounds": {
-            "puzzle_count": PUZZLE_COUNT,
-            "interior_rows_max": HARD_INTERIOR_MAX,
-            "interior_columns_max": HARD_INTERIOR_MAX,
-            "boxes_min": STANDARD_BOX_MIN,
-            "boxes_max": HARD_BOX_COUNT,
-            "standard_puzzle_count": STANDARD_PUZZLE_COUNT,
-            "hard_tail_puzzle_count": HARD_PUZZLE_COUNT,
-            "hard_tail_min_screening_expansions": HARD_MIN_EXPANSIONS,
-            "hard_tail_frontier_commitments_min": HARD_FRONTIER_COMMITMENTS_MIN,
-            "hard_tail_frontier_commitments_max": HARD_FRONTIER_COMMITMENTS_MAX,
-            "push_direction_discriminating_puzzles_min": MIN_PUSH_DIRECTION_DISCRIMINATING_PUZZLES,
-            "hard_tail_push_direction_discriminating_puzzles_min": MIN_HARD_PUSH_DIRECTION_DISCRIMINATING_PUZZLES,
-            "push_direction_discriminator": "a puzzle qualifies when adding the push-direction-change objective changes the legacy moves/pushes-optimal canonical move string or its tied-solution count modulo 1000000007",
-            "frontier_unsolvable_commitments_min": MIN_UNSOLVABLE_FIRST_PUSHES,
-            "frontier_positive_regret_commitments_min": MIN_POSITIVE_REGRET_FIRST_PUSHES,
-            "frontier_multi_best_puzzles_min": MIN_MULTI_BEST_FRONTIER_PUZZLES,
-            "guarantee": "every instance is generated backwards from its solved state, so at least one frontier commitment is solvable, and every conditional optimum or unsolvability result was proved inside the published expansion envelope",
-            "screening_expansion_limit": HARD_EXPANSION_LIMIT,
-            "canonical_proof_expansion_limit": CANONICAL_PROOF_EXPANSION_LIMIT,
-            "frontier_proof_expansion_limit_per_commitment": FRONTIER_PROOF_EXPANSION_LIMIT,
-            "canonical_move_order": list(DIRECTION_ORDER),
-        },
-    }
-
-
-def build(root: Path, tests_root: Path | None = None) -> None:
-    standard_rng = random.Random(SEED)
-    hard_rngs = [random.Random(SEED + offset) for offset in HARD_SEED_OFFSETS]
-    puzzles: list[dict] = []
-    attempts = 0
-    seen: set[str] = set()
-    while len(puzzles) < PUZZLE_COUNT:
-        attempts += 1
-        if attempts > 4000:
-            raise RuntimeError("generator failed to reach the requested instance count")
-        hard = len(puzzles) >= STANDARD_PUZZLE_COUNT
-        hard_index = len(puzzles) - STANDARD_PUZZLE_COUNT
-        rng = hard_rngs[hard_index] if hard else standard_rng
-        candidate = build_one(rng, f"p{len(puzzles) + 1:02d}", hard=hard)
-        if candidate is None:
-            continue
-        digest = hashlib.sha256("\n".join(candidate["rows"]).encode()).hexdigest()
-        if digest in seen:
-            continue
-        seen.add(digest)
-        puzzles.append(candidate)
-        print(
-            f"{candidate['puzzle_id']}: optimal={candidate['optimal_moves']} "
-            f"pushes={candidate['optimal_pushes']} boxes={candidate['box_count']} "
-            f"push_direction_changes={candidate['optimal_push_direction_changes']} "
-            f"count_mod={candidate['optimal_solution_count_mod']} "
-            f"direction_discriminator={candidate['push_direction_criterion_discriminates']} "
-            f"interior={candidate['interior']} "
-            f"expansions={candidate['expansions']} proof_seconds={candidate['proof_seconds']}",
-            flush=True,
-        )
-
-    discriminating_count = sum(
-        puzzle["push_direction_criterion_discriminates"] for puzzle in puzzles
-    )
-    hard_discriminating_count = sum(
-        puzzle["push_direction_criterion_discriminates"]
-        for puzzle in puzzles[STANDARD_PUZZLE_COUNT:]
-    )
-    if discriminating_count < MIN_PUSH_DIRECTION_DISCRIMINATING_PUZZLES:
-        raise RuntimeError(
-            "generated fixture does not exercise push-direction optimization enough"
-        )
-    if hard_discriminating_count < MIN_HARD_PUSH_DIRECTION_DISCRIMINATING_PUZZLES:
-        raise RuntimeError("hard tail does not exercise push-direction optimization")
-
-    for puzzle in puzzles:
-        started = time.monotonic()
-        frontier = solve_first_push_frontier(
-            Board(puzzle["rows"]),
-            expansion_limit=FRONTIER_PROOF_EXPANSION_LIMIT,
-        )
-        if frontier["minimum_moves"] != puzzle["optimal_moves"]:
-            raise RuntimeError(
-                f"first-push frontier disagrees with the global move optimum for "
-                f"{puzzle['puzzle_id']}"
+    chord_pairs = set()
+    for offset in (3, 4, 5):
+        for node in range(node_count):
+            other = (node + offset) % node_count
+            pair = tuple(sorted((node, other)))
+            if pair[0] == pair[1] or pair in chord_pairs:
+                continue
+            chord_pairs.add(pair)
+            edge_index = len(chord_pairs)
+            safe = [
+                mode_id
+                for mode_number, mode_id in enumerate(mode_ids)
+                if stable_number(seed, "safe", edge_index, mode_number) % 7 < 4
+            ]
+            if not safe:
+                safe = [mode_ids[edge_index % mode_count]]
+            if len(safe) == mode_count:
+                safe.pop(edge_index % mode_count)
+            add_edge(
+                edges,
+                pair[0],
+                pair[1],
+                1 + stable_number(seed, "chord-turn", edge_index) % 2,
+                1 + stable_number(seed, "chord-energy", edge_index) % 5,
+                safe,
             )
-        puzzle["frontier"] = frontier
-        solvable = sum(record["solvable"] for record in frontier["commitments"])
-        print(
-            f"{puzzle['puzzle_id']} frontier: "
-            f"commitments={len(frontier['commitments'])} solvable={solvable} "
-            f"best={sum(record.get('move_regret') == 0 for record in frontier['commitments'])} "
-            f"seconds={time.monotonic() - started:.3f}",
-            flush=True,
-        )
+            if len(chord_pairs) >= node_count + 5:
+                break
+        if len(chord_pairs) >= node_count + 5:
+            break
 
-    frontier_commitment_count = sum(
-        len(puzzle["frontier"]["commitments"]) for puzzle in puzzles
-    )
-    frontier_unsolvable_count = sum(
-        not record["solvable"]
-        for puzzle in puzzles
-        for record in puzzle["frontier"]["commitments"]
-    )
-    frontier_positive_regret_count = sum(
-        record["solvable"] and record["move_regret"] > 0
-        for puzzle in puzzles
-        for record in puzzle["frontier"]["commitments"]
-    )
-    frontier_multi_best_puzzle_count = sum(
-        sum(
-            record.get("move_regret") == 0
-            for record in puzzle["frontier"]["commitments"]
-        )
-        > 1
-        for puzzle in puzzles
-    )
-    if frontier_unsolvable_count < MIN_UNSOLVABLE_FIRST_PUSHES:
-        raise RuntimeError(
-            "frontier does not contain enough legal deadlocking commitments"
-        )
-    if frontier_positive_regret_count < MIN_POSITIVE_REGRET_FIRST_PUSHES:
-        raise RuntimeError(
-            "frontier does not contain enough positive-regret commitments"
-        )
-    if frontier_multi_best_puzzle_count < MIN_MULTI_BEST_FRONTIER_PUZZLES:
-        raise RuntimeError(
-            "frontier does not contain enough puzzles with tied best commitments"
-        )
+    edge_rows = []
+    for edge_number, (_, edge) in enumerate(sorted(edges.items())):
+        edge_rows.append({"edge_id": f"E{edge_number:03d}", **edge})
 
-    input_dir = root / "input"
-    puzzle_dir = input_dir / "puzzles"
-    puzzle_dir.mkdir(parents=True, exist_ok=True)
-    for puzzle in puzzles:
-        (puzzle_dir / f"{puzzle['puzzle_id']}.txt").write_text(
-            "\n".join(puzzle["rows"]) + "\n"
-        )
-    specification = rules_document()
-    (input_dir / "rules.json").write_text(json.dumps(specification, indent=2) + "\n")
-    (root / "output").mkdir(parents=True, exist_ok=True)
-    print(f"total attempts: {attempts}", flush=True)
+    sensor_nodes = {
+        start_a,
+        start_b,
+        node_count // 3,
+        (2 * node_count) // 3,
+    }
+    nodes = []
+    for node in range(node_count):
+        if node not in sensor_nodes:
+            signals = None
+        else:
+            sensor_rank = sorted(sensor_nodes).index(node)
+            divisor = (1, 2, 3, 4)[sensor_rank % 4]
+            alphabet = 2 + (sensor_rank + index) % 3
+            signals = {
+                mode_id: f"S{sensor_rank}_{(mode_number // divisor) % alphabet}"
+                for mode_number, mode_id in enumerate(mode_ids)
+            }
+        nodes.append({"node_id": f"N{node:02d}", "signals": signals})
 
-    if tests_root is not None:
-        tests_root.mkdir(parents=True, exist_ok=True)
-        expected = {
-            "schema_version": specification["schema_version"],
-            "fixture_contract": {
-                "rules_schema_version": specification["schema_version"],
-                "puzzle_count": PUZZLE_COUNT,
-                "puzzle_ids": specification["puzzle_ids"],
-                "expected_puzzle_keys": [
-                    "puzzle_id",
-                    "minimum_moves",
-                    "commitments",
-                    "board_sha256",
-                ],
-                "expected_commitment_keys": [
-                    *specification["output_contract"]["commitment_keys"][:-1],
-                    "canonical_completion_sha256",
-                ],
-                "output_puzzle_keys": specification["output_contract"]["puzzle_keys"],
-                "output_commitment_keys": specification["output_contract"][
-                    "commitment_keys"
-                ],
-                "count_modulus": specification["first_push_frontier"]["modulus"],
-                "push_direction_discriminating_puzzle_count": discriminating_count,
-                "hard_tail_push_direction_discriminating_puzzle_count": hard_discriminating_count,
-                "frontier_commitment_count": frontier_commitment_count,
-                "frontier_unsolvable_commitment_count": frontier_unsolvable_count,
-                "frontier_positive_regret_commitment_count": frontier_positive_regret_count,
-                "frontier_multi_best_puzzle_count": frontier_multi_best_puzzle_count,
+    return {
+        "schema_version": 1,
+        "arena_id": f"rescue_{index + 1:02d}",
+        "mode_ids": mode_ids,
+        "teams": [
+            {
+                "team_id": "A",
+                "start_node": f"N{start_a:02d}",
+                "move_energy_multiplier": 1 + index % 2,
+                "scan_energy": 3 + index % 3,
             },
-            "puzzles": [
-                {
-                    "puzzle_id": puzzle["puzzle_id"],
-                    "minimum_moves": puzzle["frontier"]["minimum_moves"],
-                    "commitments": [
-                        {
-                            **{
-                                key: value
-                                for key, value in commitment.items()
-                                if key != "canonical_completion"
-                            },
-                            "canonical_completion_sha256": (
-                                hashlib.sha256(
-                                    commitment["canonical_completion"].encode()
-                                ).hexdigest()
-                                if commitment["canonical_completion"] is not None
-                                else None
-                            ),
-                        }
-                        for commitment in puzzle["frontier"]["commitments"]
-                    ],
-                    "board_sha256": hashlib.sha256(
-                        ("\n".join(puzzle["rows"]) + "\n").encode()
-                    ).hexdigest(),
-                }
-                for puzzle in puzzles
-            ],
-            "rules_sha256": hashlib.sha256(
-                (json.dumps(specification, indent=2) + "\n").encode()
-            ).hexdigest(),
-        }
-        (tests_root / "expected.json").write_text(json.dumps(expected, indent=2) + "\n")
+            {
+                "team_id": "B",
+                "start_node": f"N{start_b:02d}",
+                "move_energy_multiplier": 2 - index % 2,
+                "scan_energy": 4 + (index + 1) % 3,
+            },
+        ],
+        "victims": [
+            {"victim_id": f"V{number}", "node": f"N{node:02d}"}
+            for number, node in enumerate(victims)
+        ],
+        "nodes": nodes,
+        "edges": edge_rows,
+        "max_worst_case_turns": 84,
+        "generation_seed": seed,
+    }
+
+
+def rules() -> dict:
+    return {
+        "schema_version": 1,
+        "action_order": "team A before B; SCAN before MOVE; MOVE edges by edge_id",
+        "move_observations": ["ARRIVED", "BLOCKED"],
+        "objective_order": [
+            "worst_case_turns",
+            "worst_case_energy",
+            "worst_case_handoffs",
+            "canonical_action_order",
+        ],
+        "goal": "every victim has been reached by at least one team",
+        "policy_node_id": "n_ plus the first 24 hex digits of SHA-256 over canonical state JSON",
+        "policy_digest": "SHA-256 over canonical compact JSON of the node array",
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root", type=Path, default=Path("/app"))
+    arguments = parser.parse_args()
+    input_root = arguments.root / "input"
+    arena_root = input_root / "arenas"
+    arena_root.mkdir(parents=True, exist_ok=True)
+    records = []
+    for index in range(INSTANCE_COUNT):
+        arena = build_arena(index)
+        relative = f"arenas/{arena['arena_id']}.json"
+        dump(input_root / relative, arena)
+        records.append({"arena_id": arena["arena_id"], "file": relative})
+    dump(input_root / "manifest.json", {"schema_version": 1, "arenas": records})
+    dump(input_root / "rules.json", rules())
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, default=Path("/app"))
-    parser.add_argument("--tests-root", type=Path)
-    arguments = parser.parse_args()
-    build(arguments.root, arguments.tests_root)
+    main()

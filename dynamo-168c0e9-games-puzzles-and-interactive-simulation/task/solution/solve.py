@@ -1,459 +1,292 @@
 #!/usr/bin/env python3
-"""Build the conditional-optimum frontier for every legal first box push."""
-
+"""Synthesize canonical minimax policies for partially observable rescue networks."""
 from __future__ import annotations
 
-import heapq
+import argparse
+import hashlib
 import json
-import os
-from collections import deque
+from collections import defaultdict, deque
+from functools import lru_cache
 from pathlib import Path
 
-APP = Path(os.environ.get("SOKOBAN_APP_ROOT", "/app"))
-INPUT = APP / "input"
-OUTPUT = APP / "output"
 
-DIRECTIONS = {"U": (-1, 0), "D": (1, 0), "L": (0, -1), "R": (0, 1)}
-ORDER = ("D", "L", "R", "U")
-OPPOSITE = {"U": "D", "D": "U", "L": "R", "R": "L"}
-COUNT_MODULUS = 1_000_000_007
-INFINITY = float("inf")
+DEFAULT_INPUT = Path("/app/input")
+DEFAULT_OUTPUT = Path("/app/output")
 
 
-class Puzzle:
-    def __init__(self, text: str) -> None:
-        rows = text.split("\n")
-        while rows and not rows[-1].strip():
-            rows.pop()
-        self.height = len(rows)
-        self.width = max(len(row) for row in rows)
-        self.walls: set[int] = set()
-        self.goals: set[int] = set()
-        boxes: set[int] = set()
-        self.player = -1
-        for r, row in enumerate(rows):
-            padded = row.ljust(self.width)
-            for c, glyph in enumerate(padded):
-                cell = r * self.width + c
-                if glyph == "#":
-                    self.walls.add(cell)
-                    continue
-                if glyph in (".", "*", "+"):
-                    self.goals.add(cell)
-                if glyph in ("$", "*"):
-                    boxes.add(cell)
-                if glyph in ("@", "+"):
-                    self.player = cell
-        self.boxes = frozenset(boxes)
-        self.neighbour = {
-            key: {
-                cell: cell + dr * self.width + dc
-                for cell in range(self.height * self.width)
-                if 0 <= cell % self.width + dc < self.width
-                and 0 <= cell // self.width + dr < self.height
-            }
-            for key, (dr, dc) in DIRECTIONS.items()
+def canonical_json(value: object) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+class PolicyEngine:
+    def __init__(self, arena: dict):
+        self.arena = arena
+        self.arena_id = arena["arena_id"]
+        self.mode_ids = tuple(arena["mode_ids"])
+        self.mode_index = {mode_id: index for index, mode_id in enumerate(self.mode_ids)}
+        self.all_modes = (1 << len(self.mode_ids)) - 1
+        self.teams = {row["team_id"]: row for row in arena["teams"]}
+        self.nodes = {row["node_id"]: row for row in arena["nodes"]}
+        self.victims = tuple(row["victim_id"] for row in arena["victims"])
+        self.victim_index = {
+            victim_id: index for index, victim_id in enumerate(self.victims)
         }
-        self.push_distance = self._push_distances()
-        self.dead = {
-            cell
-            for cell in range(self.height * self.width)
-            if cell not in self.walls
-            and all(
-                table.get(cell, INFINITY) == INFINITY for table in self.push_distance
+        self.victims_at = defaultdict(int)
+        for row in arena["victims"]:
+            self.victims_at[row["node"]] |= 1 << self.victim_index[row["victim_id"]]
+        self.all_victims = (1 << len(self.victims)) - 1
+        self.edges = {row["edge_id"]: row for row in arena["edges"]}
+        self.incident = defaultdict(list)
+        self.safe_masks = {}
+        for edge in arena["edges"]:
+            self.incident[edge["a"]].append(edge["edge_id"])
+            self.incident[edge["b"]].append(edge["edge_id"])
+            mask = 0
+            for mode_id in edge["safe_modes"]:
+                mask |= 1 << self.mode_index[mode_id]
+            self.safe_masks[edge["edge_id"]] = mask
+        for values in self.incident.values():
+            values.sort()
+        self.max_turns = int(arena["max_worst_case_turns"])
+
+    def starting_state(self) -> tuple[str, str, int, int, int]:
+        a = self.teams["A"]["start_node"]
+        b = self.teams["B"]["start_node"]
+        rescued = self.victims_at[a] | self.victims_at[b]
+        return a, b, rescued, self.all_modes, 0
+
+    def is_goal(self, state: tuple[str, str, int, int, int]) -> bool:
+        return state[2] == self.all_victims
+
+    def action_key(self, action: str) -> tuple[int, int, str]:
+        team_id, kind, *remainder = action.split(":")
+        return (0 if team_id == "A" else 1, 0 if kind == "SCAN" else 1, remainder[0] if remainder else "")
+
+    @lru_cache(maxsize=None)
+    def actions(self, state: tuple[str, str, int, int, int]) -> tuple[str, ...]:
+        if self.is_goal(state):
+            return ()
+        result = []
+        for team_number, team_id in enumerate(("A", "B")):
+            position = state[team_number]
+            if self.nodes[position]["signals"] is not None:
+                result.append(f"{team_id}:SCAN")
+            result.extend(
+                f"{team_id}:MOVE:{edge_id}" for edge_id in self.incident[position]
             )
-        }
+        return tuple(sorted(result, key=self.action_key))
 
-    def step(self, cell: int, key: str) -> int | None:
-        return self.neighbour[key].get(cell)
-
-    def _push_distances(self) -> list[dict[int, float]]:
-        """Pushes required to bring a lone box from each cell to each goal."""
-        tables = []
-        for goal in sorted(self.goals):
-            distance = {goal: 0.0}
-            queue = deque([goal])
-            while queue:
-                cell = queue.popleft()
-                for key in ORDER:
-                    origin = self.step(cell, key)
-                    if origin is None or origin in self.walls or origin in distance:
-                        continue
-                    stand = self.step(origin, key)
-                    if stand is None or stand in self.walls:
-                        continue
-                    distance[origin] = distance[cell] + 1
-                    queue.append(origin)
-            tables.append(distance)
-        return tables
-
-
-def routes(
-    puzzle: Puzzle, boxes: frozenset[int], start: int
-) -> dict[int, tuple[str, int]]:
-    """Canonical shortest walk and number of shortest walks to each cell."""
-    result = {start: ("", 1)}
-    distances = {start: 0}
-    queue = deque([start])
-    while queue:
-        cell = queue.popleft()
-        for key in ORDER:
-            nxt = puzzle.step(cell, key)
-            if nxt is None or nxt in puzzle.walls or nxt in boxes:
-                continue
-            distance = distances[cell] + 1
-            candidate = result[cell][0] + key
-            if nxt not in distances:
-                distances[nxt] = distance
-                result[nxt] = (candidate, result[cell][1])
-                queue.append(nxt)
-                continue
-            if distances[nxt] != distance:
-                continue
-            canonical, count = result[nxt]
-            result[nxt] = (
-                min(canonical, candidate),
-                (count + result[cell][1]) % COUNT_MODULUS,
-            )
-    return result
-
-
-def blocked_square(puzzle: Puzzle, boxes: frozenset[int], cell: int) -> bool:
-    """A 2x2 block of walls and boxes can never move; fatal if it holds a stray box."""
-    r, c = divmod(cell, puzzle.width)
-    for top in (r - 1, r):
-        for left in (c - 1, c):
-            square = []
-            valid = True
-            for rr in (top, top + 1):
-                for cc in (left, left + 1):
-                    if not (0 <= rr < puzzle.height and 0 <= cc < puzzle.width):
-                        valid = False
-                        break
-                    square.append(rr * puzzle.width + cc)
-                if not valid:
-                    break
-            if not valid:
-                continue
-            if any(item not in puzzle.walls and item not in boxes for item in square):
-                continue
-            if any(item in boxes and item not in puzzle.goals for item in square):
-                return True
-    return False
-
-
-def lower_bound(puzzle: Puzzle, boxes: frozenset[int]) -> float:
-    """Cheapest box-to-goal assignment in pushes; each push costs at least one move."""
-    order = sorted(boxes)
-    size = len(order)
-    best = [INFINITY] * (1 << size)
-    best[0] = 0.0
-    for mask in range(1 << size):
-        current = best[mask]
-        if current == INFINITY:
-            continue
-        index = bin(mask).count("1")
-        if index == size:
-            continue
-        cell = order[index]
-        for slot in range(size):
-            if mask >> slot & 1:
-                continue
-            cost = puzzle.push_distance[slot].get(cell, INFINITY)
-            if cost == INFINITY:
-                continue
-            candidate = current + cost
-            if candidate < best[mask | (1 << slot)]:
-                best[mask | (1 << slot)] = candidate
-    return best[(1 << size) - 1]
-
-
-def solve(
-    puzzle: Puzzle,
-    boxes: frozenset[int] | None = None,
-    player: int | None = None,
-    initial_last_push: str | None = None,
-) -> tuple[str | None, dict]:
-    """A* for a conditional canonical optimum and its tied-solution count.
-
-    Push edges retain the lexicographically first shortest setup walk. State labels
-    compare total moves, pushes, and changes between consecutive push directions,
-    while equal labels accumulate path counts. The state retains the last push
-    direction because it determines the next transition's tertiary cost. A separate
-    canonical label retains the smallest complete D/L/R/U move string.
-    """
-    boxes = puzzle.boxes if boxes is None else boxes
-    player = puzzle.player if player is None else player
-    goals = frozenset(puzzle.goals)
-    if boxes == goals:
-        return "", {
-            "optimal_moves": 0,
-            "optimal_pushes": 0,
-            "optimal_push_direction_changes": 0,
-            "optimal_solution_count_mod": 1,
-        }
-    cache: dict[frozenset[int], float] = {}
-
-    def estimate(boxes: frozenset[int]) -> float:
-        value = cache.get(boxes)
-        if value is None:
-            value = lower_bound(puzzle, boxes)
-            cache[boxes] = value
-        return value
-
-    start = (player, boxes, initial_last_push)
-    best = {start: (0, 0, 0)}
-    canonical = {start: ""}
-    ways = {start: 1}
-    initial_bound = estimate(boxes)
-    if initial_bound == INFINITY:
-        return None, {
-            "optimal_moves": None,
-            "optimal_pushes": None,
-            "optimal_push_direction_changes": None,
-            "optimal_solution_count_mod": None,
-        }
-    queue = [(initial_bound, 0, 0, 0, "", player, boxes, initial_last_push)]
-    goal_primary: tuple[int, int, int] | None = None
-    goal_path: str | None = None
-    goal_ways = 0
-    while queue:
-        if goal_primary is not None and queue[0][0] > goal_primary[0]:
-            break
-        _, cost, pushes, changes, path, player, boxes, last_push = heapq.heappop(queue)
-        state = (player, boxes, last_push)
-        if (cost, pushes, changes) != best.get(state) or path != canonical.get(state):
-            continue
-        if boxes == goals:
-            primary = (cost, pushes, changes)
-            if goal_primary is None or primary < goal_primary:
-                goal_primary = primary
-                goal_path = path
-                goal_ways = ways[state]
-            elif primary == goal_primary:
-                goal_path = min(goal_path, path)
-                goal_ways = (goal_ways + ways[state]) % COUNT_MODULUS
-            continue
-        walk = routes(puzzle, boxes, player)
-        for box in sorted(boxes):
-            for key in ORDER:
-                target = puzzle.step(box, key)
-                if target is None or target in puzzle.walls or target in boxes:
-                    continue
-                if target in puzzle.dead:
-                    continue
-                stand = puzzle.step(box, OPPOSITE[key])
-                if stand is None or stand in puzzle.walls or stand in boxes:
-                    continue
-                route_data = walk.get(stand)
-                if route_data is None:
-                    continue
-                approach, route_count = route_data
-                moved = frozenset(boxes - {box} | {target})
-                if blocked_square(puzzle, moved, target):
-                    continue
-                bound = estimate(moved)
-                if bound == INFINITY:
-                    continue
-                edge = approach + key
-                total = cost + len(edge)
-                next_changes = changes + int(last_push is not None and last_push != key)
-                state = (box, moved, key)
-                primary = (total, pushes + 1, next_changes)
-                old_primary = best.get(state, (INFINITY, INFINITY, INFINITY))
-                next_path = path + edge
-                next_ways = (
-                    ways[(player, boxes, last_push)] * route_count % COUNT_MODULUS
-                )
-                if primary > old_primary:
-                    continue
-                if primary < old_primary:
-                    best[state] = primary
-                    canonical[state] = next_path
-                    ways[state] = next_ways
-                    heapq.heappush(
-                        queue,
-                        (
-                            total + bound,
-                            total,
-                            pushes + 1,
-                            next_changes,
-                            next_path,
-                            box,
-                            moved,
-                            key,
-                        ),
-                    )
-                    continue
-                ways[state] = (ways[state] + next_ways) % COUNT_MODULUS
-                if next_path < canonical[state]:
-                    canonical[state] = next_path
-                    heapq.heappush(
-                        queue,
-                        (
-                            total + bound,
-                            total,
-                            pushes + 1,
-                            next_changes,
-                            next_path,
-                            box,
-                            moved,
-                            key,
-                        ),
-                    )
-
-    if goal_primary is None:
-        return None, {
-            "optimal_moves": None,
-            "optimal_pushes": None,
-            "optimal_push_direction_changes": None,
-            "optimal_solution_count_mod": None,
-        }
-    return goal_path, {
-        "optimal_moves": goal_primary[0],
-        "optimal_pushes": goal_primary[1],
-        "optimal_push_direction_changes": goal_primary[2],
-        "optimal_solution_count_mod": goal_ways,
-    }
-
-
-def reachable_first_pushes(
-    puzzle: Puzzle,
-) -> list[tuple[int, str, str, int, int, frozenset[int]]]:
-    """Return all first pushes reachable without disturbing a box."""
-    walk = routes(puzzle, puzzle.boxes, puzzle.player)
-    options = []
-    for box in sorted(puzzle.boxes):
-        for key in ORDER:
-            target = puzzle.step(box, key)
-            if target is None or target in puzzle.walls or target in puzzle.boxes:
-                continue
-            stand = puzzle.step(box, OPPOSITE[key])
-            if stand is None or stand in puzzle.walls or stand in puzzle.boxes:
-                continue
-            route_data = walk.get(stand)
-            if route_data is None:
-                continue
-            approach, approach_count = route_data
-            moved = frozenset(puzzle.boxes - {box} | {target})
-            options.append((box, key, approach, approach_count, target, moved))
-    return options
-
-
-def first_push_frontier(puzzle: Puzzle) -> dict:
-    """Solve every first-push counterfactual, including deadlocking choices."""
-    commitments = []
-    for box, key, approach, approach_count, target, moved in reachable_first_pushes(
-        puzzle
-    ):
-        row, column = divmod(box, puzzle.width)
-        identity = {
-            "box_row": row,
-            "box_column": column,
-            "direction": key,
-        }
-        if target in puzzle.dead or blocked_square(puzzle, moved, target):
-            commitments.append(
-                {
-                    **identity,
-                    "solvable": False,
-                    "conditional_moves": None,
-                    "move_regret": None,
-                    "conditional_pushes": None,
-                    "conditional_push_direction_changes": None,
-                    "optimal_completion_count_mod": 0,
-                    "canonical_completion": None,
-                }
-            )
-            continue
-
-        suffix, stats = solve(
-            puzzle,
-            boxes=moved,
-            player=box,
-            initial_last_push=key,
+    def action_cost(
+        self, state: tuple[str, str, int, int, int], action: str
+    ) -> tuple[int, int, int]:
+        team_id, kind, *remainder = action.split(":")
+        actor = 1 if team_id == "A" else 2
+        handoff = int(state[4] not in (0, actor))
+        if kind == "SCAN":
+            return 1, int(self.teams[team_id]["scan_energy"]), handoff
+        edge = self.edges[remainder[0]]
+        energy = int(edge["energy_cost"]) * int(
+            self.teams[team_id]["move_energy_multiplier"]
         )
-        if suffix is None:
-            commitments.append(
-                {
-                    **identity,
-                    "solvable": False,
-                    "conditional_moves": None,
-                    "move_regret": None,
-                    "conditional_pushes": None,
-                    "conditional_push_direction_changes": None,
-                    "optimal_completion_count_mod": 0,
-                    "canonical_completion": None,
-                }
-            )
-            continue
+        return int(edge["turn_cost"]), energy, handoff
 
-        edge = approach + key
-        commitments.append(
-            {
-                **identity,
-                "solvable": True,
-                "conditional_moves": len(edge) + stats["optimal_moves"],
-                "move_regret": None,
-                "conditional_pushes": 1 + stats["optimal_pushes"],
-                "conditional_push_direction_changes": stats[
-                    "optimal_push_direction_changes"
-                ],
-                "optimal_completion_count_mod": (
-                    approach_count * stats["optimal_solution_count_mod"]
+    @lru_cache(maxsize=None)
+    def outcomes(
+        self, state: tuple[str, str, int, int, int], action: str
+    ) -> tuple[tuple[str, tuple[str, str, int, int, int]], ...]:
+        a, b, rescued, belief, _ = state
+        team_id, kind, *remainder = action.split(":")
+        team_number = 0 if team_id == "A" else 1
+        actor = 1 if team_id == "A" else 2
+        position = a if team_number == 0 else b
+        partitions = defaultdict(int)
+        if kind == "SCAN":
+            signals = self.nodes[position]["signals"]
+            if signals is None:
+                raise ValueError(f"scan unavailable at {position}")
+            for mode_number, mode_id in enumerate(self.mode_ids):
+                bit = 1 << mode_number
+                if belief & bit:
+                    partitions[str(signals[mode_id])] |= bit
+            return tuple(
+                (observation, (a, b, rescued, mask, actor))
+                for observation, mask in sorted(partitions.items())
+            )
+
+        edge_id = remainder[0]
+        edge = self.edges[edge_id]
+        if position not in (edge["a"], edge["b"]):
+            raise ValueError(f"{edge_id} is not incident to {position}")
+        destination = edge["b"] if position == edge["a"] else edge["a"]
+        safe_mask = self.safe_masks[edge_id]
+        arrived = belief & safe_mask
+        blocked = belief & ~safe_mask
+        result = []
+        if arrived:
+            next_a, next_b = (destination, b) if team_number == 0 else (a, destination)
+            result.append(
+                (
+                    "ARRIVED",
+                    (
+                        next_a,
+                        next_b,
+                        rescued | self.victims_at[destination],
+                        arrived,
+                        actor,
+                    ),
                 )
-                % COUNT_MODULUS,
-                "canonical_completion": edge + suffix,
-            }
-        )
-
-    minimum_moves = min(
-        record["conditional_moves"] for record in commitments if record["solvable"]
-    )
-    for record in commitments:
-        if record["solvable"]:
-            record["move_regret"] = record["conditional_moves"] - minimum_moves
-    return {"minimum_moves": minimum_moves, "commitments": commitments}
-
-
-def main() -> None:
-    rules = json.loads((INPUT / "rules.json").read_text())
-    output_contract = rules["output_contract"]
-    expected_puzzle_keys = set(output_contract["puzzle_keys"])
-    expected_commitment_keys = set(output_contract["commitment_keys"])
-    frontiers = []
-    for puzzle_id in sorted(rules["puzzle_ids"]):
-        text = (INPUT / "puzzles" / f"{puzzle_id}.txt").read_text()
-        frontier = first_push_frontier(Puzzle(text))
-        record = {
-            "puzzle_id": puzzle_id,
-            "minimum_moves": frontier["minimum_moves"],
-            "commitments": frontier["commitments"],
-        }
-        if set(record) != expected_puzzle_keys or any(
-            set(commitment) != expected_commitment_keys
-            for commitment in record["commitments"]
-        ):
-            raise RuntimeError(
-                "reference frontier does not match rules.json output_contract"
             )
-        frontiers.append(record)
-    frontiers.sort(key=lambda row: row["puzzle_id"].encode())
+        if blocked:
+            result.append(("BLOCKED", (a, b, rescued, blocked, actor)))
+        return tuple(sorted(result))
 
-    document = {
-        "schema_version": output_contract["schema_version"],
-        "puzzles": frontiers,
-    }
-    if set(document) != set(output_contract["top_level_keys"]):
+    @lru_cache(maxsize=None)
+    def bounded(
+        self, state: tuple[str, str, int, int, int], turn_budget: int
+    ) -> tuple[tuple[int, int, int], str | None, tuple, int] | None:
+        if self.is_goal(state):
+            return (0, 0, 0), None, (), 1
+        if turn_budget <= 0:
+            return None
+        best_value = None
+        best_action = None
+        best_outcomes = ()
+        optimal_action_count = 0
+        for action in self.actions(state):
+            turn_cost, energy_cost, handoff_cost = self.action_cost(state, action)
+            if turn_cost > turn_budget:
+                continue
+            transitions = self.outcomes(state, action)
+            child_results = [
+                self.bounded(child, turn_budget - turn_cost)
+                for _, child in transitions
+            ]
+            if not transitions or any(result is None for result in child_results):
+                continue
+            child_values = [result[0] for result in child_results]
+            candidate = (
+                turn_cost + max(value[0] for value in child_values),
+                energy_cost + max(value[1] for value in child_values),
+                handoff_cost + max(value[2] for value in child_values),
+            )
+            if candidate[0] > turn_budget:
+                continue
+            if best_value is None or candidate < best_value:
+                best_value = candidate
+                best_action = action
+                best_outcomes = transitions
+                optimal_action_count = 1
+            elif candidate == best_value:
+                optimal_action_count += 1
+        if best_value is None:
+            return None
+        return best_value, best_action, best_outcomes, optimal_action_count
+
+    @lru_cache(maxsize=None)
+    def optimal(
+        self, state: tuple[str, str, int, int, int]
+    ) -> tuple[tuple[int, int, int], str | None, tuple, int]:
+        for turn_budget in range(self.max_turns + 1):
+            result = self.bounded(state, turn_budget)
+            if result is not None:
+                return result
         raise RuntimeError(
-            "reference solution document does not match rules.json output_contract"
+            f"{self.arena_id} has no strong rescue policy inside the published bound"
         )
 
-    OUTPUT.mkdir(parents=True, exist_ok=True)
-    (OUTPUT / "first_push_frontier.json").write_text(
-        json.dumps(document, indent=2) + "\n"
+    def state_document(self, state: tuple[str, str, int, int, int]) -> dict:
+        a, b, rescued, belief, last_actor = state
+        return {
+            "team_a_node": a,
+            "team_b_node": b,
+            "rescued_victims": [
+                victim_id
+                for index, victim_id in enumerate(self.victims)
+                if rescued & (1 << index)
+            ],
+            "possible_modes": [
+                mode_id
+                for index, mode_id in enumerate(self.mode_ids)
+                if belief & (1 << index)
+            ],
+            "last_actor": {0: None, 1: "A", 2: "B"}[last_actor],
+        }
+
+    def node_id(self, state: tuple[str, str, int, int, int]) -> str:
+        digest = hashlib.sha256(canonical_json(self.state_document(state)).encode()).hexdigest()
+        return "n_" + digest[:24]
+
+    def synthesize(self) -> dict:
+        root = self.starting_state()
+        root_value = self.optimal(root)[0]
+        queue = deque([root])
+        seen = set()
+        nodes = []
+        identities = {}
+        while queue:
+            state = queue.popleft()
+            if state in seen:
+                continue
+            seen.add(state)
+            value, action, transitions, action_count = self.optimal(state)
+            state_fields = self.state_document(state)
+            identifier = self.node_id(state)
+            if identifier in identities and identities[identifier] != state_fields:
+                raise RuntimeError("policy-node digest collision")
+            identities[identifier] = state_fields
+            outcome_rows = []
+            for observation, child in transitions:
+                child_id = self.node_id(child)
+                outcome_rows.append(
+                    {"observation": observation, "next_node_id": child_id}
+                )
+                queue.append(child)
+            nodes.append(
+                {
+                    "node_id": identifier,
+                    **state_fields,
+                    "remaining_worst_case_turns": value[0],
+                    "remaining_worst_case_energy": value[1],
+                    "remaining_worst_case_handoffs": value[2],
+                    "optimal_action_count": action_count,
+                    "action": action,
+                    "outcomes": outcome_rows,
+                }
+            )
+        nodes.sort(key=lambda row: row["node_id"].encode())
+        policy_digest = hashlib.sha256(canonical_json(nodes).encode()).hexdigest()
+        return {
+            "arena_id": self.arena_id,
+            "root_node_id": self.node_id(root),
+            "worst_case_turns": root_value[0],
+            "worst_case_energy": root_value[1],
+            "worst_case_handoffs": root_value[2],
+            "policy_node_count": len(nodes),
+            "policy_sha256": policy_digest,
+            "nodes": nodes,
+        }
+
+
+def solve_root(input_root: Path) -> dict:
+    manifest = json.loads((input_root / "manifest.json").read_text())
+    arenas = []
+    for record in manifest["arenas"]:
+        arena = json.loads((input_root / record["file"]).read_text())
+        arenas.append(PolicyEngine(arena).synthesize())
+    return {"schema_version": 1, "arenas": arenas}
+
+
+def main(input_root: Path, output_root: Path) -> None:
+    output_root.mkdir(parents=True, exist_ok=True)
+    document = solve_root(input_root)
+    (output_root / "rescue_policy.json").write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n"
     )
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input-root", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT)
+    arguments = parser.parse_args()
+    main(arguments.input_root, arguments.output_root)
