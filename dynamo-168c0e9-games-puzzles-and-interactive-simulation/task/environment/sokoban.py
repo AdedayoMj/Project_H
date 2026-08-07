@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Board model and move-optimal solver shared by the instance builder."""
+
 from __future__ import annotations
 
 import heapq
@@ -47,9 +48,7 @@ class Board:
         self.boxes = frozenset(boxes)
         self.player = player
         self.floor = {
-            cell
-            for cell in range(self.height * self.width)
-            if cell not in self.walls
+            cell for cell in range(self.height * self.width) if cell not in self.walls
         }
         self._neighbours = {
             key: {
@@ -64,7 +63,9 @@ class Board:
         self.dead = {
             cell
             for cell in self.floor
-            if all(table.get(cell, INFINITY) == INFINITY for table in self.push_distance)
+            if all(
+                table.get(cell, INFINITY) == INFINITY for table in self.push_distance
+            )
         }
 
     def step(self, cell: int, key: str) -> int | None:
@@ -174,9 +175,7 @@ def frozen_deadlock(board: Board, boxes: frozenset[int], cell: int) -> bool:
                     break
             if not square:
                 continue
-            if any(
-                item not in board.walls and item not in boxes for item in square
-            ):
+            if any(item not in board.walls and item not in boxes for item in square):
                 continue
             if any(item in boxes and item not in board.goals for item in square):
                 return True
@@ -314,6 +313,7 @@ def solve_move_optimal(
     player: int | None = None,
     expansion_limit: int = 4_000_000,
     optimize_push_direction_changes: bool = True,
+    initial_last_push_direction: str | None = None,
 ) -> tuple[str | None, dict]:
     """Return the canonical optimum and count all numeric-objective optima.
 
@@ -348,7 +348,10 @@ def solve_move_optimal(
             bounds[state_boxes] = value
         return value
 
-    start = (player, boxes, None)
+    if initial_last_push_direction not in (None, *DIRECTION_ORDER):
+        raise ValueError("initial_last_push_direction must be U, D, L, R, or None")
+
+    start = (player, boxes, initial_last_push_direction)
     best_primary = {start: (0, 0, 0)}
     canonical = {start: ""}
     ways = {start: 1}
@@ -362,7 +365,18 @@ def solve_move_optimal(
             "optimal_push_direction_changes": None,
             "optimal_solution_count_mod": None,
         }
-    queue = [(initial, 0, 0, 0, "", player, boxes, None)]
+    queue = [
+        (
+            initial,
+            0,
+            0,
+            0,
+            "",
+            player,
+            boxes,
+            initial_last_push_direction,
+        )
+    ]
     expansions = 0
     generated = 0
     goal_primary: tuple[int, int, int] | None = None
@@ -383,10 +397,9 @@ def solve_move_optimal(
             last_push_direction,
         ) = heapq.heappop(queue)
         state = (current_player, current_boxes, last_push_direction)
-        if (
-            (cost, pushes, push_direction_changes) != best_primary.get(state)
-            or path != canonical.get(state)
-        ):
+        if (cost, pushes, push_direction_changes) != best_primary.get(
+            state
+        ) or path != canonical.get(state):
             continue
         if current_boxes == goals:
             primary = (cost, pushes, push_direction_changes)
@@ -502,6 +515,137 @@ def solve_move_optimal(
         "optimal_push_direction_changes": None,
         "optimal_solution_count_mod": None,
         "exhausted": True,
+    }
+
+
+def reachable_first_pushes(
+    board: Board,
+    boxes: frozenset[int] | None = None,
+    player: int | None = None,
+) -> list[tuple[int, str, str, int, int, frozenset[int]]]:
+    """Enumerate every legal first box push reachable without moving a box.
+
+    Each tuple contains the box cell, direction, canonical shortest setup walk,
+    number of shortest setup walks, destination cell, and resulting box set.
+    Sorting by box row, box column, and the normative direction order makes the
+    published frontier deterministic.
+    """
+    boxes = board.boxes if boxes is None else boxes
+    player = board.player if player is None else player
+    routes = walk_routes(board, boxes, player)
+    options = []
+    for box in sorted(boxes):
+        for key in DIRECTION_ORDER:
+            target = board.step(box, key)
+            if target is None or target in board.walls or target in boxes:
+                continue
+            stand = board.step(box, {"U": "D", "D": "U", "L": "R", "R": "L"}[key])
+            if stand is None or stand in board.walls or stand in boxes:
+                continue
+            route_data = routes.get(stand)
+            if route_data is None:
+                continue
+            approach, approach_count = route_data
+            moved = frozenset(boxes - {box} | {target})
+            options.append((box, key, approach, approach_count, target, moved))
+    return options
+
+
+def solve_first_push_frontier(
+    board: Board,
+    expansion_limit: int = 4_000_000,
+) -> dict:
+    """Audit the conditional optimum behind every reachable legal first push.
+
+    A commitment fixes the first box and push direction, but not the shortest
+    player walk used to reach that box. Conditional counts therefore multiply
+    the number of shortest setup walks by the number of tied optimal suffixes.
+    """
+    commitments = []
+    for box, key, approach, approach_count, target, moved in reachable_first_pushes(
+        board
+    ):
+        row, column = divmod(box, board.width)
+        identity = {
+            "box_row": row,
+            "box_column": column,
+            "direction": key,
+        }
+        if target in board.dead or frozen_deadlock(board, moved, target):
+            commitments.append(
+                {
+                    **identity,
+                    "solvable": False,
+                    "conditional_moves": None,
+                    "move_regret": None,
+                    "conditional_pushes": None,
+                    "conditional_push_direction_changes": None,
+                    "optimal_completion_count_mod": 0,
+                    "canonical_completion": None,
+                }
+            )
+            continue
+
+        suffix, stats = solve_move_optimal(
+            board,
+            boxes=moved,
+            player=box,
+            expansion_limit=expansion_limit,
+            initial_last_push_direction=key,
+        )
+        if suffix is None:
+            if stats.get("exhausted") is False:
+                raise RuntimeError(
+                    f"first-push proof exceeded {expansion_limit} expansions for "
+                    f"row={row}, column={column}, direction={key}"
+                )
+            commitments.append(
+                {
+                    **identity,
+                    "solvable": False,
+                    "conditional_moves": None,
+                    "move_regret": None,
+                    "conditional_pushes": None,
+                    "conditional_push_direction_changes": None,
+                    "optimal_completion_count_mod": 0,
+                    "canonical_completion": None,
+                }
+            )
+            continue
+
+        edge = approach + key
+        commitments.append(
+            {
+                **identity,
+                "solvable": True,
+                "conditional_moves": len(edge) + int(stats["optimal_moves"]),
+                "move_regret": None,
+                "conditional_pushes": 1 + int(stats["optimal_pushes"]),
+                "conditional_push_direction_changes": int(
+                    stats["optimal_push_direction_changes"]
+                ),
+                "optimal_completion_count_mod": (
+                    approach_count * int(stats["optimal_solution_count_mod"])
+                )
+                % COUNT_MODULUS,
+                "canonical_completion": edge + suffix,
+            }
+        )
+
+    solvable_costs = [
+        record["conditional_moves"] for record in commitments if record["solvable"]
+    ]
+    if not solvable_costs:
+        raise RuntimeError(
+            "published solvable puzzle has no solvable first-push commitment"
+        )
+    minimum_moves = min(solvable_costs)
+    for record in commitments:
+        if record["solvable"]:
+            record["move_regret"] = record["conditional_moves"] - minimum_moves
+    return {
+        "minimum_moves": minimum_moves,
+        "commitments": commitments,
     }
 
 

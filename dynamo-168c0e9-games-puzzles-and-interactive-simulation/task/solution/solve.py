@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Prove a move-optimal solution for every published Sokoban instance."""
+"""Build the conditional-optimum frontier for every legal first box push."""
+
 from __future__ import annotations
 
 import heapq
@@ -58,7 +59,9 @@ class Puzzle:
             cell
             for cell in range(self.height * self.width)
             if cell not in self.walls
-            and all(table.get(cell, INFINITY) == INFINITY for table in self.push_distance)
+            and all(
+                table.get(cell, INFINITY) == INFINITY for table in self.push_distance
+            )
         }
 
     def step(self, cell: int, key: str) -> int | None:
@@ -165,8 +168,13 @@ def lower_bound(puzzle: Puzzle, boxes: frozenset[int]) -> float:
     return best[(1 << size) - 1]
 
 
-def solve(puzzle: Puzzle) -> tuple[str, int, int]:
-    """A* for the canonical optimum and its tied-solution count.
+def solve(
+    puzzle: Puzzle,
+    boxes: frozenset[int] | None = None,
+    player: int | None = None,
+    initial_last_push: str | None = None,
+) -> tuple[str | None, dict]:
+    """A* for a conditional canonical optimum and its tied-solution count.
 
     Push edges retain the lexicographically first shortest setup walk. State labels
     compare total moves, pushes, and changes between consecutive push directions,
@@ -174,9 +182,16 @@ def solve(puzzle: Puzzle) -> tuple[str, int, int]:
     direction because it determines the next transition's tertiary cost. A separate
     canonical label retains the smallest complete D/L/R/U move string.
     """
+    boxes = puzzle.boxes if boxes is None else boxes
+    player = puzzle.player if player is None else player
     goals = frozenset(puzzle.goals)
-    if puzzle.boxes == goals:
-        return "", 0, 1
+    if boxes == goals:
+        return "", {
+            "optimal_moves": 0,
+            "optimal_pushes": 0,
+            "optimal_push_direction_changes": 0,
+            "optimal_solution_count_mod": 1,
+        }
     cache: dict[frozenset[int], float] = {}
 
     def estimate(boxes: frozenset[int]) -> float:
@@ -186,11 +201,19 @@ def solve(puzzle: Puzzle) -> tuple[str, int, int]:
             cache[boxes] = value
         return value
 
-    start = (puzzle.player, puzzle.boxes, None)
+    start = (player, boxes, initial_last_push)
     best = {start: (0, 0, 0)}
     canonical = {start: ""}
     ways = {start: 1}
-    queue = [(estimate(puzzle.boxes), 0, 0, 0, "", puzzle.player, puzzle.boxes, None)]
+    initial_bound = estimate(boxes)
+    if initial_bound == INFINITY:
+        return None, {
+            "optimal_moves": None,
+            "optimal_pushes": None,
+            "optimal_push_direction_changes": None,
+            "optimal_solution_count_mod": None,
+        }
+    queue = [(initial_bound, 0, 0, 0, "", player, boxes, initial_last_push)]
     goal_primary: tuple[int, int, int] | None = None
     goal_path: str | None = None
     goal_ways = 0
@@ -234,14 +257,14 @@ def solve(puzzle: Puzzle) -> tuple[str, int, int]:
                     continue
                 edge = approach + key
                 total = cost + len(edge)
-                next_changes = changes + int(
-                    last_push is not None and last_push != key
-                )
+                next_changes = changes + int(last_push is not None and last_push != key)
                 state = (box, moved, key)
                 primary = (total, pushes + 1, next_changes)
                 old_primary = best.get(state, (INFINITY, INFINITY, INFINITY))
                 next_path = path + edge
-                next_ways = ways[(player, boxes, last_push)] * route_count % COUNT_MODULUS
+                next_ways = (
+                    ways[(player, boxes, last_push)] * route_count % COUNT_MODULUS
+                )
                 if primary > old_primary:
                     continue
                 if primary < old_primary:
@@ -280,34 +303,146 @@ def solve(puzzle: Puzzle) -> tuple[str, int, int]:
                     )
 
     if goal_primary is None:
-        raise RuntimeError("instance is unsolvable, which contradicts the published guarantee")
-    return goal_path, goal_primary[2], goal_ways
+        return None, {
+            "optimal_moves": None,
+            "optimal_pushes": None,
+            "optimal_push_direction_changes": None,
+            "optimal_solution_count_mod": None,
+        }
+    return goal_path, {
+        "optimal_moves": goal_primary[0],
+        "optimal_pushes": goal_primary[1],
+        "optimal_push_direction_changes": goal_primary[2],
+        "optimal_solution_count_mod": goal_ways,
+    }
+
+
+def reachable_first_pushes(
+    puzzle: Puzzle,
+) -> list[tuple[int, str, str, int, int, frozenset[int]]]:
+    """Return all first pushes reachable without disturbing a box."""
+    walk = routes(puzzle, puzzle.boxes, puzzle.player)
+    options = []
+    for box in sorted(puzzle.boxes):
+        for key in ORDER:
+            target = puzzle.step(box, key)
+            if target is None or target in puzzle.walls or target in puzzle.boxes:
+                continue
+            stand = puzzle.step(box, OPPOSITE[key])
+            if stand is None or stand in puzzle.walls or stand in puzzle.boxes:
+                continue
+            route_data = walk.get(stand)
+            if route_data is None:
+                continue
+            approach, approach_count = route_data
+            moved = frozenset(puzzle.boxes - {box} | {target})
+            options.append((box, key, approach, approach_count, target, moved))
+    return options
+
+
+def first_push_frontier(puzzle: Puzzle) -> dict:
+    """Solve every first-push counterfactual, including deadlocking choices."""
+    commitments = []
+    for box, key, approach, approach_count, target, moved in reachable_first_pushes(
+        puzzle
+    ):
+        row, column = divmod(box, puzzle.width)
+        identity = {
+            "box_row": row,
+            "box_column": column,
+            "direction": key,
+        }
+        if target in puzzle.dead or blocked_square(puzzle, moved, target):
+            commitments.append(
+                {
+                    **identity,
+                    "solvable": False,
+                    "conditional_moves": None,
+                    "move_regret": None,
+                    "conditional_pushes": None,
+                    "conditional_push_direction_changes": None,
+                    "optimal_completion_count_mod": 0,
+                    "canonical_completion": None,
+                }
+            )
+            continue
+
+        suffix, stats = solve(
+            puzzle,
+            boxes=moved,
+            player=box,
+            initial_last_push=key,
+        )
+        if suffix is None:
+            commitments.append(
+                {
+                    **identity,
+                    "solvable": False,
+                    "conditional_moves": None,
+                    "move_regret": None,
+                    "conditional_pushes": None,
+                    "conditional_push_direction_changes": None,
+                    "optimal_completion_count_mod": 0,
+                    "canonical_completion": None,
+                }
+            )
+            continue
+
+        edge = approach + key
+        commitments.append(
+            {
+                **identity,
+                "solvable": True,
+                "conditional_moves": len(edge) + stats["optimal_moves"],
+                "move_regret": None,
+                "conditional_pushes": 1 + stats["optimal_pushes"],
+                "conditional_push_direction_changes": stats[
+                    "optimal_push_direction_changes"
+                ],
+                "optimal_completion_count_mod": (
+                    approach_count * stats["optimal_solution_count_mod"]
+                )
+                % COUNT_MODULUS,
+                "canonical_completion": edge + suffix,
+            }
+        )
+
+    minimum_moves = min(
+        record["conditional_moves"] for record in commitments if record["solvable"]
+    )
+    for record in commitments:
+        if record["solvable"]:
+            record["move_regret"] = record["conditional_moves"] - minimum_moves
+    return {"minimum_moves": minimum_moves, "commitments": commitments}
 
 
 def main() -> None:
     rules = json.loads((INPUT / "rules.json").read_text())
     output_contract = rules["output_contract"]
-    expected_entry_keys = set(output_contract["entry_keys"])
-    solutions = []
+    expected_puzzle_keys = set(output_contract["puzzle_keys"])
+    expected_commitment_keys = set(output_contract["commitment_keys"])
+    frontiers = []
     for puzzle_id in sorted(rules["puzzle_ids"]):
         text = (INPUT / "puzzles" / f"{puzzle_id}.txt").read_text()
-        moves, push_direction_changes, count = solve(Puzzle(text))
+        frontier = first_push_frontier(Puzzle(text))
         record = {
             "puzzle_id": puzzle_id,
-            "moves": moves,
-            "optimal_push_direction_changes": push_direction_changes,
-            "optimal_solution_count_mod": count,
+            "minimum_moves": frontier["minimum_moves"],
+            "commitments": frontier["commitments"],
         }
-        if set(record) != expected_entry_keys:
+        if set(record) != expected_puzzle_keys or any(
+            set(commitment) != expected_commitment_keys
+            for commitment in record["commitments"]
+        ):
             raise RuntimeError(
-                "reference solution record does not match rules.json output_contract"
+                "reference frontier does not match rules.json output_contract"
             )
-        solutions.append(record)
-    solutions.sort(key=lambda row: row["puzzle_id"].encode())
+        frontiers.append(record)
+    frontiers.sort(key=lambda row: row["puzzle_id"].encode())
 
     document = {
         "schema_version": output_contract["schema_version"],
-        "solutions": solutions,
+        "puzzles": frontiers,
     }
     if set(document) != set(output_contract["top_level_keys"]):
         raise RuntimeError(
@@ -315,7 +450,7 @@ def main() -> None:
         )
 
     OUTPUT.mkdir(parents=True, exist_ok=True)
-    (OUTPUT / "solutions.json").write_text(
+    (OUTPUT / "first_push_frontier.json").write_text(
         json.dumps(document, indent=2) + "\n"
     )
 

@@ -1,7 +1,7 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "fixture_contract": {
-    "rules_schema_version": 1,
+    "rules_schema_version": 2,
     "puzzle_count": 10,
     "puzzle_ids": [
       "p01",
@@ -17,114 +17,754 @@
     ],
     "expected_puzzle_keys": [
       "puzzle_id",
-      "optimal_moves",
-      "optimal_pushes",
-      "optimal_push_direction_changes",
-      "optimal_solution_count_mod",
-      "canonical_moves_sha256",
+      "minimum_moves",
+      "commitments",
       "board_sha256"
     ],
-    "output_entry_keys": [
+    "expected_commitment_keys": [
+      "box_row",
+      "box_column",
+      "direction",
+      "solvable",
+      "conditional_moves",
+      "move_regret",
+      "conditional_pushes",
+      "conditional_push_direction_changes",
+      "optimal_completion_count_mod",
+      "canonical_completion_sha256"
+    ],
+    "output_puzzle_keys": [
       "puzzle_id",
-      "moves",
-      "optimal_push_direction_changes",
-      "optimal_solution_count_mod"
+      "minimum_moves",
+      "commitments"
+    ],
+    "output_commitment_keys": [
+      "box_row",
+      "box_column",
+      "direction",
+      "solvable",
+      "conditional_moves",
+      "move_regret",
+      "conditional_pushes",
+      "conditional_push_direction_changes",
+      "optimal_completion_count_mod",
+      "canonical_completion"
     ],
     "count_modulus": 1000000007,
     "push_direction_discriminating_puzzle_count": 5,
-    "hard_tail_push_direction_discriminating_puzzle_count": 1
+    "hard_tail_push_direction_discriminating_puzzle_count": 1,
+    "frontier_commitment_count": 53,
+    "frontier_unsolvable_commitment_count": 11,
+    "frontier_positive_regret_commitment_count": 25,
+    "frontier_multi_best_puzzle_count": 3
   },
   "puzzles": [
     {
       "puzzle_id": "p01",
-      "optimal_moves": 45,
-      "optimal_pushes": 24,
-      "optimal_push_direction_changes": 6,
-      "optimal_solution_count_mod": 2,
-      "canonical_moves_sha256": "572f171cd630c167127dd5a0da1e5fb792d9b2d4ec8c339064c91064c7593ca4",
+      "minimum_moves": 45,
+      "commitments": [
+        {
+          "box_row": 6,
+          "box_column": 13,
+          "direction": "U",
+          "solvable": true,
+          "conditional_moves": 47,
+          "move_regret": 2,
+          "conditional_pushes": 24,
+          "conditional_push_direction_changes": 7,
+          "optimal_completion_count_mod": 3,
+          "canonical_completion_sha256": "77777d669c6720c01c051da3134df6f0638c3075553fb3be2121d780ad7b5c6c"
+        },
+        {
+          "box_row": 7,
+          "box_column": 12,
+          "direction": "L",
+          "solvable": true,
+          "conditional_moves": 45,
+          "move_regret": 0,
+          "conditional_pushes": 24,
+          "conditional_push_direction_changes": 6,
+          "optimal_completion_count_mod": 1,
+          "canonical_completion_sha256": "f0650cb41ee3624e32cf00ef082b57ca321789d4b30c29269ad01f0cddcec5e7"
+        },
+        {
+          "box_row": 8,
+          "box_column": 13,
+          "direction": "D",
+          "solvable": true,
+          "conditional_moves": 45,
+          "move_regret": 0,
+          "conditional_pushes": 24,
+          "conditional_push_direction_changes": 6,
+          "optimal_completion_count_mod": 1,
+          "canonical_completion_sha256": "572f171cd630c167127dd5a0da1e5fb792d9b2d4ec8c339064c91064c7593ca4"
+        }
+      ],
       "board_sha256": "cf53e5d48ada230546e4112b7e4ae7ce222cfe07c16ad6c30411c03768c718ad"
     },
     {
       "puzzle_id": "p02",
-      "optimal_moves": 40,
-      "optimal_pushes": 12,
-      "optimal_push_direction_changes": 5,
-      "optimal_solution_count_mod": 8,
-      "canonical_moves_sha256": "804b664aaf9666afb2f95a5844100bb72b4e6a21d9a417273acd9b35139423b8",
+      "minimum_moves": 40,
+      "commitments": [
+        {
+          "box_row": 10,
+          "box_column": 2,
+          "direction": "D",
+          "solvable": false,
+          "conditional_moves": null,
+          "move_regret": null,
+          "conditional_pushes": null,
+          "conditional_push_direction_changes": null,
+          "optimal_completion_count_mod": 0,
+          "canonical_completion_sha256": null
+        },
+        {
+          "box_row": 10,
+          "box_column": 2,
+          "direction": "R",
+          "solvable": false,
+          "conditional_moves": null,
+          "move_regret": null,
+          "conditional_pushes": null,
+          "conditional_push_direction_changes": null,
+          "optimal_completion_count_mod": 0,
+          "canonical_completion_sha256": null
+        },
+        {
+          "box_row": 10,
+          "box_column": 2,
+          "direction": "U",
+          "solvable": true,
+          "conditional_moves": 40,
+          "move_regret": 0,
+          "conditional_pushes": 12,
+          "conditional_push_direction_changes": 5,
+          "optimal_completion_count_mod": 8,
+          "canonical_completion_sha256": "804b664aaf9666afb2f95a5844100bb72b4e6a21d9a417273acd9b35139423b8"
+        }
+      ],
       "board_sha256": "8af37feb0c4f9170044a4eea65816db5980cbfe727088db8f6f8970cee7fda5d"
     },
     {
       "puzzle_id": "p03",
-      "optimal_moves": 51,
-      "optimal_pushes": 10,
-      "optimal_push_direction_changes": 4,
-      "optimal_solution_count_mod": 32,
-      "canonical_moves_sha256": "b844e483dcb5a4d63428e9be63680922d18102b4ee6e4a9f3e15ba30caf7530e",
+      "minimum_moves": 51,
+      "commitments": [
+        {
+          "box_row": 8,
+          "box_column": 12,
+          "direction": "U",
+          "solvable": true,
+          "conditional_moves": 51,
+          "move_regret": 0,
+          "conditional_pushes": 10,
+          "conditional_push_direction_changes": 4,
+          "optimal_completion_count_mod": 32,
+          "canonical_completion_sha256": "b844e483dcb5a4d63428e9be63680922d18102b4ee6e4a9f3e15ba30caf7530e"
+        },
+        {
+          "box_row": 10,
+          "box_column": 12,
+          "direction": "D",
+          "solvable": false,
+          "conditional_moves": null,
+          "move_regret": null,
+          "conditional_pushes": null,
+          "conditional_push_direction_changes": null,
+          "optimal_completion_count_mod": 0,
+          "canonical_completion_sha256": null
+        }
+      ],
       "board_sha256": "3501dc6d60d6b93a5015c128e51432b90feafacdfbc43411750e67a280297645"
     },
     {
       "puzzle_id": "p04",
-      "optimal_moves": 40,
-      "optimal_pushes": 16,
-      "optimal_push_direction_changes": 5,
-      "optimal_solution_count_mod": 10,
-      "canonical_moves_sha256": "4fdf4fa4a5d120a76720ee9b9d1f34761b42c27cd45766615acc3520c9f37855",
+      "minimum_moves": 40,
+      "commitments": [
+        {
+          "box_row": 5,
+          "box_column": 4,
+          "direction": "U",
+          "solvable": true,
+          "conditional_moves": 40,
+          "move_regret": 0,
+          "conditional_pushes": 16,
+          "conditional_push_direction_changes": 5,
+          "optimal_completion_count_mod": 1,
+          "canonical_completion_sha256": "8a11dc8360f28e1742ecbff16f0a17d9a32d317290ac657dd1368f9e2188fb9a"
+        },
+        {
+          "box_row": 6,
+          "box_column": 3,
+          "direction": "L",
+          "solvable": true,
+          "conditional_moves": 44,
+          "move_regret": 4,
+          "conditional_pushes": 18,
+          "conditional_push_direction_changes": 6,
+          "optimal_completion_count_mod": 10,
+          "canonical_completion_sha256": "26c259c848f3171470566d768bac8d66bf0616ed2c9d1c04868922a5b7b6778c"
+        },
+        {
+          "box_row": 7,
+          "box_column": 4,
+          "direction": "D",
+          "solvable": true,
+          "conditional_moves": 40,
+          "move_regret": 0,
+          "conditional_pushes": 16,
+          "conditional_push_direction_changes": 5,
+          "optimal_completion_count_mod": 9,
+          "canonical_completion_sha256": "4fdf4fa4a5d120a76720ee9b9d1f34761b42c27cd45766615acc3520c9f37855"
+        }
+      ],
       "board_sha256": "d3d5f0cc7c0e88feea9052807652e374589f040325318d148afeb359fea97eaa"
     },
     {
       "puzzle_id": "p05",
-      "optimal_moves": 42,
-      "optimal_pushes": 19,
-      "optimal_push_direction_changes": 4,
-      "optimal_solution_count_mod": 9,
-      "canonical_moves_sha256": "0ef41689a357768f9fb93a72db085875d53d6174cdc7488933b2ef4ef0fc9baa",
+      "minimum_moves": 42,
+      "commitments": [
+        {
+          "box_row": 5,
+          "box_column": 5,
+          "direction": "D",
+          "solvable": true,
+          "conditional_moves": 50,
+          "move_regret": 8,
+          "conditional_pushes": 21,
+          "conditional_push_direction_changes": 7,
+          "optimal_completion_count_mod": 2,
+          "canonical_completion_sha256": "bb877081944aaf701724911aa1a98cfbf323cc86c2139c89fa1fabedd9d16801"
+        },
+        {
+          "box_row": 5,
+          "box_column": 5,
+          "direction": "L",
+          "solvable": true,
+          "conditional_moves": 42,
+          "move_regret": 0,
+          "conditional_pushes": 19,
+          "conditional_push_direction_changes": 7,
+          "optimal_completion_count_mod": 12,
+          "canonical_completion_sha256": "4d8d2d4803eb4d4a62f6b3181a918d97b3f8b33cdecf616e46daf6c7c36522d6"
+        },
+        {
+          "box_row": 5,
+          "box_column": 5,
+          "direction": "R",
+          "solvable": true,
+          "conditional_moves": 50,
+          "move_regret": 8,
+          "conditional_pushes": 21,
+          "conditional_push_direction_changes": 8,
+          "optimal_completion_count_mod": 24,
+          "canonical_completion_sha256": "f29baedf405cbe394cedd39a84b3d6597f8d8f8644aae3785f985a8cfe3afa98"
+        },
+        {
+          "box_row": 5,
+          "box_column": 5,
+          "direction": "U",
+          "solvable": true,
+          "conditional_moves": 44,
+          "move_regret": 2,
+          "conditional_pushes": 19,
+          "conditional_push_direction_changes": 6,
+          "optimal_completion_count_mod": 8,
+          "canonical_completion_sha256": "0eab012f9c71de2c71084dd0ad4e865092f5baf504282e724f22a79a54e3f69a"
+        },
+        {
+          "box_row": 6,
+          "box_column": 4,
+          "direction": "D",
+          "solvable": false,
+          "conditional_moves": null,
+          "move_regret": null,
+          "conditional_pushes": null,
+          "conditional_push_direction_changes": null,
+          "optimal_completion_count_mod": 0,
+          "canonical_completion_sha256": null
+        },
+        {
+          "box_row": 6,
+          "box_column": 4,
+          "direction": "L",
+          "solvable": true,
+          "conditional_moves": 42,
+          "move_regret": 0,
+          "conditional_pushes": 19,
+          "conditional_push_direction_changes": 7,
+          "optimal_completion_count_mod": 12,
+          "canonical_completion_sha256": "463b3f8860508967c9fdb6f3f288fd1969d6f1a1aeaf289413c0c171d2005e08"
+        },
+        {
+          "box_row": 6,
+          "box_column": 4,
+          "direction": "R",
+          "solvable": true,
+          "conditional_moves": 56,
+          "move_regret": 14,
+          "conditional_pushes": 21,
+          "conditional_push_direction_changes": 8,
+          "optimal_completion_count_mod": 144,
+          "canonical_completion_sha256": "e967b2adc61e222ce74c27365ba601c84d6e60cf96d1e7e0220cb4c3ced9dab2"
+        },
+        {
+          "box_row": 6,
+          "box_column": 4,
+          "direction": "U",
+          "solvable": true,
+          "conditional_moves": 52,
+          "move_regret": 10,
+          "conditional_pushes": 19,
+          "conditional_push_direction_changes": 6,
+          "optimal_completion_count_mod": 16,
+          "canonical_completion_sha256": "855d18230e70a26b725de7b75004ac453127c0144118a062d948c4d9ae0b3ffc"
+        },
+        {
+          "box_row": 6,
+          "box_column": 7,
+          "direction": "D",
+          "solvable": true,
+          "conditional_moves": 44,
+          "move_regret": 2,
+          "conditional_pushes": 19,
+          "conditional_push_direction_changes": 5,
+          "optimal_completion_count_mod": 6,
+          "canonical_completion_sha256": "df9f4e668aaf6c06bec7f259dd67920265d07c0c8ee4e9ab2608a6e2002cfc06"
+        },
+        {
+          "box_row": 6,
+          "box_column": 7,
+          "direction": "L",
+          "solvable": true,
+          "conditional_moves": 42,
+          "move_regret": 0,
+          "conditional_pushes": 19,
+          "conditional_push_direction_changes": 6,
+          "optimal_completion_count_mod": 20,
+          "canonical_completion_sha256": "d17034fda79c45dbc8e96941d916688daf45a44dfb6f50db2617b1df64117bd7"
+        },
+        {
+          "box_row": 6,
+          "box_column": 7,
+          "direction": "R",
+          "solvable": true,
+          "conditional_moves": 46,
+          "move_regret": 4,
+          "conditional_pushes": 21,
+          "conditional_push_direction_changes": 6,
+          "optimal_completion_count_mod": 6,
+          "canonical_completion_sha256": "93a95ac1c9aacb7c16f94f9910044a7ddc279c0e43456c629750702c2ea20345"
+        },
+        {
+          "box_row": 6,
+          "box_column": 7,
+          "direction": "U",
+          "solvable": true,
+          "conditional_moves": 42,
+          "move_regret": 0,
+          "conditional_pushes": 19,
+          "conditional_push_direction_changes": 4,
+          "optimal_completion_count_mod": 9,
+          "canonical_completion_sha256": "0ef41689a357768f9fb93a72db085875d53d6174cdc7488933b2ef4ef0fc9baa"
+        },
+        {
+          "box_row": 6,
+          "box_column": 9,
+          "direction": "D",
+          "solvable": true,
+          "conditional_moves": 42,
+          "move_regret": 0,
+          "conditional_pushes": 19,
+          "conditional_push_direction_changes": 5,
+          "optimal_completion_count_mod": 3,
+          "canonical_completion_sha256": "b205050c6fe681f1116b8006f1d5702d3760c9b37faa1eba59d4fd4154c117e2"
+        },
+        {
+          "box_row": 6,
+          "box_column": 9,
+          "direction": "L",
+          "solvable": true,
+          "conditional_moves": 44,
+          "move_regret": 2,
+          "conditional_pushes": 19,
+          "conditional_push_direction_changes": 6,
+          "optimal_completion_count_mod": 3,
+          "canonical_completion_sha256": "9c0788a640df944a428bcb2e016165fe7e425e1be9fae2188f6a30aade13e27b"
+        },
+        {
+          "box_row": 6,
+          "box_column": 9,
+          "direction": "R",
+          "solvable": false,
+          "conditional_moves": null,
+          "move_regret": null,
+          "conditional_pushes": null,
+          "conditional_push_direction_changes": null,
+          "optimal_completion_count_mod": 0,
+          "canonical_completion_sha256": null
+        },
+        {
+          "box_row": 6,
+          "box_column": 9,
+          "direction": "U",
+          "solvable": true,
+          "conditional_moves": 42,
+          "move_regret": 0,
+          "conditional_pushes": 19,
+          "conditional_push_direction_changes": 7,
+          "optimal_completion_count_mod": 16,
+          "canonical_completion_sha256": "ad6f58e5ef34a046de102da70cac6187882e683c452a06650ad6c72cb83df2ba"
+        }
+      ],
       "board_sha256": "a1b25b99881eba7b4cbcddda8f6e6fdbce3b381a0ac52a2daa84bdb73fc24498"
     },
     {
       "puzzle_id": "p06",
-      "optimal_moves": 53,
-      "optimal_pushes": 20,
-      "optimal_push_direction_changes": 4,
-      "optimal_solution_count_mod": 12,
-      "canonical_moves_sha256": "9b04947381d8a3a0e6785b6d7a2e9dc88df57961db1b426efccad76845b7b82a",
+      "minimum_moves": 53,
+      "commitments": [
+        {
+          "box_row": 2,
+          "box_column": 8,
+          "direction": "L",
+          "solvable": true,
+          "conditional_moves": 65,
+          "move_regret": 12,
+          "conditional_pushes": 20,
+          "conditional_push_direction_changes": 4,
+          "optimal_completion_count_mod": 12,
+          "canonical_completion_sha256": "b48c0795312f23c625cccd0562c6d65116d12086839684ef1a1361ba8e854574"
+        },
+        {
+          "box_row": 4,
+          "box_column": 3,
+          "direction": "L",
+          "solvable": true,
+          "conditional_moves": 53,
+          "move_regret": 0,
+          "conditional_pushes": 20,
+          "conditional_push_direction_changes": 4,
+          "optimal_completion_count_mod": 12,
+          "canonical_completion_sha256": "9b04947381d8a3a0e6785b6d7a2e9dc88df57961db1b426efccad76845b7b82a"
+        },
+        {
+          "box_row": 5,
+          "box_column": 8,
+          "direction": "D",
+          "solvable": false,
+          "conditional_moves": null,
+          "move_regret": null,
+          "conditional_pushes": null,
+          "conditional_push_direction_changes": null,
+          "optimal_completion_count_mod": 0,
+          "canonical_completion_sha256": null
+        },
+        {
+          "box_row": 5,
+          "box_column": 8,
+          "direction": "U",
+          "solvable": true,
+          "conditional_moves": 61,
+          "move_regret": 8,
+          "conditional_pushes": 20,
+          "conditional_push_direction_changes": 5,
+          "optimal_completion_count_mod": 4,
+          "canonical_completion_sha256": "4ceb2f4b25b4654c789a00bf00786fbbcba0d1654d621bccefc01f0c47fe69f5"
+        },
+        {
+          "box_row": 5,
+          "box_column": 10,
+          "direction": "D",
+          "solvable": false,
+          "conditional_moves": null,
+          "move_regret": null,
+          "conditional_pushes": null,
+          "conditional_push_direction_changes": null,
+          "optimal_completion_count_mod": 0,
+          "canonical_completion_sha256": null
+        },
+        {
+          "box_row": 5,
+          "box_column": 10,
+          "direction": "L",
+          "solvable": true,
+          "conditional_moves": 63,
+          "move_regret": 10,
+          "conditional_pushes": 20,
+          "conditional_push_direction_changes": 6,
+          "optimal_completion_count_mod": 1,
+          "canonical_completion_sha256": "bf45ca9a3327a5837f1ace3bb4febd6987c027afde0f23ef1988a85ce1a65ab2"
+        },
+        {
+          "box_row": 5,
+          "box_column": 10,
+          "direction": "R",
+          "solvable": false,
+          "conditional_moves": null,
+          "move_regret": null,
+          "conditional_pushes": null,
+          "conditional_push_direction_changes": null,
+          "optimal_completion_count_mod": 0,
+          "canonical_completion_sha256": null
+        },
+        {
+          "box_row": 5,
+          "box_column": 10,
+          "direction": "U",
+          "solvable": true,
+          "conditional_moves": 61,
+          "move_regret": 8,
+          "conditional_pushes": 20,
+          "conditional_push_direction_changes": 5,
+          "optimal_completion_count_mod": 2,
+          "canonical_completion_sha256": "ba2407238e7cf7c97322acb24e43de8503ed846f392d8572b295da1458d3cb80"
+        }
+      ],
       "board_sha256": "c07eed4e257e8a7e6e75e0b2c070d83bcde210106c40beaaaf2ee28be00035e5"
     },
     {
       "puzzle_id": "p07",
-      "optimal_moves": 49,
-      "optimal_pushes": 23,
-      "optimal_push_direction_changes": 4,
-      "optimal_solution_count_mod": 1,
-      "canonical_moves_sha256": "d88f2b8cbe36083a94ae5d81fde51c09cbef5c9ec624809706f2154452baa8ef",
+      "minimum_moves": 49,
+      "commitments": [
+        {
+          "box_row": 2,
+          "box_column": 2,
+          "direction": "L",
+          "solvable": false,
+          "conditional_moves": null,
+          "move_regret": null,
+          "conditional_pushes": null,
+          "conditional_push_direction_changes": null,
+          "optimal_completion_count_mod": 0,
+          "canonical_completion_sha256": null
+        },
+        {
+          "box_row": 2,
+          "box_column": 2,
+          "direction": "R",
+          "solvable": true,
+          "conditional_moves": 57,
+          "move_regret": 8,
+          "conditional_pushes": 23,
+          "conditional_push_direction_changes": 5,
+          "optimal_completion_count_mod": 2,
+          "canonical_completion_sha256": "8b5fda3c09b2a6f24284d56c177c55d559645272af3d75155adea32a784bd1b8"
+        },
+        {
+          "box_row": 2,
+          "box_column": 6,
+          "direction": "D",
+          "solvable": true,
+          "conditional_moves": 55,
+          "move_regret": 6,
+          "conditional_pushes": 23,
+          "conditional_push_direction_changes": 7,
+          "optimal_completion_count_mod": 1,
+          "canonical_completion_sha256": "c8ccf196f945a114aade590b837c47c753598e030f3da432c1390d8f926f9bdf"
+        },
+        {
+          "box_row": 2,
+          "box_column": 6,
+          "direction": "L",
+          "solvable": true,
+          "conditional_moves": 49,
+          "move_regret": 0,
+          "conditional_pushes": 23,
+          "conditional_push_direction_changes": 4,
+          "optimal_completion_count_mod": 1,
+          "canonical_completion_sha256": "d88f2b8cbe36083a94ae5d81fde51c09cbef5c9ec624809706f2154452baa8ef"
+        },
+        {
+          "box_row": 2,
+          "box_column": 6,
+          "direction": "R",
+          "solvable": false,
+          "conditional_moves": null,
+          "move_regret": null,
+          "conditional_pushes": null,
+          "conditional_push_direction_changes": null,
+          "optimal_completion_count_mod": 0,
+          "canonical_completion_sha256": null
+        },
+        {
+          "box_row": 2,
+          "box_column": 6,
+          "direction": "U",
+          "solvable": false,
+          "conditional_moves": null,
+          "move_regret": null,
+          "conditional_pushes": null,
+          "conditional_push_direction_changes": null,
+          "optimal_completion_count_mod": 0,
+          "canonical_completion_sha256": null
+        },
+        {
+          "box_row": 5,
+          "box_column": 7,
+          "direction": "D",
+          "solvable": true,
+          "conditional_moves": 51,
+          "move_regret": 2,
+          "conditional_pushes": 23,
+          "conditional_push_direction_changes": 5,
+          "optimal_completion_count_mod": 2,
+          "canonical_completion_sha256": "6f0ff01f2a388cd957c303b47d60e8dd725f5098714365b96d71416573a3d362"
+        },
+        {
+          "box_row": 5,
+          "box_column": 7,
+          "direction": "U",
+          "solvable": true,
+          "conditional_moves": 71,
+          "move_regret": 22,
+          "conditional_pushes": 25,
+          "conditional_push_direction_changes": 6,
+          "optimal_completion_count_mod": 1,
+          "canonical_completion_sha256": "8b7a0544bea3c4c8c6aa8c3fb1de7c90fa346bd19c578368524027380c8708a7"
+        },
+        {
+          "box_row": 9,
+          "box_column": 6,
+          "direction": "D",
+          "solvable": true,
+          "conditional_moves": 67,
+          "move_regret": 18,
+          "conditional_pushes": 23,
+          "conditional_push_direction_changes": 6,
+          "optimal_completion_count_mod": 3,
+          "canonical_completion_sha256": "b31d24b92a6f456336de94ca85fd8aed350ec2ff79ebb988603c747f403a5928"
+        },
+        {
+          "box_row": 9,
+          "box_column": 6,
+          "direction": "L",
+          "solvable": true,
+          "conditional_moves": 67,
+          "move_regret": 18,
+          "conditional_pushes": 23,
+          "conditional_push_direction_changes": 5,
+          "optimal_completion_count_mod": 4,
+          "canonical_completion_sha256": "23bedbb8c12e1de044c52913153beb19062734249f0221abfc9182c5a92640d8"
+        },
+        {
+          "box_row": 9,
+          "box_column": 6,
+          "direction": "R",
+          "solvable": true,
+          "conditional_moves": 71,
+          "move_regret": 22,
+          "conditional_pushes": 25,
+          "conditional_push_direction_changes": 6,
+          "optimal_completion_count_mod": 6,
+          "canonical_completion_sha256": "1c0d964352aba83737806b5edde12ba916068f960392a87fce1b5a404b839dc9"
+        },
+        {
+          "box_row": 9,
+          "box_column": 6,
+          "direction": "U",
+          "solvable": true,
+          "conditional_moves": 69,
+          "move_regret": 20,
+          "conditional_pushes": 25,
+          "conditional_push_direction_changes": 6,
+          "optimal_completion_count_mod": 4,
+          "canonical_completion_sha256": "e0812c976aed9e5d3c7c2ddb86cc855f8caddf155495c1bebccefc0727562c60"
+        }
+      ],
       "board_sha256": "9a786038ab24b3537f4b6ba117dbab67e610e657684837629fe36555df8a8635"
     },
     {
       "puzzle_id": "p08",
-      "optimal_moves": 55,
-      "optimal_pushes": 22,
-      "optimal_push_direction_changes": 6,
-      "optimal_solution_count_mod": 22,
-      "canonical_moves_sha256": "9493384b6d7abc0e20671e113e172852f08588cf7902926e62e07a3bd103711a",
+      "minimum_moves": 55,
+      "commitments": [
+        {
+          "box_row": 3,
+          "box_column": 9,
+          "direction": "L",
+          "solvable": true,
+          "conditional_moves": 57,
+          "move_regret": 2,
+          "conditional_pushes": 22,
+          "conditional_push_direction_changes": 7,
+          "optimal_completion_count_mod": 22,
+          "canonical_completion_sha256": "b78280d55a2c51f2b02b04bc5e88197f0335640bfbc22d10572e3a426493c102"
+        },
+        {
+          "box_row": 3,
+          "box_column": 11,
+          "direction": "R",
+          "solvable": true,
+          "conditional_moves": 55,
+          "move_regret": 0,
+          "conditional_pushes": 22,
+          "conditional_push_direction_changes": 6,
+          "optimal_completion_count_mod": 22,
+          "canonical_completion_sha256": "9493384b6d7abc0e20671e113e172852f08588cf7902926e62e07a3bd103711a"
+        }
+      ],
       "board_sha256": "376584e39d745da274bd962cd7ed38dd6779fb31b81d2a7f3e45fa2102c3fcac"
     },
     {
       "puzzle_id": "p09",
-      "optimal_moves": 40,
-      "optimal_pushes": 13,
-      "optimal_push_direction_changes": 6,
-      "optimal_solution_count_mod": 6,
-      "canonical_moves_sha256": "20f16c2a15f47f8fa8478938b4d156d790663e3f86ee8f78c3cc3c6af5ce079a",
-      "board_sha256": "7b6841583e8c6db44660cdf1b302a6af7c863cec7d6cf7a6f802a58b0ab8dcac"
+      "minimum_moves": 50,
+      "commitments": [
+        {
+          "box_row": 5,
+          "box_column": 3,
+          "direction": "U",
+          "solvable": true,
+          "conditional_moves": 52,
+          "move_regret": 2,
+          "conditional_pushes": 7,
+          "conditional_push_direction_changes": 5,
+          "optimal_completion_count_mod": 3,
+          "canonical_completion_sha256": "3274393b831e0878aedeaeb85ca930ef516454ea3f66bcea02cde4a8fe6b05b4"
+        },
+        {
+          "box_row": 6,
+          "box_column": 4,
+          "direction": "R",
+          "solvable": true,
+          "conditional_moves": 50,
+          "move_regret": 0,
+          "conditional_pushes": 7,
+          "conditional_push_direction_changes": 4,
+          "optimal_completion_count_mod": 3,
+          "canonical_completion_sha256": "1b3715330a950f3f18c2a347a34e26612fdd07c0d85f73c7fcd74d862e8531ec"
+        }
+      ],
+      "board_sha256": "19926e17d563ae8ac38f09460fd10a391bcd8d6303b8f91165cfb50bdf3a951a"
     },
     {
       "puzzle_id": "p10",
-      "optimal_moves": 59,
-      "optimal_pushes": 15,
-      "optimal_push_direction_changes": 2,
-      "optimal_solution_count_mod": 18,
-      "canonical_moves_sha256": "c4620c00e40cfaadb9a796de87fe4bbb87f70606c05416bf3c072659c7cca494",
+      "minimum_moves": 59,
+      "commitments": [
+        {
+          "box_row": 3,
+          "box_column": 11,
+          "direction": "L",
+          "solvable": true,
+          "conditional_moves": 77,
+          "move_regret": 18,
+          "conditional_pushes": 33,
+          "conditional_push_direction_changes": 9,
+          "optimal_completion_count_mod": 12,
+          "canonical_completion_sha256": "ee8ec0dc287c98c3f99fe9275bb78ce22e3d45a22807db9509e709e514fdf44b"
+        },
+        {
+          "box_row": 4,
+          "box_column": 12,
+          "direction": "D",
+          "solvable": true,
+          "conditional_moves": 59,
+          "move_regret": 0,
+          "conditional_pushes": 15,
+          "conditional_push_direction_changes": 2,
+          "optimal_completion_count_mod": 18,
+          "canonical_completion_sha256": "c4620c00e40cfaadb9a796de87fe4bbb87f70606c05416bf3c072659c7cca494"
+        }
+      ],
       "board_sha256": "42c918cf26c2557613d9a01f79fa029fac14a3e7695dcf343d2854bca668dbb8"
     }
   ],
-  "rules_sha256": "6d5360cbd8409a810f54d0fb992661a701653a300e28b0e2cfed61145d6e308d"
+  "rules_sha256": "0c864bed886bf975c1502f2c6a3a56f2fd6a62ff709866707d64a4b7b7439f66"
 }
