@@ -45,6 +45,9 @@ HARD_INTERIOR_MIN = 12
 HARD_INTERIOR_MAX = 18
 HARD_BOX_COUNT = 6
 HARD_REVERSE_PULLS = 180
+CANONICAL_PROOF_EXPANSION_LIMIT = 1_800_000
+MIN_PUSH_DIRECTION_DISCRIMINATING_PUZZLES = 5
+MIN_HARD_PUSH_DIRECTION_DISCRIMINATING_PUZZLES = 1
 
 assert len(HARD_SEED_OFFSETS) == HARD_PUZZLE_COUNT
 
@@ -278,11 +281,30 @@ def build_one(rng: random.Random, puzzle_id: str, *, hard: bool = False) -> dict
         board,
         boxes,
         player,
-        expansion_limit=expansion_limit,
+        expansion_limit=CANONICAL_PROOF_EXPANSION_LIMIT,
+    )
+    legacy_moves, legacy_stats = solve_move_optimal(
+        board,
+        boxes,
+        player,
+        expansion_limit=CANONICAL_PROOF_EXPANSION_LIMIT,
+        optimize_push_direction_changes=False,
     )
     elapsed = time.monotonic() - started
     if moves is None or stats["optimal_moves"] != screening["optimal_moves"]:
         raise RuntimeError(f"canonical proof disagrees with screening for {puzzle_id}")
+    if (
+        legacy_moves is None
+        or legacy_stats["optimal_moves"] != stats["optimal_moves"]
+        or legacy_stats["optimal_pushes"] != stats["optimal_pushes"]
+    ):
+        raise RuntimeError(f"legacy objective disagrees on primary costs for {puzzle_id}")
+
+    push_direction_criterion_discriminates = (
+        moves != legacy_moves
+        or stats["optimal_solution_count_mod"]
+        != legacy_stats["optimal_solution_count_mod"]
+    )
 
     rows = compose(height, width, floor, goals, set(boxes), player, crop=True)
     return {
@@ -290,7 +312,11 @@ def build_one(rng: random.Random, puzzle_id: str, *, hard: bool = False) -> dict
         "rows": rows,
         "optimal_moves": int(stats["optimal_moves"]),
         "optimal_pushes": int(stats["optimal_pushes"]),
+        "optimal_push_direction_changes": int(
+            stats["optimal_push_direction_changes"]
+        ),
         "optimal_solution_count_mod": int(stats["optimal_solution_count_mod"]),
+        "push_direction_criterion_discriminates": push_direction_criterion_discriminates,
         "box_count": box_count,
         "interior": [height, width],
         "expansions": screening["expansions"],
@@ -326,14 +352,15 @@ def rules_document() -> dict:
             "solved": "every box occupies a goal",
         },
         "scoring": {
-            "metric": "the lexicographic tuple (total player moves, pushes, move string)",
+            "metric": "the lexicographic tuple (total player moves, pushes, push-direction changes, move string)",
             "primary": "minimize the number of characters in the move string; every player step counts whether or not it pushes a box",
             "secondary": "among move-optimal solutions, minimize the number of moves that push a box",
-            "tertiary": "among solutions tied on moves and pushes, choose the lexicographically smallest complete move string under the explicit character order D < L < R < U",
-            "requirement": "each submitted solution must be legal, solve its puzzle, and equal the unique canonical optimum under all three levels",
+            "tertiary": "among solutions tied on moves and pushes, minimize push-direction changes; inspect only the subsequence of moves that push a box, the first push adds zero, and each later push adds one exactly when its U/D/L/R direction differs from the preceding push direction",
+            "quaternary": "among solutions tied on moves, pushes, and push-direction changes, choose the lexicographically smallest complete move string under the explicit character order D < L < R < U",
+            "requirement": "each submitted solution must be legal, solve its puzzle, and equal the unique canonical optimum under all four levels",
         },
         "optimal_solution_count": {
-            "definition": "the number of distinct complete move strings attaining both the minimum total-move count and, among those, the minimum push count",
+            "definition": "the number of distinct complete move strings attaining the minimum total-move count, minimum push count among those, and minimum push-direction-change count among those",
             "distinctness": "two solutions are distinct exactly when their complete move strings differ at one or more character positions",
             "modulus": 1_000_000_007,
             "requirement": "report the count modulo 1000000007 for every puzzle",
@@ -342,9 +369,15 @@ def rules_document() -> dict:
             "path": "/app/output/solutions.json",
             "top_level_keys": ["schema_version", "solutions"],
             "schema_version": 1,
-            "entry_keys": ["puzzle_id", "moves", "optimal_solution_count_mod"],
+            "entry_keys": [
+                "puzzle_id",
+                "moves",
+                "optimal_push_direction_changes",
+                "optimal_solution_count_mod",
+            ],
             "ordering": "solutions ascending by puzzle_id UTF-8 bytes, exactly one entry per puzzle id",
             "moves_alphabet": "uppercase U, D, L, R only; no separators, whitespace, lowercase, or any other character",
+            "optimal_push_direction_changes": "a nonnegative integer equal to the tertiary score of moves",
             "optimal_solution_count_mod": "an integer from 0 through 1000000006",
         },
         "instance_bounds": {
@@ -355,9 +388,13 @@ def rules_document() -> dict:
             "boxes_max": HARD_BOX_COUNT,
             "standard_puzzle_count": STANDARD_PUZZLE_COUNT,
             "hard_tail_puzzle_count": HARD_PUZZLE_COUNT,
-            "hard_tail_min_reference_expansions": HARD_MIN_EXPANSIONS,
+            "hard_tail_min_screening_expansions": HARD_MIN_EXPANSIONS,
+            "push_direction_discriminating_puzzles_min": MIN_PUSH_DIRECTION_DISCRIMINATING_PUZZLES,
+            "hard_tail_push_direction_discriminating_puzzles_min": MIN_HARD_PUSH_DIRECTION_DISCRIMINATING_PUZZLES,
+            "push_direction_discriminator": "a puzzle qualifies when adding the push-direction-change objective changes the legacy moves/pushes-optimal canonical move string or its tied-solution count modulo 1000000007",
             "guarantee": "every instance is generated backwards from its solved state, so a legal solution exists, and the reference solver proved its canonical optimum and tied-solution count inside the published expansion envelope",
-            "reference_expansion_limit": HARD_EXPANSION_LIMIT,
+            "screening_expansion_limit": HARD_EXPANSION_LIMIT,
+            "canonical_proof_expansion_limit": CANONICAL_PROOF_EXPANSION_LIMIT,
             "canonical_move_order": list(DIRECTION_ORDER),
         },
     }
@@ -387,11 +424,25 @@ def build(root: Path, tests_root: Path | None = None) -> None:
         print(
             f"{candidate['puzzle_id']}: optimal={candidate['optimal_moves']} "
             f"pushes={candidate['optimal_pushes']} boxes={candidate['box_count']} "
+            f"push_direction_changes={candidate['optimal_push_direction_changes']} "
             f"count_mod={candidate['optimal_solution_count_mod']} "
+            f"direction_discriminator={candidate['push_direction_criterion_discriminates']} "
             f"interior={candidate['interior']} "
             f"expansions={candidate['expansions']} proof_seconds={candidate['proof_seconds']}",
             flush=True,
         )
+
+    discriminating_count = sum(
+        puzzle["push_direction_criterion_discriminates"] for puzzle in puzzles
+    )
+    hard_discriminating_count = sum(
+        puzzle["push_direction_criterion_discriminates"]
+        for puzzle in puzzles[STANDARD_PUZZLE_COUNT:]
+    )
+    if discriminating_count < MIN_PUSH_DIRECTION_DISCRIMINATING_PUZZLES:
+        raise RuntimeError("generated fixture does not exercise push-direction optimization enough")
+    if hard_discriminating_count < MIN_HARD_PUSH_DIRECTION_DISCRIMINATING_PUZZLES:
+        raise RuntimeError("hard tail does not exercise push-direction optimization")
 
     input_dir = root / "input"
     puzzle_dir = input_dir / "puzzles"
@@ -415,18 +466,24 @@ def build(root: Path, tests_root: Path | None = None) -> None:
                     "puzzle_id",
                     "optimal_moves",
                     "optimal_pushes",
+                    "optimal_push_direction_changes",
                     "optimal_solution_count_mod",
                     "canonical_moves_sha256",
                     "board_sha256",
                 ],
                 "output_entry_keys": specification["output_contract"]["entry_keys"],
                 "count_modulus": specification["optimal_solution_count"]["modulus"],
+                "push_direction_discriminating_puzzle_count": discriminating_count,
+                "hard_tail_push_direction_discriminating_puzzle_count": hard_discriminating_count,
             },
             "puzzles": [
                 {
                     "puzzle_id": puzzle["puzzle_id"],
                     "optimal_moves": puzzle["optimal_moves"],
                     "optimal_pushes": puzzle["optimal_pushes"],
+                    "optimal_push_direction_changes": puzzle[
+                        "optimal_push_direction_changes"
+                    ],
                     "optimal_solution_count_mod": puzzle[
                         "optimal_solution_count_mod"
                     ],

@@ -313,14 +313,18 @@ def solve_move_optimal(
     boxes: frozenset[int] | None = None,
     player: int | None = None,
     expansion_limit: int = 4_000_000,
+    optimize_push_direction_changes: bool = True,
 ) -> tuple[str | None, dict]:
-    """Return the canonical optimum and count all primary/secondary optima.
+    """Return the canonical optimum and count all numeric-objective optima.
 
     Every edge is one push plus the walk that positions the player for it, so the
-    accumulated primary cost is exactly the player's move count. Equal primary
-    costs retain fewer pushes and then the lexicographically smaller complete move
-    string. Equal primary/secondary labels also accumulate the number of distinct
-    move strings modulo COUNT_MODULUS.
+    accumulated primary cost is exactly the player's move count. Labels then retain
+    fewer pushes and fewer changes between consecutive push directions before the
+    lexicographic move-string tie-break. The last push direction is part of the
+    search state because it changes the cost of the next push. Setting
+    ``optimize_push_direction_changes`` false reproduces the legacy two-numeric-level
+    objective and is used only to prove that generated fixtures exercise the new
+    criterion.
     """
     boxes = board.boxes if boxes is None else boxes
     player = board.player if player is None else player
@@ -331,6 +335,7 @@ def solve_move_optimal(
             "generated": 0,
             "optimal_moves": 0,
             "optimal_pushes": 0,
+            "optimal_push_direction_changes": 0,
             "optimal_solution_count_mod": 1,
         }
 
@@ -343,8 +348,8 @@ def solve_move_optimal(
             bounds[state_boxes] = value
         return value
 
-    start = (player, boxes)
-    best_primary = {start: (0, 0)}
+    start = (player, boxes, None)
+    best_primary = {start: (0, 0, 0)}
     canonical = {start: ""}
     ways = {start: 1}
     initial = heuristic(boxes)
@@ -354,24 +359,37 @@ def solve_move_optimal(
             "generated": 0,
             "optimal_moves": None,
             "optimal_pushes": None,
+            "optimal_push_direction_changes": None,
             "optimal_solution_count_mod": None,
         }
-    queue = [(initial, 0, 0, "", player, boxes)]
+    queue = [(initial, 0, 0, 0, "", player, boxes, None)]
     expansions = 0
     generated = 0
-    goal_primary: tuple[int, int] | None = None
+    goal_primary: tuple[int, int, int] | None = None
     goal_path: str | None = None
     goal_ways = 0
 
     while queue:
         if goal_primary is not None and queue[0][0] > goal_primary[0]:
             break
-        _, cost, pushes, path, current_player, current_boxes = heapq.heappop(queue)
-        state = (current_player, current_boxes)
-        if (cost, pushes) != best_primary.get(state) or path != canonical.get(state):
+        (
+            _,
+            cost,
+            pushes,
+            push_direction_changes,
+            path,
+            current_player,
+            current_boxes,
+            last_push_direction,
+        ) = heapq.heappop(queue)
+        state = (current_player, current_boxes, last_push_direction)
+        if (
+            (cost, pushes, push_direction_changes) != best_primary.get(state)
+            or path != canonical.get(state)
+        ):
             continue
         if current_boxes == goals:
-            primary = (cost, pushes)
+            primary = (cost, pushes, push_direction_changes)
             if goal_primary is None or primary < goal_primary:
                 goal_primary = primary
                 goal_path = path
@@ -387,6 +405,7 @@ def solve_move_optimal(
                 "generated": generated,
                 "optimal_moves": None,
                 "optimal_pushes": None,
+                "optimal_push_direction_changes": None,
                 "optimal_solution_count_mod": None,
                 "exhausted": False,
             }
@@ -414,10 +433,18 @@ def solve_move_optimal(
                 edge = approach + key
                 next_cost = cost + len(edge)
                 next_pushes = pushes + 1
+                next_changes = push_direction_changes + int(
+                    optimize_push_direction_changes
+                    and last_push_direction is not None
+                    and last_push_direction != key
+                )
                 next_path = path + edge
-                next_state = (box, moved)
-                next_primary = (next_cost, next_pushes)
-                old_primary = best_primary.get(next_state, (INFINITY, INFINITY))
+                next_last_direction = key if optimize_push_direction_changes else None
+                next_state = (box, moved, next_last_direction)
+                next_primary = (next_cost, next_pushes, next_changes)
+                old_primary = best_primary.get(
+                    next_state, (INFINITY, INFINITY, INFINITY)
+                )
                 next_ways = ways[state] * route_count % COUNT_MODULUS
                 if next_primary > old_primary:
                     continue
@@ -432,9 +459,11 @@ def solve_move_optimal(
                             next_cost + estimate,
                             next_cost,
                             next_pushes,
+                            next_changes,
                             next_path,
                             box,
                             moved,
+                            next_last_direction,
                         ),
                     )
                     continue
@@ -447,9 +476,11 @@ def solve_move_optimal(
                             next_cost + estimate,
                             next_cost,
                             next_pushes,
+                            next_changes,
                             next_path,
                             box,
                             moved,
+                            next_last_direction,
                         ),
                     )
 
@@ -459,6 +490,7 @@ def solve_move_optimal(
             "generated": generated,
             "optimal_moves": goal_primary[0],
             "optimal_pushes": goal_primary[1],
+            "optimal_push_direction_changes": goal_primary[2],
             "optimal_solution_count_mod": goal_ways,
         }
 
@@ -467,6 +499,7 @@ def solve_move_optimal(
         "generated": generated,
         "optimal_moves": None,
         "optimal_pushes": None,
+        "optimal_push_direction_changes": None,
         "optimal_solution_count_mod": None,
         "exhausted": True,
     }

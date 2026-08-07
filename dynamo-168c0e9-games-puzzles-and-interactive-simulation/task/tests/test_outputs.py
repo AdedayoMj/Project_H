@@ -55,11 +55,13 @@ def parse(text: str) -> dict:
     }
 
 
-def replay(board: dict, moves: str) -> tuple[set, tuple, int]:
+def replay(board: dict, moves: str) -> tuple[set, tuple, int, int]:
     """Apply the move string under official rules, raising on the first illegal step."""
     boxes = set(board["boxes"])
     player = board["player"]
     pushes = 0
+    push_direction_changes = 0
+    last_push_direction = None
     for index, key in enumerate(moves):
         delta_r, delta_c = DIRECTIONS[key]
         target = (player[0] + delta_r, player[1] + delta_c)
@@ -78,8 +80,11 @@ def replay(board: dict, moves: str) -> tuple[set, tuple, int]:
             boxes.discard(target)
             boxes.add(beyond)
             pushes += 1
+            if last_push_direction is not None and last_push_direction != key:
+                push_direction_changes += 1
+            last_push_direction = key
         player = target
-    return boxes, player, pushes
+    return boxes, player, pushes, push_direction_changes
 
 
 def test_solution_document_is_a_regular_file():
@@ -105,13 +110,28 @@ def test_published_instances_are_unchanged():
             "puzzle_id",
             "optimal_moves",
             "optimal_pushes",
+            "optimal_push_direction_changes",
             "optimal_solution_count_mod",
             "canonical_moves_sha256",
             "board_sha256",
         ],
         "output_entry_keys": specification["output_contract"]["entry_keys"],
         "count_modulus": specification["optimal_solution_count"]["modulus"],
+        "push_direction_discriminating_puzzle_count": fixture_contract[
+            "push_direction_discriminating_puzzle_count"
+        ],
+        "hard_tail_push_direction_discriminating_puzzle_count": fixture_contract[
+            "hard_tail_push_direction_discriminating_puzzle_count"
+        ],
     }
+    assert fixture_contract["push_direction_discriminating_puzzle_count"] >= specification[
+        "instance_bounds"
+    ]["push_direction_discriminating_puzzles_min"]
+    assert fixture_contract[
+        "hard_tail_push_direction_discriminating_puzzle_count"
+    ] >= specification["instance_bounds"][
+        "hard_tail_push_direction_discriminating_puzzles_min"
+    ]
     assert all(
         set(record) == set(fixture_contract["expected_puzzle_keys"])
         for record in EXPECTED["puzzles"]
@@ -148,6 +168,8 @@ def test_solution_document_matches_the_normative_schema():
         assert record["moves"], f"{record['puzzle_id']} has an empty solution"
         assert set(record["moves"]) <= ALPHABET, record["puzzle_id"]
         assert type(record["optimal_solution_count_mod"]) is int
+        assert type(record["optimal_push_direction_changes"]) is int
+        assert record["optimal_push_direction_changes"] >= 0
         assert (
             0
             <= record["optimal_solution_count_mod"]
@@ -161,12 +183,12 @@ def test_every_solution_is_legal_and_solves_its_puzzle():
     for record in EXPECTED["puzzles"]:
         puzzle_id = record["puzzle_id"]
         board = parse((PUZZLES / f"{puzzle_id}.txt").read_text())
-        boxes, _, _ = replay(board, entries[puzzle_id])
+        boxes, _, _, _ = replay(board, entries[puzzle_id])
         assert boxes == board["goals"], puzzle_id
 
 
 def test_every_solution_is_the_hidden_canonical_optimum():
-    """Require optimal moves and pushes plus the published canonical tie-break."""
+    """Require all numeric optima plus the published canonical tie-break."""
     entries = {
         record["puzzle_id"]: record for record in submitted()["solutions"]
     }
@@ -179,19 +201,27 @@ def test_every_solution_is_the_hidden_canonical_optimum():
             record["optimal_moves"],
         )
         board = parse((PUZZLES / f"{puzzle_id}.txt").read_text())
-        _, _, pushes = replay(board, moves)
+        _, _, pushes, push_direction_changes = replay(board, moves)
         assert pushes == record["optimal_pushes"], (
             puzzle_id,
             pushes,
             record["optimal_pushes"],
         )
+        assert push_direction_changes == record["optimal_push_direction_changes"], (
+            puzzle_id,
+            push_direction_changes,
+            record["optimal_push_direction_changes"],
+        )
+        assert entries[puzzle_id]["optimal_push_direction_changes"] == record[
+            "optimal_push_direction_changes"
+        ], puzzle_id
         assert hashlib.sha256(moves.encode()).hexdigest() == record[
             "canonical_moves_sha256"
         ], puzzle_id
 
 
 def test_reported_optimal_solution_counts_are_exact():
-    """Match the hidden number of move-and-push-optimal strings modulo the prime."""
+    """Match strings tied on moves, pushes, and push-direction changes modulo the prime."""
     entries = {
         record["puzzle_id"]: record for record in submitted()["solutions"]
     }

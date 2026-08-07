@@ -19,6 +19,7 @@
       "puzzle_id",
       "optimal_moves",
       "optimal_pushes",
+      "optimal_push_direction_changes",
       "optimal_solution_count_mod",
       "canonical_moves_sha256",
       "board_sha256"
@@ -26,15 +27,19 @@
     "output_entry_keys": [
       "puzzle_id",
       "moves",
+      "optimal_push_direction_changes",
       "optimal_solution_count_mod"
     ],
-    "count_modulus": 1000000007
+    "count_modulus": 1000000007,
+    "push_direction_discriminating_puzzle_count": 5,
+    "hard_tail_push_direction_discriminating_puzzle_count": 1
   },
   "puzzles": [
     {
       "puzzle_id": "p01",
       "optimal_moves": 45,
       "optimal_pushes": 24,
+      "optimal_push_direction_changes": 6,
       "optimal_solution_count_mod": 2,
       "canonical_moves_sha256": "572f171cd630c167127dd5a0da1e5fb792d9b2d4ec8c339064c91064c7593ca4",
       "board_sha256": "cf53e5d48ada230546e4112b7e4ae7ce222cfe07c16ad6c30411c03768c718ad"
@@ -43,6 +48,7 @@
       "puzzle_id": "p02",
       "optimal_moves": 40,
       "optimal_pushes": 12,
+      "optimal_push_direction_changes": 5,
       "optimal_solution_count_mod": 8,
       "canonical_moves_sha256": "804b664aaf9666afb2f95a5844100bb72b4e6a21d9a417273acd9b35139423b8",
       "board_sha256": "8af37feb0c4f9170044a4eea65816db5980cbfe727088db8f6f8970cee7fda5d"
@@ -51,6 +57,7 @@
       "puzzle_id": "p03",
       "optimal_moves": 51,
       "optimal_pushes": 10,
+      "optimal_push_direction_changes": 4,
       "optimal_solution_count_mod": 32,
       "canonical_moves_sha256": "b844e483dcb5a4d63428e9be63680922d18102b4ee6e4a9f3e15ba30caf7530e",
       "board_sha256": "3501dc6d60d6b93a5015c128e51432b90feafacdfbc43411750e67a280297645"
@@ -59,31 +66,35 @@
       "puzzle_id": "p04",
       "optimal_moves": 40,
       "optimal_pushes": 16,
-      "optimal_solution_count_mod": 16,
-      "canonical_moves_sha256": "6ea3b4b903da78aec8239a0351bc02d751be34f7efde5035034fdd10023ca825",
+      "optimal_push_direction_changes": 5,
+      "optimal_solution_count_mod": 10,
+      "canonical_moves_sha256": "4fdf4fa4a5d120a76720ee9b9d1f34761b42c27cd45766615acc3520c9f37855",
       "board_sha256": "d3d5f0cc7c0e88feea9052807652e374589f040325318d148afeb359fea97eaa"
     },
     {
       "puzzle_id": "p05",
       "optimal_moves": 42,
       "optimal_pushes": 19,
-      "optimal_solution_count_mod": 418,
-      "canonical_moves_sha256": "463b3f8860508967c9fdb6f3f288fd1969d6f1a1aeaf289413c0c171d2005e08",
+      "optimal_push_direction_changes": 4,
+      "optimal_solution_count_mod": 9,
+      "canonical_moves_sha256": "0ef41689a357768f9fb93a72db085875d53d6174cdc7488933b2ef4ef0fc9baa",
       "board_sha256": "a1b25b99881eba7b4cbcddda8f6e6fdbce3b381a0ac52a2daa84bdb73fc24498"
     },
     {
       "puzzle_id": "p06",
       "optimal_moves": 53,
       "optimal_pushes": 20,
-      "optimal_solution_count_mod": 38,
-      "canonical_moves_sha256": "93df0da45ea7ac6ffe2cf3ee17357681370ec1c9170992458d8b3094124a71c7",
+      "optimal_push_direction_changes": 4,
+      "optimal_solution_count_mod": 12,
+      "canonical_moves_sha256": "9b04947381d8a3a0e6785b6d7a2e9dc88df57961db1b426efccad76845b7b82a",
       "board_sha256": "c07eed4e257e8a7e6e75e0b2c070d83bcde210106c40beaaaf2ee28be00035e5"
     },
     {
       "puzzle_id": "p07",
       "optimal_moves": 49,
       "optimal_pushes": 23,
-      "optimal_solution_count_mod": 2,
+      "optimal_push_direction_changes": 4,
+      "optimal_solution_count_mod": 1,
       "canonical_moves_sha256": "d88f2b8cbe36083a94ae5d81fde51c09cbef5c9ec624809706f2154452baa8ef",
       "board_sha256": "9a786038ab24b3537f4b6ba117dbab67e610e657684837629fe36555df8a8635"
     },
@@ -91,6 +102,7 @@
       "puzzle_id": "p08",
       "optimal_moves": 55,
       "optimal_pushes": 22,
+      "optimal_push_direction_changes": 6,
       "optimal_solution_count_mod": 22,
       "canonical_moves_sha256": "9493384b6d7abc0e20671e113e172852f08588cf7902926e62e07a3bd103711a",
       "board_sha256": "376584e39d745da274bd962cd7ed38dd6779fb31b81d2a7f3e45fa2102c3fcac"
@@ -99,6 +111,7 @@
       "puzzle_id": "p09",
       "optimal_moves": 40,
       "optimal_pushes": 13,
+      "optimal_push_direction_changes": 6,
       "optimal_solution_count_mod": 6,
       "canonical_moves_sha256": "20f16c2a15f47f8fa8478938b4d156d790663e3f86ee8f78c3cc3c6af5ce079a",
       "board_sha256": "7b6841583e8c6db44660cdf1b302a6af7c863cec7d6cf7a6f802a58b0ab8dcac"
@@ -107,10 +120,11 @@
       "puzzle_id": "p10",
       "optimal_moves": 59,
       "optimal_pushes": 15,
-      "optimal_solution_count_mod": 36,
+      "optimal_push_direction_changes": 2,
+      "optimal_solution_count_mod": 18,
       "canonical_moves_sha256": "c4620c00e40cfaadb9a796de87fe4bbb87f70606c05416bf3c072659c7cca494",
       "board_sha256": "42c918cf26c2557613d9a01f79fa029fac14a3e7695dcf343d2854bca668dbb8"
     }
   ],
-  "rules_sha256": "6d48227e5b027d0bc8f07276531a10d8d49d8468bc3ec4cfe36600fc4e67feff"
+  "rules_sha256": "6d5360cbd8409a810f54d0fb992661a701653a300e28b0e2cfed61145d6e308d"
 }

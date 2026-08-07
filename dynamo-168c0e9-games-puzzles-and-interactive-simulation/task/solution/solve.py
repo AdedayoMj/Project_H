@@ -165,16 +165,18 @@ def lower_bound(puzzle: Puzzle, boxes: frozenset[int]) -> float:
     return best[(1 << size) - 1]
 
 
-def solve(puzzle: Puzzle) -> tuple[str, int]:
+def solve(puzzle: Puzzle) -> tuple[str, int, int]:
     """A* for the canonical optimum and its tied-solution count.
 
     Push edges retain the lexicographically first shortest setup walk. State labels
-    compare total moves and then pushes, while equal labels accumulate path counts.
-    A separate canonical label retains the smallest complete D/L/R/U move string.
+    compare total moves, pushes, and changes between consecutive push directions,
+    while equal labels accumulate path counts. The state retains the last push
+    direction because it determines the next transition's tertiary cost. A separate
+    canonical label retains the smallest complete D/L/R/U move string.
     """
     goals = frozenset(puzzle.goals)
     if puzzle.boxes == goals:
-        return "", 1
+        return "", 0, 1
     cache: dict[frozenset[int], float] = {}
 
     def estimate(boxes: frozenset[int]) -> float:
@@ -184,23 +186,23 @@ def solve(puzzle: Puzzle) -> tuple[str, int]:
             cache[boxes] = value
         return value
 
-    start = (puzzle.player, puzzle.boxes)
-    best = {start: (0, 0)}
+    start = (puzzle.player, puzzle.boxes, None)
+    best = {start: (0, 0, 0)}
     canonical = {start: ""}
     ways = {start: 1}
-    queue = [(estimate(puzzle.boxes), 0, 0, "", puzzle.player, puzzle.boxes)]
-    goal_primary: tuple[int, int] | None = None
+    queue = [(estimate(puzzle.boxes), 0, 0, 0, "", puzzle.player, puzzle.boxes, None)]
+    goal_primary: tuple[int, int, int] | None = None
     goal_path: str | None = None
     goal_ways = 0
     while queue:
         if goal_primary is not None and queue[0][0] > goal_primary[0]:
             break
-        _, cost, pushes, path, player, boxes = heapq.heappop(queue)
-        state = (player, boxes)
-        if (cost, pushes) != best.get(state) or path != canonical.get(state):
+        _, cost, pushes, changes, path, player, boxes, last_push = heapq.heappop(queue)
+        state = (player, boxes, last_push)
+        if (cost, pushes, changes) != best.get(state) or path != canonical.get(state):
             continue
         if boxes == goals:
-            primary = (cost, pushes)
+            primary = (cost, pushes, changes)
             if goal_primary is None or primary < goal_primary:
                 goal_primary = primary
                 goal_path = path
@@ -232,11 +234,14 @@ def solve(puzzle: Puzzle) -> tuple[str, int]:
                     continue
                 edge = approach + key
                 total = cost + len(edge)
-                state = (box, moved)
-                primary = (total, pushes + 1)
-                old_primary = best.get(state, (INFINITY, INFINITY))
+                next_changes = changes + int(
+                    last_push is not None and last_push != key
+                )
+                state = (box, moved, key)
+                primary = (total, pushes + 1, next_changes)
+                old_primary = best.get(state, (INFINITY, INFINITY, INFINITY))
                 next_path = path + edge
-                next_ways = ways[(player, boxes)] * route_count % COUNT_MODULUS
+                next_ways = ways[(player, boxes, last_push)] * route_count % COUNT_MODULUS
                 if primary > old_primary:
                     continue
                 if primary < old_primary:
@@ -245,7 +250,16 @@ def solve(puzzle: Puzzle) -> tuple[str, int]:
                     ways[state] = next_ways
                     heapq.heappush(
                         queue,
-                        (total + bound, total, pushes + 1, next_path, box, moved),
+                        (
+                            total + bound,
+                            total,
+                            pushes + 1,
+                            next_changes,
+                            next_path,
+                            box,
+                            moved,
+                            key,
+                        ),
                     )
                     continue
                 ways[state] = (ways[state] + next_ways) % COUNT_MODULUS
@@ -253,12 +267,21 @@ def solve(puzzle: Puzzle) -> tuple[str, int]:
                     canonical[state] = next_path
                     heapq.heappush(
                         queue,
-                        (total + bound, total, pushes + 1, next_path, box, moved),
+                        (
+                            total + bound,
+                            total,
+                            pushes + 1,
+                            next_changes,
+                            next_path,
+                            box,
+                            moved,
+                            key,
+                        ),
                     )
 
     if goal_primary is None:
         raise RuntimeError("instance is unsolvable, which contradicts the published guarantee")
-    return goal_path, goal_ways
+    return goal_path, goal_primary[2], goal_ways
 
 
 def main() -> None:
@@ -268,10 +291,11 @@ def main() -> None:
     solutions = []
     for puzzle_id in sorted(rules["puzzle_ids"]):
         text = (INPUT / "puzzles" / f"{puzzle_id}.txt").read_text()
-        moves, count = solve(Puzzle(text))
+        moves, push_direction_changes, count = solve(Puzzle(text))
         record = {
             "puzzle_id": puzzle_id,
             "moves": moves,
+            "optimal_push_direction_changes": push_direction_changes,
             "optimal_solution_count_mod": count,
         }
         if set(record) != expected_entry_keys:
