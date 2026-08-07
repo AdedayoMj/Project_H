@@ -1,13 +1,12 @@
 artifacts = [
-  "/app/output/allocation-frontier.geojson",
-  "/app/output/allocation-frontier.csv",
-  "/app/output/optimality-certificate.json",
+  "/app/output/downlink-plan.json",
+  "/app/output/downlink-plan.csv",
+  "/app/output/robustness-certificate.json",
   "/app/output/solver.py",
 ]
 
 [task]
-name = "dynamo/pump-contingency-frontier"
-description = "Reconstruct coupled field state and certify a multi-policy irrigation response frontier across pump contingencies."
+name = "dynamo/robust-downlink-policy"
 
 [metadata]
 category = "Games Puzzles and Interactive Simulation"
@@ -16,10 +15,10 @@ model_tested = "Opus-4.8"
 agent_tested = "Terminus-2"
 task_objective = ["analyze", "generate"]
 artifact_type = ["mathematical_or_scientific_model", "dataset_or_tabular_file", "generated_output_artifact"]
-expert_time_estimate_hours = 48.0
-difficulty_explanation = "A precision-agriculture or geospatial modelling engineer must reconstruct six structurally different, deterministically synthesized field seasons containing roughly ten thousand clipped units. The fixtures are synthetic rather than farm records, but deliberately reproduce realistic boundary topology, layered soil partitions, observation gaps, overlapping applications, growing root zones, and operational scarcity. Each daily water state changes salt concentration, salinity changes crop use, and drainage changes salt mass. Those terminal states feed four different scarcity policies whose priorities and budgets change together, plus a full-recovery point. A small overlay, interpolation, state-order, or salt-mass error therefore propagates into five nonlocal optimizers, activation and satisfaction transitions, shadow prices, weighted losses, and cross-scenario certificates. The reusable solver must also generalize to an unseen policy/world perturbation rather than replay the published frontier."
-solution_explanation = "Clip the affine grids to each field, area-weight layered soil storage, interpolate root depth and vegetation, and advance the coupled water/salt state without intermediate rounding. Derive terminal water, salt, and stress-history needs. For each ticket policy, rebuild priorities, apply its fraction of nominal pump capacity, and solve the bounded campaign-wide quadratic allocation with the canonical multiplier search; append the full-request recovery point. Derive activation, satisfaction, robustness, and frontier gain per unit, then independently reconcile each KKT-style scenario certificate before serializing geometry, the flat table, and the reusable solver."
-verification_explanation = "The verifier fingerprints the generated evidence and independently reconstructs all physical states and all five frontier points without importing solution code. It checks exact schemas, types, canonical order, decimal CSV syntax, identity and overlay geometry, soil integration, daily water/salt audits, need decomposition, all scenario priorities/depths/shortfalls, frontier labels and ratios, and every certificate value. Direct invariants enforce increasing scenario budgets and allocated volumes, full recovery, binding scarcity points, positive transitions, budget closure, shortfall reconciliation, objective recomputation, and shadow-price stationarity. Campaign-level normalized residual guards reject coherent in-band bias. Finally, an isolated runner denies the submitted solver access to verifier files and process/network escapes, proves the oracle-read guard with an adversarial probe, and executes the solver from relocated roots on a verifier-only counterfactual with transformed field/event geometry, grid origin and cell dimensions, state drivers, capacity, and policy factors before grading its entire frontier again."
+expert_time_estimate_hours = 52.0
+difficulty_explanation = "A flight-dynamics or operations-research engineer must synthesize one non-anticipative action sequence that remains meaningful in four simultaneous weather/link worlds. Each decision couples expiring weighted packet queues to finite storage, saturating solar charge, a hard battery reserve, thermal memory, and sequence-dependent slew feasibility. Overflow and service use opposing priority orders, deadlines discard after service, idle slots preserve pointing history, and solar saturation means equal battery states need not have equal energy objectives. Local greedy choices therefore alter dozens of later queue and resource states. Exact lexicographic optimization, deterministic final tie-breaking, per-scenario replay, and generalization to an unseen mission require a substantial dynamic-programming or branch-and-bound implementation rather than a standard scheduler invocation."
+solution_explanation = "Parse each mission into integer batches and per-slot actions. Carry a dynamic-programming state containing shared battery, thermal and pointing history together with every scenario's remaining batches and class loss ledgers. Apply release overflow, charge/cooling, feasibility, scenario service, and deadline expiry in the specified order. Merge identical physical states using the best energy/thermal/contact/path prefix, then select the final state by the full robust comparison key. Replay the winning action sequence to construct slot audits, scenario outcomes, objective components, and the canonical digest before writing the JSON, flat CSV, certificate, and reusable solver."
+verification_explanation = "The verifier hash-locks the generated mission evidence, closes every JSON and CSV schema, checks canonical manifest/slot/scenario ordering, and independently replays resource and packet transitions for the submitted action sequence. A separately organized exact optimizer pins the unique action sequence and all loss/objective values; direct checks recompute battery reserve, thermal limit, slew reachability, service priority, overflow/expiry losses, energy, extrema, counts, cross-artifact equality, and SHA-256. Mutation probes reject feasible-but-suboptimal and nominal-only plans. Finally an isolated runner denies access to verifier files and process/network escapes, proves that guard with adversarial probes, and grades the reusable solver on a private mission whose packet timing, solar, pointing, contacts, and resource limits differ from the published fixtures. All quantities are integral, so acceptance uses exact equality rather than numerical tolerances."
 
 [verifier]
 timeout_sec = 300.0
