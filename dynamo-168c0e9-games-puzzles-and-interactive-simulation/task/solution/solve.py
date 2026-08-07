@@ -141,57 +141,145 @@ class PolicyEngine:
         return tuple(sorted(result))
 
     @lru_cache(maxsize=None)
-    def bounded(
+    def minimum_energy(
         self, state: tuple[str, str, int, int, int], turn_budget: int
-    ) -> tuple[tuple[int, int, int], str | None, tuple, int] | None:
-        if self.is_goal(state):
-            return (0, 0, 0), None, (), 1
-        if turn_budget <= 0:
+    ) -> int | None:
+        """Return the least worst-case energy among policies inside a turn cap."""
+        if turn_budget < 0:
             return None
-        best_value = None
-        best_action = None
-        best_outcomes = ()
-        optimal_action_count = 0
+        if self.is_goal(state):
+            return 0
+        best = None
         for action in self.actions(state):
-            turn_cost, energy_cost, handoff_cost = self.action_cost(state, action)
+            turn_cost, energy_cost, _ = self.action_cost(state, action)
             if turn_cost > turn_budget:
                 continue
             transitions = self.outcomes(state, action)
-            child_results = [
-                self.bounded(child, turn_budget - turn_cost)
+            child_energy = [
+                self.minimum_energy(child, turn_budget - turn_cost)
                 for _, child in transitions
             ]
-            if not transitions or any(result is None for result in child_results):
+            if not transitions or any(value is None for value in child_energy):
                 continue
-            child_values = [result[0] for result in child_results]
-            candidate = (
-                turn_cost + max(value[0] for value in child_values),
-                energy_cost + max(value[1] for value in child_values),
-                handoff_cost + max(value[2] for value in child_values),
-            )
-            if candidate[0] > turn_budget:
-                continue
-            if best_value is None or candidate < best_value:
-                best_value = candidate
-                best_action = action
-                best_outcomes = transitions
-                optimal_action_count = 1
-            elif candidate == best_value:
-                optimal_action_count += 1
-        if best_value is None:
-            return None
-        return best_value, best_action, best_outcomes, optimal_action_count
+            candidate = energy_cost + max(child_energy)
+            if best is None or candidate < best:
+                best = candidate
+        return best
 
-    @lru_cache(maxsize=None)
-    def optimal(
+    def root_budgets(
         self, state: tuple[str, str, int, int, int]
-    ) -> tuple[tuple[int, int, int], str | None, tuple, int]:
+    ) -> tuple[int, int]:
+        """Find the lexicographically minimal turn and energy bounds."""
         for turn_budget in range(self.max_turns + 1):
-            result = self.bounded(state, turn_budget)
-            if result is not None:
-                return result
+            energy_budget = self.minimum_energy(state, turn_budget)
+            if energy_budget is not None:
+                return turn_budget, energy_budget
         raise RuntimeError(
             f"{self.arena_id} has no strong rescue policy inside the published bound"
+        )
+
+    @lru_cache(maxsize=None)
+    def minimum_handoffs(
+        self,
+        state: tuple[str, str, int, int, int],
+        turn_budget: int,
+        energy_budget: int,
+    ) -> int | None:
+        """Minimize worst-case handoffs while respecting both earlier-objective caps."""
+        if turn_budget < 0 or energy_budget < 0:
+            return None
+        if self.is_goal(state):
+            return 0
+        least_energy = self.minimum_energy(state, turn_budget)
+        if least_energy is None or least_energy > energy_budget:
+            return None
+        best = None
+        for action in self.actions(state):
+            turn_cost, energy_cost, handoff_cost = self.action_cost(state, action)
+            if turn_cost > turn_budget or energy_cost > energy_budget:
+                continue
+            transitions = self.outcomes(state, action)
+            child_handoffs = [
+                self.minimum_handoffs(
+                    child,
+                    turn_budget - turn_cost,
+                    energy_budget - energy_cost,
+                )
+                for _, child in transitions
+            ]
+            if not transitions or any(value is None for value in child_handoffs):
+                continue
+            candidate = handoff_cost + max(child_handoffs)
+            if best is None or candidate < best:
+                best = candidate
+        return best
+
+    @lru_cache(maxsize=None)
+    def decision(
+        self,
+        state: tuple[str, str, int, int, int],
+        turn_budget: int,
+        energy_budget: int,
+    ) -> tuple[int, str | None, tuple, int]:
+        """Choose the canonical handoff-optimal action inside a budget context."""
+        if self.is_goal(state):
+            return 0, None, (), 1
+        optimum = self.minimum_handoffs(state, turn_budget, energy_budget)
+        if optimum is None:
+            raise RuntimeError("encountered an infeasible policy context")
+        chosen_action = None
+        chosen_outcomes = ()
+        optimal_action_count = 0
+        for action in self.actions(state):
+            turn_cost, energy_cost, handoff_cost = self.action_cost(state, action)
+            if turn_cost > turn_budget or energy_cost > energy_budget:
+                continue
+            transitions = self.outcomes(state, action)
+            child_handoffs = [
+                self.minimum_handoffs(
+                    child,
+                    turn_budget - turn_cost,
+                    energy_budget - energy_cost,
+                )
+                for _, child in transitions
+            ]
+            if not transitions or any(value is None for value in child_handoffs):
+                continue
+            candidate = handoff_cost + max(child_handoffs)
+            if candidate != optimum:
+                continue
+            optimal_action_count += 1
+            if chosen_action is None:
+                chosen_action = action
+                chosen_outcomes = transitions
+        return optimum, chosen_action, chosen_outcomes, optimal_action_count
+
+    @lru_cache(maxsize=None)
+    def policy_value(
+        self,
+        state: tuple[str, str, int, int, int],
+        turn_budget: int,
+        energy_budget: int,
+    ) -> tuple[int, int, int]:
+        """Compute the exact worst-case value of the selected contextual policy."""
+        if self.is_goal(state):
+            return 0, 0, 0
+        _, action, transitions, _ = self.decision(
+            state, turn_budget, energy_budget
+        )
+        turn_cost, energy_cost, handoff_cost = self.action_cost(state, action)
+        child_values = [
+            self.policy_value(
+                child,
+                turn_budget - turn_cost,
+                energy_budget - energy_cost,
+            )
+            for _, child in transitions
+        ]
+        return (
+            turn_cost + max(value[0] for value in child_values),
+            energy_cost + max(value[1] for value in child_values),
+            handoff_cost + max(value[2] for value in child_values),
         )
 
     def state_document(self, state: tuple[str, str, int, int, int]) -> dict:
@@ -212,39 +300,82 @@ class PolicyEngine:
             "last_actor": {0: None, 1: "A", 2: "B"}[last_actor],
         }
 
-    def node_id(self, state: tuple[str, str, int, int, int]) -> str:
-        digest = hashlib.sha256(canonical_json(self.state_document(state)).encode()).hexdigest()
+    def context_document(
+        self,
+        state: tuple[str, str, int, int, int],
+        turn_budget: int,
+        energy_budget: int,
+    ) -> dict:
+        return {
+            **self.state_document(state),
+            "turn_budget": turn_budget,
+            "energy_budget": energy_budget,
+        }
+
+    def node_id(
+        self,
+        state: tuple[str, str, int, int, int],
+        turn_budget: int,
+        energy_budget: int,
+    ) -> str:
+        digest = hashlib.sha256(
+            canonical_json(
+                self.context_document(state, turn_budget, energy_budget)
+            ).encode()
+        ).hexdigest()
         return "n_" + digest[:24]
+
+    def clear_caches(self) -> None:
+        """Release this arena's dynamic-programming tables before solving the next."""
+        self.actions.cache_clear()
+        self.outcomes.cache_clear()
+        self.minimum_energy.cache_clear()
+        self.minimum_handoffs.cache_clear()
+        self.decision.cache_clear()
+        self.policy_value.cache_clear()
 
     def synthesize(self) -> dict:
         root = self.starting_state()
-        root_value = self.optimal(root)[0]
-        queue = deque([root])
+        root_turn_budget, root_energy_budget = self.root_budgets(root)
+        root_context = (root, root_turn_budget, root_energy_budget)
+        root_value = self.policy_value(*root_context)
+        if root_value[:2] != (root_turn_budget, root_energy_budget):
+            raise RuntimeError("root policy failed to attain its optimal budgets")
+        queue = deque([root_context])
         seen = set()
         nodes = []
         identities = {}
         while queue:
-            state = queue.popleft()
-            if state in seen:
+            state, turn_budget, energy_budget = queue.popleft()
+            context = (state, turn_budget, energy_budget)
+            if context in seen:
                 continue
-            seen.add(state)
-            value, action, transitions, action_count = self.optimal(state)
-            state_fields = self.state_document(state)
-            identifier = self.node_id(state)
-            if identifier in identities and identities[identifier] != state_fields:
+            seen.add(context)
+            _, action, transitions, action_count = self.decision(*context)
+            value = self.policy_value(*context)
+            context_fields = self.context_document(*context)
+            identifier = self.node_id(*context)
+            if identifier in identities and identities[identifier] != context_fields:
                 raise RuntimeError("policy-node digest collision")
-            identities[identifier] = state_fields
+            identities[identifier] = context_fields
             outcome_rows = []
-            for observation, child in transitions:
-                child_id = self.node_id(child)
-                outcome_rows.append(
-                    {"observation": observation, "next_node_id": child_id}
-                )
-                queue.append(child)
+            if action is not None:
+                turn_cost, energy_cost, _ = self.action_cost(state, action)
+                for observation, child in transitions:
+                    child_context = (
+                        child,
+                        turn_budget - turn_cost,
+                        energy_budget - energy_cost,
+                    )
+                    child_id = self.node_id(*child_context)
+                    outcome_rows.append(
+                        {"observation": observation, "next_node_id": child_id}
+                    )
+                    queue.append(child_context)
             nodes.append(
                 {
                     "node_id": identifier,
-                    **state_fields,
+                    **context_fields,
                     "remaining_worst_case_turns": value[0],
                     "remaining_worst_case_energy": value[1],
                     "remaining_worst_case_handoffs": value[2],
@@ -257,7 +388,7 @@ class PolicyEngine:
         policy_digest = hashlib.sha256(canonical_json(nodes).encode()).hexdigest()
         return {
             "arena_id": self.arena_id,
-            "root_node_id": self.node_id(root),
+            "root_node_id": self.node_id(*root_context),
             "worst_case_turns": root_value[0],
             "worst_case_energy": root_value[1],
             "worst_case_handoffs": root_value[2],
@@ -272,7 +403,9 @@ def solve_root(input_root: Path) -> dict:
     arenas = []
     for record in manifest["arenas"]:
         arena = json.loads((input_root / record["file"]).read_text())
-        arenas.append(PolicyEngine(arena).synthesize())
+        engine = PolicyEngine(arena)
+        arenas.append(engine.synthesize())
+        engine.clear_caches()
     return {"schema_version": 1, "arenas": arenas}
 
 

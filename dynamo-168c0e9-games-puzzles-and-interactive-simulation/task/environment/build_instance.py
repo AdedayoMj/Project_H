@@ -171,7 +171,9 @@ def rules() -> dict:
             "canonical_action_order",
         ],
         "goal": "every victim has been reached by at least one team",
-        "policy_node_id": "n_ plus the first 24 hex digits of SHA-256 over canonical state JSON",
+        "policy_context": "physical belief state plus remaining turn and energy budgets",
+        "budget_transition": "each observation child receives both parent budgets minus the action costs",
+        "policy_node_id": "n_ plus the first 24 hex digits of SHA-256 over canonical context JSON",
         "policy_digest": "SHA-256 over canonical compact JSON of the node array",
     }
 

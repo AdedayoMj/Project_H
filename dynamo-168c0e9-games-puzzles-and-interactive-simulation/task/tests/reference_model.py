@@ -126,49 +126,98 @@ class VerifierEngine:
         return tuple(sorted(branches))
 
     @cache
-    def within(self, state, allowance):
-        if self.goal(state):
-            return (0, 0, 0), None, (), 1
-        if allowance <= 0:
+    def least_energy(self, state, turns):
+        if turns < 0:
             return None
-        chosen = None
-        chosen_action = None
-        chosen_branches = ()
-        ties = 0
+        if self.goal(state):
+            return 0
+        candidates = []
         for action in self.available(state):
-            time, energy, handoff = self.cost(state, action)
-            if time > allowance:
+            elapsed, energy, _ = self.cost(state, action)
+            if elapsed > turns:
                 continue
             branches = self.advance(state, action)
-            children = [self.within(child, allowance - time) for _, child in branches]
-            if not branches or any(child is None for child in children):
-                continue
-            values = [child[0] for child in children]
-            value = (
-                time + max(item[0] for item in values),
-                energy + max(item[1] for item in values),
-                handoff + max(item[2] for item in values),
-            )
-            if value[0] > allowance:
-                continue
-            if chosen is None or value < chosen:
-                chosen = value
-                chosen_action = action
-                chosen_branches = branches
-                ties = 1
-            elif value == chosen:
-                ties += 1
-        if chosen is None:
-            return None
-        return chosen, chosen_action, chosen_branches, ties
+            suffixes = [
+                self.least_energy(child, turns - elapsed) for _, child in branches
+            ]
+            if branches and all(value is not None for value in suffixes):
+                candidates.append(energy + max(suffixes))
+        return min(candidates) if candidates else None
+
+    def initial_budgets(self, state):
+        for turns in range(self.limit + 1):
+            energy = self.least_energy(state, turns)
+            if energy is not None:
+                return turns, energy
+        raise AssertionError(f"{self.source['arena_id']} is outside its strong-policy bound")
 
     @cache
-    def exact(self, state):
-        for allowance in range(self.limit + 1):
-            answer = self.within(state, allowance)
-            if answer is not None:
-                return answer
-        raise AssertionError(f"{self.source['arena_id']} is outside its strong-policy bound")
+    def least_handoffs(self, state, turns, energy):
+        if turns < 0 or energy < 0:
+            return None
+        if self.goal(state):
+            return 0
+        floor = self.least_energy(state, turns)
+        if floor is None or floor > energy:
+            return None
+        candidates = []
+        for action in self.available(state):
+            elapsed, consumed, switch = self.cost(state, action)
+            if elapsed > turns or consumed > energy:
+                continue
+            branches = self.advance(state, action)
+            suffixes = [
+                self.least_handoffs(
+                    child, turns - elapsed, energy - consumed
+                )
+                for _, child in branches
+            ]
+            if branches and all(value is not None for value in suffixes):
+                candidates.append(switch + max(suffixes))
+        return min(candidates) if candidates else None
+
+    @cache
+    def choice(self, state, turns, energy):
+        if self.goal(state):
+            return 0, None, (), 1
+        optimum = self.least_handoffs(state, turns, energy)
+        assert optimum is not None
+        winners = []
+        for action in self.available(state):
+            elapsed, consumed, switch = self.cost(state, action)
+            if elapsed > turns or consumed > energy:
+                continue
+            branches = self.advance(state, action)
+            suffixes = [
+                self.least_handoffs(
+                    child, turns - elapsed, energy - consumed
+                )
+                for _, child in branches
+            ]
+            if not branches or any(value is None for value in suffixes):
+                continue
+            if switch + max(suffixes) == optimum:
+                winners.append((action, branches))
+        action, branches = winners[0]
+        return optimum, action, branches, len(winners)
+
+    @cache
+    def contextual_value(self, state, turns, energy):
+        if self.goal(state):
+            return 0, 0, 0
+        _, action, branches, _ = self.choice(state, turns, energy)
+        elapsed, consumed, switch = self.cost(state, action)
+        suffixes = [
+            self.contextual_value(
+                child, turns - elapsed, energy - consumed
+            )
+            for _, child in branches
+        ]
+        return (
+            elapsed + max(value[0] for value in suffixes),
+            consumed + max(value[1] for value in suffixes),
+            switch + max(value[2] for value in suffixes),
+        )
 
     def state_json(self, state):
         a, b, rescued, belief, previous = state
@@ -194,31 +243,62 @@ class VerifierEngine:
         previous = {None: 0, "A": 1, "B": 2}[row["last_actor"]]
         return row["team_a_node"], row["team_b_node"], rescued, belief, previous
 
-    def identifier(self, state):
-        return "n_" + hashlib.sha256(encoded(self.state_json(state)).encode()).hexdigest()[:24]
+    def context_json(self, state, turns, energy):
+        return {
+            **self.state_json(state),
+            "turn_budget": turns,
+            "energy_budget": energy,
+        }
+
+    def context_from_json(self, row):
+        return self.state_from_json(row), row["turn_budget"], row["energy_budget"]
+
+    def identifier(self, state, turns, energy):
+        return "n_" + hashlib.sha256(
+            encoded(self.context_json(state, turns, energy)).encode()
+        ).hexdigest()[:24]
+
+    def clear_caches(self):
+        self.available.cache_clear()
+        self.advance.cache_clear()
+        self.least_energy.cache_clear()
+        self.least_handoffs.cache_clear()
+        self.choice.cache_clear()
+        self.contextual_value.cache_clear()
 
     def document(self):
         root = self.initial()
-        root_value = self.exact(root)[0]
-        pending = deque([root])
+        root_turns, root_energy = self.initial_budgets(root)
+        root_context = root, root_turns, root_energy
+        root_value = self.contextual_value(*root_context)
+        assert root_value[:2] == (root_turns, root_energy)
+        pending = deque([root_context])
         visited = set()
         rows = []
         while pending:
-            state = pending.popleft()
-            if state in visited:
+            state, turns, energy = pending.popleft()
+            context = state, turns, energy
+            if context in visited:
                 continue
-            visited.add(state)
-            value, action, branches, count = self.exact(state)
+            visited.add(context)
+            value = self.contextual_value(*context)
+            _, action, branches, count = self.choice(*context)
             outcomes = []
-            for observation, child in branches:
-                outcomes.append(
-                    {"observation": observation, "next_node_id": self.identifier(child)}
-                )
-                pending.append(child)
+            if action is not None:
+                elapsed, consumed, _ = self.cost(state, action)
+                for observation, child in branches:
+                    child_context = child, turns - elapsed, energy - consumed
+                    outcomes.append(
+                        {
+                            "observation": observation,
+                            "next_node_id": self.identifier(*child_context),
+                        }
+                    )
+                    pending.append(child_context)
             rows.append(
                 {
-                    "node_id": self.identifier(state),
-                    **self.state_json(state),
+                    "node_id": self.identifier(*context),
+                    **self.context_json(*context),
                     "remaining_worst_case_turns": value[0],
                     "remaining_worst_case_energy": value[1],
                     "remaining_worst_case_handoffs": value[2],
@@ -230,7 +310,7 @@ class VerifierEngine:
         rows.sort(key=lambda row: row["node_id"].encode())
         return {
             "arena_id": self.source["arena_id"],
-            "root_node_id": self.identifier(root),
+            "root_node_id": self.identifier(*root_context),
             "worst_case_turns": root_value[0],
             "worst_case_energy": root_value[1],
             "worst_case_handoffs": root_value[2],
@@ -249,4 +329,5 @@ def calculate(input_root: Path):
         engine = VerifierEngine(arena)
         engines[arena["arena_id"]] = engine
         arenas.append(engine.document())
+        engine.clear_caches()
     return {"schema_version": 1, "arenas": arenas}, engines

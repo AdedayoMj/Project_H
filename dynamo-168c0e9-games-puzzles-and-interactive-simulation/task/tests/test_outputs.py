@@ -39,6 +39,8 @@ NODE_FIELDS = {
     "rescued_victims",
     "possible_modes",
     "last_actor",
+    "turn_budget",
+    "energy_budget",
     "remaining_worst_case_turns",
     "remaining_worst_case_energy",
     "remaining_worst_case_handoffs",
@@ -76,6 +78,7 @@ def validate_complete_document(document, input_root):
     expected, engines = calculate(input_root)
     assert document == expected
     assert set(document) == TOP_FIELDS
+    assert type(document["schema_version"]) is int
     assert document["schema_version"] == 1
     for arena_row in document["arenas"]:
         assert set(arena_row) == ARENA_FIELDS
@@ -88,9 +91,11 @@ def validate_complete_document(document, input_root):
         ).hexdigest()
         for node in arena_row["nodes"]:
             assert set(node) == NODE_FIELDS
-            state = engine.state_from_json(node)
-            assert node["node_id"] == engine.identifier(state)
-            value, action, branches, action_count = engine.exact(state)
+            context = engine.context_from_json(node)
+            state, turns, energy = context
+            assert node["node_id"] == engine.identifier(*context)
+            value = engine.contextual_value(*context)
+            _, action, branches, action_count = engine.choice(*context)
             assert (
                 node["remaining_worst_case_turns"],
                 node["remaining_worst_case_energy"],
@@ -98,12 +103,21 @@ def validate_complete_document(document, input_root):
             ) == value
             assert node["optimal_action_count"] == action_count
             assert node["action"] == action
+            elapsed, consumed = (0, 0)
+            if action is not None:
+                elapsed, consumed, _ = engine.cost(state, action)
             expected_outcomes = [
-                {"observation": observation, "next_node_id": engine.identifier(child)}
+                {
+                    "observation": observation,
+                    "next_node_id": engine.identifier(
+                        child, turns - elapsed, energy - consumed
+                    ),
+                }
                 for observation, child in branches
             ]
             assert node["outcomes"] == expected_outcomes
             assert all(outcome["next_node_id"] in by_id for outcome in node["outcomes"])
+        engine.clear_caches()
 
 
 def build_counterfactual(destination):
@@ -271,7 +285,9 @@ def test_reference_policies_activate_branching_scans_failures_and_ties():
 def test_output_uses_exact_nested_schemas_and_canonical_order():
     """No undeclared fields, malformed types, or reordered policy records are accepted."""
     document = submitted()
-    assert set(document) == TOP_FIELDS and document["schema_version"] == 1
+    assert set(document) == TOP_FIELDS
+    assert type(document["schema_version"]) is int
+    assert document["schema_version"] == 1
     manifest = json.loads((INPUT / "manifest.json").read_text())
     assert [row["arena_id"] for row in document["arenas"]] == [
         row["arena_id"] for row in manifest["arenas"]
@@ -289,6 +305,13 @@ def test_output_uses_exact_nested_schemas_and_canonical_order():
         for node in arena["nodes"]:
             assert set(node) == NODE_FIELDS
             assert node["last_actor"] in (None, "A", "B")
+            assert type(node["turn_budget"]) is int and node["turn_budget"] >= 0
+            assert type(node["energy_budget"]) is int and node["energy_budget"] >= 0
+            assert type(node["remaining_worst_case_turns"]) is int
+            assert type(node["remaining_worst_case_energy"]) is int
+            assert type(node["remaining_worst_case_handoffs"]) is int
+            assert node["remaining_worst_case_turns"] <= node["turn_budget"]
+            assert node["remaining_worst_case_energy"] <= node["energy_budget"]
             assert type(node["optimal_action_count"]) is int
             assert node["optimal_action_count"] >= 1
             assert [row["observation"] for row in node["outcomes"]] == sorted(
@@ -304,17 +327,20 @@ def test_arena_summaries_and_complete_policy_values_match_independent_model():
 
 
 def test_state_ids_roots_and_policy_digests_are_functional():
-    """State identities and whole-policy digests are recomputed from submitted content."""
+    """Context identities and whole-policy digests are recomputed from submitted content."""
     _, engines = reference()
     for arena in submitted()["arenas"]:
         engine = engines[arena["arena_id"]]
-        assert arena["root_node_id"] == engine.identifier(engine.initial())
+        root = engine.initial()
+        root_context = (root, *engine.initial_budgets(root))
+        assert arena["root_node_id"] == engine.identifier(*root_context)
         assert arena["policy_node_count"] == len(arena["nodes"])
         assert arena["policy_sha256"] == hashlib.sha256(
             encoded(arena["nodes"]).encode()
         ).hexdigest()
         for node in arena["nodes"]:
-            assert node["node_id"] == engine.identifier(engine.state_from_json(node))
+            assert node["node_id"] == engine.identifier(*engine.context_from_json(node))
+        engine.clear_caches()
 
 
 def test_submitted_actions_reproduce_exact_belief_partitions_and_costs():
@@ -324,17 +350,24 @@ def test_submitted_actions_reproduce_exact_belief_partitions_and_costs():
         engine = engines[arena["arena_id"]]
         node_ids = {node["node_id"] for node in arena["nodes"]}
         for node in arena["nodes"]:
-            state = engine.state_from_json(node)
+            state, turns, energy = engine.context_from_json(node)
             if engine.goal(state):
                 assert node["action"] is None and node["outcomes"] == []
                 continue
             assert node["action"] in engine.available(state)
+            elapsed, consumed, _ = engine.cost(state, node["action"])
             expected = [
-                {"observation": observation, "next_node_id": engine.identifier(child)}
+                {
+                    "observation": observation,
+                    "next_node_id": engine.identifier(
+                        child, turns - elapsed, energy - consumed
+                    ),
+                }
                 for observation, child in engine.advance(state, node["action"])
             ]
             assert node["outcomes"] == expected
             assert all(row["next_node_id"] in node_ids for row in expected)
+        engine.clear_caches()
 
 
 def test_policy_graph_is_closed_acyclic_and_strong_for_every_mode():
@@ -351,28 +384,32 @@ def test_policy_graph_is_closed_acyclic_and_strong_for_every_mode():
                 continue
             reachable.add(node_id)
             node = nodes[node_id]
-            state = engine.state_from_json(node)
+            state, turns, energy = engine.context_from_json(node)
             if engine.goal(state):
                 assert node["remaining_worst_case_turns"] == 0
                 continue
-            turn_cost = engine.cost(state, node["action"])[0]
+            turn_cost, energy_cost, _ = engine.cost(state, node["action"])
             for outcome in node["outcomes"]:
                 child = nodes[outcome["next_node_id"]]
+                assert child["turn_budget"] == turns - turn_cost
+                assert child["energy_budget"] == energy - energy_cost
                 assert child["remaining_worst_case_turns"] <= (
                     node["remaining_worst_case_turns"] - turn_cost
                 )
                 pending.append(outcome["next_node_id"])
         assert reachable == set(nodes)
+        engine.clear_caches()
 
 
 def test_canonical_action_and_local_optimal_action_count_are_exact():
-    """The policy uses the published action tie-break and reports every tied optimum."""
+    """Each budget context uses the canonical action and exact tied-action count."""
     _, engines = reference()
     for arena in submitted()["arenas"]:
         engine = engines[arena["arena_id"]]
         for node in arena["nodes"]:
-            state = engine.state_from_json(node)
-            value, action, _, count = engine.exact(state)
+            context = engine.context_from_json(node)
+            value = engine.contextual_value(*context)
+            _, action, _, count = engine.choice(*context)
             assert node["action"] == action
             assert node["optimal_action_count"] == count
             assert (
@@ -380,6 +417,91 @@ def test_canonical_action_and_local_optimal_action_count_are_exact():
                 node["remaining_worst_case_energy"],
                 node["remaining_worst_case_handoffs"],
             ) == value
+        engine.clear_caches()
+
+
+def test_budgeted_lexicographic_oracle_preserves_turn_slack_for_energy():
+    """A slower child policy may minimize global energy inside its inherited turn cap."""
+    arena = {
+        "arena_id": "branch_slack_regression",
+        "mode_ids": ["M0", "M1", "M2"],
+        "teams": [
+            {
+                "team_id": "A",
+                "start_node": "S",
+                "move_energy_multiplier": 1,
+                "scan_energy": 1,
+            },
+            {
+                "team_id": "B",
+                "start_node": "S",
+                "move_energy_multiplier": 100,
+                "scan_energy": 100,
+            },
+        ],
+        "victims": [{"victim_id": "V0", "node": "V"}],
+        "nodes": [
+            {
+                "node_id": "S",
+                "signals": {"M0": "ZERO", "M1": "ONE", "M2": "TWO"},
+            },
+            {"node_id": "X", "signals": None},
+            {"node_id": "V", "signals": None},
+        ],
+        "edges": [
+            {
+                "edge_id": "E000",
+                "a": "S",
+                "b": "V",
+                "turn_cost": 1,
+                "energy_cost": 10,
+                "safe_modes": ["M0"],
+            },
+            {
+                "edge_id": "E001",
+                "a": "S",
+                "b": "X",
+                "turn_cost": 1,
+                "energy_cost": 1,
+                "safe_modes": ["M0"],
+            },
+            {
+                "edge_id": "E002",
+                "a": "X",
+                "b": "V",
+                "turn_cost": 1,
+                "energy_cost": 1,
+                "safe_modes": ["M0"],
+            },
+            {
+                "edge_id": "E003",
+                "a": "S",
+                "b": "V",
+                "turn_cost": 2,
+                "energy_cost": 5,
+                "safe_modes": ["M1"],
+            },
+            {
+                "edge_id": "E004",
+                "a": "S",
+                "b": "V",
+                "turn_cost": 2,
+                "energy_cost": 5,
+                "safe_modes": ["M2"],
+            },
+        ],
+        "max_worst_case_turns": 6,
+    }
+    engine = VerifierEngine(arena)
+    root = engine.initial()
+    assert engine.initial_budgets(root) == (3, 6)
+    assert engine.choice(root, 3, 6)[1] == "A:SCAN"
+    assert engine.contextual_value(root, 3, 6) == (3, 6, 0)
+
+    m0_child = dict(engine.advance(root, "A:SCAN"))["ZERO"]
+    assert engine.least_energy(m0_child, 1) == 10
+    assert engine.least_energy(m0_child, 2) == 2
+    assert engine.choice(m0_child, 2, 2)[1] == "A:MOVE:E001"
 
 
 def test_reusable_solver_generalizes_to_private_contingency(tmp_path):

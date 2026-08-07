@@ -11,11 +11,11 @@
     "arenas/rescue_09.json": "c63ca1705409b5fdf59b17da2690cfcbec98d323faad99a99a40427c9946c904",
     "arenas/rescue_10.json": "ada658098a2d7608147ae0f6e4071c5cf19a59807e5a2bf03758e08ceea2e8f8",
     "manifest.json": "3d7522984e89f96f59763726e40c9a5592d0921f2e9597a1713df5fca50b005a",
-    "rules.json": "725263390921c834294238a104b3a48dcceaa0dced68674a306483eb97810da5"
+    "rules.json": "e883c427f7b995254ef8e9a55aacf1e2df84a55c65923f92f285e619ea8745bd"
   },
   "calibration": {
     "arena_count": 10,
-    "total_policy_nodes": 206,
+    "total_policy_nodes": 227,
     "minimum_modes_per_arena": 6,
     "minimum_victims_per_arena": 4
   }
