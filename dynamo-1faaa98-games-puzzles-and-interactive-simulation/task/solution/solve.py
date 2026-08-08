@@ -63,9 +63,41 @@ class Prefix:
     ranks: tuple[int, ...]
     actions: tuple[str, ...]
 
-    def merge_comparison(self) -> tuple[object, ...]:
-        """Compare labels whose physical state and historical peak both match."""
-        return self.energy, self.contacts, self.ranks
+
+def retain_prefix(
+    frontiers: dict[State, dict[int, Prefix]],
+    state: State,
+    candidate: Prefix,
+) -> None:
+    """Retain exactly the nondominated resource histories for one state."""
+    frontier = frontiers.get(state)
+    if frontier is None:
+        frontiers[state] = {candidate.peak_thermal: candidate}
+        return
+
+    best_energy = next(iter(frontier.values())).energy
+    if candidate.energy < best_energy:
+        frontiers[state] = {candidate.peak_thermal: candidate}
+        return
+    if candidate.energy > best_energy:
+        return
+
+    candidate_tail = candidate.contacts, candidate.ranks
+    if any(
+        peak <= candidate.peak_thermal
+        and (prefix.contacts, prefix.ranks) <= candidate_tail
+        for peak, prefix in frontier.items()
+    ):
+        return
+    dominated_peaks = [
+        peak
+        for peak, prefix in frontier.items()
+        if candidate.peak_thermal <= peak
+        and candidate_tail <= (prefix.contacts, prefix.ranks)
+    ]
+    for peak in dominated_peaks:
+        del frontier[peak]
+    frontier[candidate.peak_thermal] = candidate
 
 
 @dataclass
@@ -347,33 +379,29 @@ def outcomes(mission: Mission, state: State) -> list[dict[str, object]]:
 
 
 def optimize(mission: Mission) -> tuple[tuple[str, ...], tuple[int, ...]]:
-    states: dict[tuple[State, int], Prefix] = {
-        (initial_state(mission), 0): Prefix(0, 0, 0, (), ())
+    states: dict[State, dict[int, Prefix]] = {
+        initial_state(mission): {0: Prefix(0, 0, 0, (), ())}
     }
     for slot in range(mission.horizon):
-        next_states: dict[tuple[State, int], Prefix] = {}
+        next_states: dict[State, dict[int, Prefix]] = {}
         choices: list[Contact | None] = [None, *mission.contacts_by_slot[slot]]
-        for (state, _peak), prefix in states.items():
+        for state, frontier in states.items():
             prepared = prepare_slot(mission, state, slot)
-            for rank, contact in enumerate(choices):
-                transition = apply_action(mission, prepared, slot, contact)
-                if transition is None:
-                    continue
-                next_state, energy, _slew = transition
-                candidate = Prefix(
-                    energy=prefix.energy + energy,
-                    peak_thermal=max(prefix.peak_thermal, next_state.thermal),
-                    contacts=prefix.contacts + (contact is not None),
-                    ranks=prefix.ranks + (rank,),
-                    actions=prefix.actions + ((contact.action_id if contact else "idle"),),
-                )
-                merge_state = next_state, candidate.peak_thermal
-                incumbent = next_states.get(merge_state)
-                if (
-                    incumbent is None
-                    or candidate.merge_comparison() < incumbent.merge_comparison()
-                ):
-                    next_states[merge_state] = candidate
+            for prefix in frontier.values():
+                for rank, contact in enumerate(choices):
+                    transition = apply_action(mission, prepared, slot, contact)
+                    if transition is None:
+                        continue
+                    next_state, energy, _slew = transition
+                    candidate = Prefix(
+                        energy=prefix.energy + energy,
+                        peak_thermal=max(prefix.peak_thermal, next_state.thermal),
+                        contacts=prefix.contacts + (contact is not None),
+                        ranks=prefix.ranks + (rank,),
+                        actions=prefix.actions
+                        + ((contact.action_id if contact else "idle"),),
+                    )
+                    retain_prefix(next_states, next_state, candidate)
         if not next_states:
             raise RuntimeError(f"mission {mission.mission_id} has no feasible plan at slot {slot}")
         states = next_states
@@ -381,22 +409,23 @@ def optimize(mission: Mission) -> tuple[tuple[str, ...], tuple[int, ...]]:
     best_key: tuple[object, ...] | None = None
     best_actions: tuple[str, ...] | None = None
     best_prefix: tuple[int, ...] | None = None
-    for (state, _peak), prefix in states.items():
+    for state, frontier in states.items():
         scenario_outcomes = outcomes(mission, state)
         weighted = [int(row["weighted_loss"]) for row in scenario_outcomes]
-        objective = (
-            max(weighted),
-            sum(weighted),
-            weighted[mission.nominal_scenario],
-            prefix.energy,
-            prefix.peak_thermal,
-            prefix.contacts,
-        )
-        key: tuple[object, ...] = (*objective, prefix.ranks)
-        if best_key is None or key < best_key:
-            best_key = key
-            best_actions = prefix.actions
-            best_prefix = objective
+        for prefix in frontier.values():
+            objective = (
+                max(weighted),
+                sum(weighted),
+                weighted[mission.nominal_scenario],
+                prefix.energy,
+                prefix.peak_thermal,
+                prefix.contacts,
+            )
+            key: tuple[object, ...] = (*objective, prefix.ranks)
+            if best_key is None or key < best_key:
+                best_key = key
+                best_actions = prefix.actions
+                best_prefix = objective
     assert best_actions is not None and best_prefix is not None
     return best_actions, best_prefix
 

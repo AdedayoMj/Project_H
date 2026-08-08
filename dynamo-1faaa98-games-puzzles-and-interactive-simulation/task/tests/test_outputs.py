@@ -6,7 +6,6 @@ import json
 import os
 import random
 import re
-import secrets
 import shutil
 import stat
 import subprocess
@@ -65,6 +64,8 @@ SLOT_INTEGER_KEYS = {
 SLOT_TEXT_KEYS = {"mission_id", "action_id", "station_id"}
 DECIMAL_INTEGER = re.compile(r"[+-]?[0-9]+\Z")
 HEX_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+PRIVATE_MISSION_SEED = 0xD017E57
+PRIVATE_VARIANT_COUNT = 3
 
 
 def ordinary_file(path: Path) -> bool:
@@ -241,11 +242,153 @@ def rewrite_csv(path: Path, mutation) -> None:
         writer.writerows(rows)
 
 
-def write_unseen_missions(destination: Path) -> list[tuple[str, str]]:
-    """Create plural runtime-randomized missions that cannot be fixture-replayed."""
-    seed_text = os.environ.get("DOWNLINK_PRIVATE_SEED")
-    seed = int(seed_text, 0) if seed_text else secrets.randbits(128)
-    generator = random.Random(seed)
+def write_csv_rows(path: Path, fields: list[str], rows: list[dict]) -> None:
+    """Write a verifier-created CSV fixture with canonical newlines."""
+    with path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def write_peak_merge_mission(destination: Path) -> dict[str, str]:
+    """Materialize the max-thermal state-merge counterexample for solver audit."""
+    mission_id = "private-peak-merge-regression"
+    mission_root = destination / "missions" / mission_id
+    mission_root.mkdir(parents=True)
+    ticket = {
+        "schema_version": 1,
+        "mission_id": mission_id,
+        "horizon_slots": 4,
+        "storage_capacity_packets": 10,
+        "battery": {
+            "capacity_units": 20,
+            "initial_units": 20,
+            "reserve_units": 0,
+            "idle_cost_units": 1,
+        },
+        "thermal": {
+            "initial_units": 0,
+            "limit_units": 20,
+            "passive_cooling_units": 5,
+            "slew_heat_per_step": 0,
+        },
+        "slew": {"max_steps_per_slot": 4, "energy_per_step": 0},
+        "classes": [
+            {"class_id": "command", "loss_weight": 19},
+            {"class_id": "science", "loss_weight": 7},
+            {"class_id": "engineering", "loss_weight": 3},
+        ],
+        "scenarios": [
+            {
+                "scenario_id": scenario_id,
+                "capacity_numerator": 1,
+                "capacity_denominator": 1,
+            }
+            for scenario_id in SCENARIO_IDS
+        ],
+        "nominal_scenario_id": "nominal",
+        "stations": [{"station_id": "S", "pointing_step": 0}],
+    }
+    (mission_root / "mission.json").write_text(
+        json.dumps(ticket, indent=2) + "\n"
+    )
+    write_csv_rows(
+        mission_root / "timeline.csv",
+        ["slot", "solar_units"],
+        [{"slot": slot, "solar_units": 1} for slot in range(4)],
+    )
+    write_csv_rows(
+        mission_root / "packets.csv",
+        ["batch_id", "release_slot", "deadline_slot", "class_id", "packet_count"],
+        [
+            {
+                "batch_id": "B0",
+                "release_slot": 0,
+                "deadline_slot": 1,
+                "class_id": "command",
+                "packet_count": 2,
+            },
+            {
+                "batch_id": "B1",
+                "release_slot": 2,
+                "deadline_slot": 2,
+                "class_id": "command",
+                "packet_count": 1,
+            },
+            {
+                "batch_id": "B2",
+                "release_slot": 3,
+                "deadline_slot": 3,
+                "class_id": "command",
+                "packet_count": 1,
+            },
+        ],
+    )
+    write_csv_rows(
+        mission_root / "contacts.csv",
+        [
+            "action_id",
+            "slot",
+            "station_id",
+            "pointing_step",
+            "nominal_capacity_packets",
+            "energy_units",
+            "heat_units",
+        ],
+        [
+            {
+                "action_id": "cool",
+                "slot": 0,
+                "station_id": "S",
+                "pointing_step": 0,
+                "nominal_capacity_packets": 1,
+                "energy_units": 0,
+                "heat_units": 2,
+            },
+            {
+                "action_id": "hot",
+                "slot": 0,
+                "station_id": "S",
+                "pointing_step": 0,
+                "nominal_capacity_packets": 2,
+                "energy_units": 0,
+                "heat_units": 8,
+            },
+            {
+                "action_id": "medium",
+                "slot": 1,
+                "station_id": "S",
+                "pointing_step": 0,
+                "nominal_capacity_packets": 1,
+                "energy_units": 0,
+                "heat_units": 3,
+            },
+            {
+                "action_id": "anchor",
+                "slot": 2,
+                "station_id": "S",
+                "pointing_step": 0,
+                "nominal_capacity_packets": 1,
+                "energy_units": 0,
+                "heat_units": 1,
+            },
+            {
+                "action_id": "final",
+                "slot": 3,
+                "station_id": "S",
+                "pointing_step": 0,
+                "nominal_capacity_packets": 1,
+                "energy_units": 0,
+                "heat_units": 10,
+            },
+        ],
+    )
+    return {"mission_id": mission_id, "directory": f"missions/{mission_id}"}
+
+
+def write_unseen_missions(destination: Path) -> list[tuple[str, str | None]]:
+    """Create a reproducible adversarial corpus spanning public mission families."""
+    generator = random.Random(PRIVATE_MISSION_SEED)
     source_entries = sorted(
         mission_entries(INPUT),
         key=lambda item: (
@@ -254,13 +397,17 @@ def write_unseen_missions(destination: Path) -> list[tuple[str, str]]:
             ],
             item["mission_id"],
         ),
-    )[:3]
+    )
     destination.mkdir(parents=True)
     shutil.copy2(INPUT / "specification.md", destination / "specification.md")
-    records = []
-    provenance = []
+    peak_record = write_peak_merge_mission(destination)
+    records = [peak_record]
+    provenance: list[tuple[str, str | None]] = [
+        (peak_record["mission_id"], None)
+    ]
 
-    for private_number, source_entry in enumerate(source_entries, start=1):
+    for private_number in range(1, PRIVATE_VARIANT_COUNT + 1):
+        source_entry = source_entries[(private_number - 1) % len(source_entries)]
         public_mission_id = source_entry["mission_id"]
         private_mission_id = (
             f"private-{private_number}-{generator.getrandbits(64):016x}"
@@ -367,7 +514,6 @@ def invoke_submitted_solver(
     """Execute a solver behind the verifier-read/process/network audit hook."""
     environment = os.environ.copy()
     environment.pop("DOWNLINK_APP_ROOT", None)
-    environment.pop("DOWNLINK_PRIVATE_SEED", None)
     environment.pop("PYTHONPATH", None)
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     return subprocess.run(
@@ -511,7 +657,7 @@ def test_slot_table_is_the_lossless_manifest_order_plan_projection():
 def test_published_optima_exercise_all_coupled_constraints():
     """Fixtures require idle gaps, station changes, losses, and binding resource tradeoffs."""
     certificates = candidate_certificate()["missions"]
-    assert all(7 <= row["contact_count"] < 14 for row in certificates)
+    assert all(9 <= row["contact_count"] < 20 for row in certificates)
     assert all(row["objective_prefix"][0] > 0 for row in certificates)
     assert any(row["objective_prefix"][2] > 0 for row in certificates)
     assert any(row["peak_thermal_units"] >= 29 for row in certificates)
@@ -679,23 +825,34 @@ def test_restricted_runner_denies_oracle_reads_and_process_escape(tmp_path):
     assert "submitted solvers cannot use subprocess.Popen" in completed.stderr
 
 
-def test_reusable_solver_optimizes_runtime_randomized_private_missions(tmp_path):
-    """A solver must optimize several verify-time worlds, not replay known fixtures."""
+def test_reusable_solver_optimizes_adversarial_private_corpus(tmp_path):
+    """A solver must handle a broad corpus and the peak-history counterexample."""
     private_input = tmp_path / "private-input"
     private_output = tmp_path / "private-output"
     private_cases = write_unseen_missions(private_input)
     private_plans, private_certificates = calculate(private_input)
     public_ids = {row["mission_id"] for row in candidate_plan()["missions"]}
-    private_ids = [private_id for private_id, _public_id in private_cases]
+    private_ids = [private_id for private_id, _source_id in private_cases]
     public_entries = {
         row["mission_id"]: row for row in mission_entries(INPUT)
     }
-    assert len(private_cases) == 3
-    assert len(set(private_ids)) == 3
+    assert len(private_cases) == PRIVATE_VARIANT_COUNT + 1
+    assert len(set(private_ids)) == PRIVATE_VARIANT_COUNT + 1
     assert set(private_ids).isdisjoint(public_ids)
     assert [row["mission_id"] for row in private_plans] == private_ids
     assert [row["mission_id"] for row in private_certificates] == private_ids
+    peak_plan = private_plans[0]
+    peak_certificate = private_certificates[0]
+    assert [row["action_id"] for row in peak_plan["slots"]] == [
+        "hot",
+        "idle",
+        "anchor",
+        "final",
+    ]
+    assert peak_certificate["objective_prefix"] == [0, 0, 0, 4, 10, 3]
     for private_id, public_id in private_cases:
+        if public_id is None:
+            continue
         private_ticket = read_json(
             private_input / "missions" / private_id / "mission.json"
         )

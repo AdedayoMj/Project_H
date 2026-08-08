@@ -32,6 +32,42 @@ class Label:
     actions: tuple[str, ...]
 
 
+def retain_label(
+    frontiers: dict[tuple, dict[int, Label]],
+    state: tuple,
+    candidate: Label,
+) -> None:
+    """Keep nondominated energy, peak, contact, and rank histories."""
+    frontier = frontiers.get(state)
+    if frontier is None:
+        frontiers[state] = {candidate.peak: candidate}
+        return
+
+    best_energy = next(iter(frontier.values())).energy
+    if candidate.energy < best_energy:
+        frontiers[state] = {candidate.peak: candidate}
+        return
+    if candidate.energy > best_energy:
+        return
+
+    candidate_tail = candidate.contact_count, candidate.ranks
+    if any(
+        peak <= candidate.peak
+        and (label.contact_count, label.ranks) <= candidate_tail
+        for peak, label in frontier.items()
+    ):
+        return
+    dominated_peaks = [
+        peak
+        for peak, label in frontier.items()
+        if candidate.peak <= peak
+        and candidate_tail <= (label.contact_count, label.ranks)
+    ]
+    for peak in dominated_peaks:
+        del frontier[peak]
+    frontier[candidate.peak] = candidate
+
+
 def json_file(path: Path):
     return json.loads(path.read_text())
 
@@ -251,54 +287,43 @@ def summarize(world: dict, state: tuple) -> list[dict]:
 
 
 def exact_plan(world: dict) -> tuple[tuple[str, ...], tuple[int, ...]]:
-    layer = {(state_at_start(world), 0): Label(0, 0, 0, (), ())}
+    layer = {state_at_start(world): {0: Label(0, 0, 0, (), ())}}
     for slot in range(world["horizon"]):
         following = {}
         options = [None, *world["contacts"][slot]]
-        for (state, _peak), label in layer.items():
-            for rank, action in enumerate(options):
-                result = advance(world, state, slot, action)
-                if result is None:
-                    continue
-                next_state, energy, _slew = result
-                candidate = Label(
-                    energy=label.energy + energy,
-                    peak=max(label.peak, next_state[1]),
-                    contact_count=label.contact_count + (action is not None),
-                    ranks=label.ranks + (rank,),
-                    actions=label.actions + ((action["id"] if action else "idle"),),
-                )
-                # Peak is max-type: later heat can tie distinct historical peaks,
-                # after which contact count and ranks still decide the winner.
-                merge_state = next_state, candidate.peak
-                previous = following.get(merge_state)
-                candidate_prefix = (
-                    candidate.energy,
-                    candidate.contact_count,
-                    candidate.ranks,
-                )
-                if previous is None or candidate_prefix < (
-                    previous.energy,
-                    previous.contact_count,
-                    previous.ranks,
-                ):
-                    following[merge_state] = candidate
+        for state, frontier in layer.items():
+            for label in frontier.values():
+                for rank, action in enumerate(options):
+                    result = advance(world, state, slot, action)
+                    if result is None:
+                        continue
+                    next_state, energy, _slew = result
+                    candidate = Label(
+                        energy=label.energy + energy,
+                        peak=max(label.peak, next_state[1]),
+                        contact_count=label.contact_count + (action is not None),
+                        ranks=label.ranks + (rank,),
+                        actions=label.actions
+                        + ((action["id"] if action else "idle"),),
+                    )
+                    retain_label(following, next_state, candidate)
         layer = following
 
     winner = None
-    for (state, _peak), label in layer.items():
+    for state, frontier in layer.items():
         scenario_losses = [row["weighted_loss"] for row in summarize(world, state)]
-        objective = (
-            max(scenario_losses),
-            sum(scenario_losses),
-            scenario_losses[world["nominal"]],
-            label.energy,
-            label.peak,
-            label.contact_count,
-        )
-        comparison = (*objective, label.ranks)
-        if winner is None or comparison < winner[0]:
-            winner = comparison, label.actions, objective
+        for label in frontier.values():
+            objective = (
+                max(scenario_losses),
+                sum(scenario_losses),
+                scenario_losses[world["nominal"]],
+                label.energy,
+                label.peak,
+                label.contact_count,
+            )
+            comparison = (*objective, label.ranks)
+            if winner is None or comparison < winner[0]:
+                winner = comparison, label.actions, objective
     assert winner is not None
     return winner[1], winner[2]
 
