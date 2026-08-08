@@ -154,8 +154,120 @@ class PolicyAudit:
         assert all(branch["next_node_id"] in node_index for branch in derived_branches)
 
 
-def write_unseen_incident(destination):
-    """Materialize a schema-compatible rescue case not present in the image."""
+def compact_private_incident():
+    """Build a small held-out arena with dimensions absent from public fixtures."""
+    modes = ["ASH", "FLOOD", "QUAKE", "WIND"]
+    return {
+        "schema_version": 1,
+        "arena_id": "private_compact_contingency",
+        "mode_ids": modes,
+        "teams": [
+            {
+                "team_id": "A",
+                "start_node": "P0",
+                "move_energy_multiplier": 1,
+                "scan_energy": 2,
+            },
+            {
+                "team_id": "B",
+                "start_node": "P4",
+                "move_energy_multiplier": 2,
+                "scan_energy": 3,
+            },
+        ],
+        "victims": [
+            {"victim_id": "C0", "node": "P1"},
+            {"victim_id": "C1", "node": "P2"},
+            {"victim_id": "C2", "node": "P3"},
+        ],
+        "nodes": [
+            {
+                "node_id": "P0",
+                "signals": {
+                    "ASH": "LOW",
+                    "FLOOD": "LOW",
+                    "QUAKE": "HIGH",
+                    "WIND": "HIGH",
+                },
+            },
+            {"node_id": "P1", "signals": None},
+            {
+                "node_id": "P2",
+                "signals": {
+                    "ASH": "A",
+                    "FLOOD": "B",
+                    "QUAKE": "A",
+                    "WIND": "B",
+                },
+            },
+            {"node_id": "P3", "signals": None},
+            {
+                "node_id": "P4",
+                "signals": {
+                    "ASH": "WEST",
+                    "FLOOD": "WEST",
+                    "QUAKE": "EAST",
+                    "WIND": "EAST",
+                },
+            },
+        ],
+        "edges": [
+            {
+                "edge_id": "C000",
+                "a": "P0",
+                "b": "P1",
+                "turn_cost": 2,
+                "energy_cost": 3,
+                "safe_modes": modes,
+            },
+            {
+                "edge_id": "C001",
+                "a": "P1",
+                "b": "P2",
+                "turn_cost": 2,
+                "energy_cost": 2,
+                "safe_modes": modes,
+            },
+            {
+                "edge_id": "C002",
+                "a": "P2",
+                "b": "P3",
+                "turn_cost": 2,
+                "energy_cost": 2,
+                "safe_modes": modes,
+            },
+            {
+                "edge_id": "C003",
+                "a": "P3",
+                "b": "P4",
+                "turn_cost": 2,
+                "energy_cost": 3,
+                "safe_modes": modes,
+            },
+            {
+                "edge_id": "C004",
+                "a": "P0",
+                "b": "P2",
+                "turn_cost": 1,
+                "energy_cost": 1,
+                "safe_modes": ["ASH", "FLOOD"],
+            },
+            {
+                "edge_id": "C005",
+                "a": "P2",
+                "b": "P4",
+                "turn_cost": 1,
+                "energy_cost": 1,
+                "safe_modes": ["QUAKE", "WIND"],
+            },
+        ],
+        "max_worst_case_turns": 18,
+        "generation_seed": 241109,
+    }
+
+
+def write_unseen_incidents(destination):
+    """Materialize varied schema-compatible rescue cases absent from the image."""
     incident = read_json(INPUT / "arenas" / "rescue_02.json")
     incident["arena_id"] = "private_contingency"
     places = [row["node_id"] for row in incident["nodes"]]
@@ -186,24 +298,31 @@ def write_unseen_incident(destination):
                 for mode in modes
             }
 
+    compact = compact_private_incident()
+    incidents = [incident, compact]
     arena_directory = destination / "arenas"
     arena_directory.mkdir(parents=True)
     payloads = {
         arena_directory / "private_contingency.json": incident,
+        arena_directory / "private_compact_contingency.json": compact,
         destination / "manifest.json": {
             "schema_version": 1,
             "arenas": [
                 {
                     "arena_id": "private_contingency",
                     "file": "arenas/private_contingency.json",
-                }
+                },
+                {
+                    "arena_id": "private_compact_contingency",
+                    "file": "arenas/private_compact_contingency.json",
+                },
             ],
         },
     }
     for path, payload in payloads.items():
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     shutil.copy2(INPUT / "rules.json", destination / "rules.json")
-    return incident
+    return incidents
 
 
 def arena_engine_pairs():
@@ -560,16 +679,30 @@ def test_budgeted_lexicographic_oracle_preserves_turn_slack_for_energy():
     assert engine.choice(m0_child, 2, 2)[1] == "A:MOVE:E001"
 
 
-def test_reusable_solver_generalizes_to_private_contingency(tmp_path):
-    """Fixed published policies fail when starts, rescues, observations, modes, and costs change."""
+def test_reusable_solver_generalizes_across_structurally_distinct_incidents(tmp_path):
+    """Run the solver on multiple private cases, including unseen node and mode counts."""
     hidden_input = tmp_path / "hidden-input"
     hidden_output = tmp_path / "hidden-output"
-    hidden_arena = write_unseen_incident(hidden_input)
+    hidden_arenas = write_unseen_incidents(hidden_input)
     expected, _ = calculate(hidden_input)
     published = next(
         arena for arena in candidate_policy()["arenas"] if arena["arena_id"] == "rescue_02"
     )
-    assert expected["arenas"][0]["arena_id"] == hidden_arena["arena_id"]
+    public_node_counts = {len(arena["nodes"]) for arena in arena_inputs()}
+    public_mode_counts = {len(arena["mode_ids"]) for arena in arena_inputs()}
+    private_node_counts = {len(arena["nodes"]) for arena in hidden_arenas}
+    private_mode_counts = {len(arena["mode_ids"]) for arena in hidden_arenas}
+    assert len(hidden_arenas) == 2
+    assert private_node_counts - public_node_counts
+    assert private_mode_counts - public_mode_counts
+    assert any(
+        len(arena["nodes"]) not in public_node_counts
+        and len(arena["mode_ids"]) not in public_mode_counts
+        for arena in hidden_arenas
+    )
+    assert [row["arena_id"] for row in expected["arenas"]] == [
+        arena["arena_id"] for arena in hidden_arenas
+    ]
     assert expected["arenas"][0]["root_node_id"] != published["root_node_id"]
     assert expected["arenas"][0]["policy_sha256"] != published["policy_sha256"]
 
