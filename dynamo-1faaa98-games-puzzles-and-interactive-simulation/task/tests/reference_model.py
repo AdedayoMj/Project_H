@@ -251,11 +251,11 @@ def summarize(world: dict, state: tuple) -> list[dict]:
 
 
 def exact_plan(world: dict) -> tuple[tuple[str, ...], tuple[int, ...]]:
-    layer = {state_at_start(world): Label(0, 0, 0, (), ())}
+    layer = {(state_at_start(world), 0): Label(0, 0, 0, (), ())}
     for slot in range(world["horizon"]):
         following = {}
         options = [None, *world["contacts"][slot]]
-        for state, label in layer.items():
+        for (state, _peak), label in layer.items():
             for rank, action in enumerate(options):
                 result = advance(world, state, slot, action)
                 if result is None:
@@ -268,24 +268,25 @@ def exact_plan(world: dict) -> tuple[tuple[str, ...], tuple[int, ...]]:
                     ranks=label.ranks + (rank,),
                     actions=label.actions + ((action["id"] if action else "idle"),),
                 )
-                previous = following.get(next_state)
+                # Peak is max-type: later heat can tie distinct historical peaks,
+                # after which contact count and ranks still decide the winner.
+                merge_state = next_state, candidate.peak
+                previous = following.get(merge_state)
                 candidate_prefix = (
                     candidate.energy,
-                    candidate.peak,
                     candidate.contact_count,
                     candidate.ranks,
                 )
                 if previous is None or candidate_prefix < (
                     previous.energy,
-                    previous.peak,
                     previous.contact_count,
                     previous.ranks,
                 ):
-                    following[next_state] = candidate
+                    following[merge_state] = candidate
         layer = following
 
     winner = None
-    for state, label in layer.items():
+    for (state, _peak), label in layer.items():
         scenario_losses = [row["weighted_loss"] for row in summarize(world, state)]
         objective = (
             max(scenario_losses),

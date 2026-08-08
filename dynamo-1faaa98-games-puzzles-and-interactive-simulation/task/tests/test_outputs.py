@@ -507,6 +507,115 @@ def test_feasible_last_contact_deletion_is_rejected_as_nonoptimal():
     assert mutated_plan != optimal_plan
 
 
+def test_peak_history_survives_state_merge_until_future_maximum_is_known():
+    """A hotter prefix can win after a later maximum ties peaks and contacts decide."""
+    world = {
+        "id": "peak_merge_regression",
+        "horizon": 4,
+        "storage": 10,
+        "battery": {
+            "capacity_units": 20,
+            "initial_units": 20,
+            "reserve_units": 0,
+            "idle_cost_units": 1,
+        },
+        "thermal": {
+            "initial_units": 0,
+            "limit_units": 20,
+            "passive_cooling_units": 5,
+            "slew_heat_per_step": 0,
+        },
+        "slew": {"max_steps_per_slot": 4, "energy_per_step": 0},
+        "class_ids": ["command"],
+        "weights": [1],
+        "scenario_ids": ["nominal"],
+        "fractions": [(1, 1)],
+        "nominal": 0,
+        "solar": [1, 1, 1, 1],
+        "batches": [
+            {
+                "id": "B0",
+                "release": 0,
+                "deadline": 1,
+                "class": 0,
+                "count": 2,
+            },
+            {
+                "id": "B1",
+                "release": 2,
+                "deadline": 2,
+                "class": 0,
+                "count": 1,
+            },
+            {
+                "id": "B2",
+                "release": 3,
+                "deadline": 3,
+                "class": 0,
+                "count": 1,
+            },
+        ],
+        "contacts": [
+            [
+                {
+                    "id": "cool",
+                    "station": "S",
+                    "slot": 0,
+                    "point": 0,
+                    "capacity": 1,
+                    "energy": 0,
+                    "heat": 2,
+                },
+                {
+                    "id": "hot",
+                    "station": "S",
+                    "slot": 0,
+                    "point": 0,
+                    "capacity": 2,
+                    "energy": 0,
+                    "heat": 8,
+                },
+            ],
+            [
+                {
+                    "id": "medium",
+                    "station": "S",
+                    "slot": 1,
+                    "point": 0,
+                    "capacity": 1,
+                    "energy": 0,
+                    "heat": 3,
+                }
+            ],
+            [
+                {
+                    "id": "anchor",
+                    "station": "S",
+                    "slot": 2,
+                    "point": 0,
+                    "capacity": 1,
+                    "energy": 0,
+                    "heat": 1,
+                }
+            ],
+            [
+                {
+                    "id": "final",
+                    "station": "S",
+                    "slot": 3,
+                    "point": 0,
+                    "capacity": 1,
+                    "energy": 0,
+                    "heat": 10,
+                }
+            ],
+        ],
+    }
+    actions, objective = exact_plan(world)
+    assert actions == ("hot", "idle", "anchor", "final")
+    assert objective == (0, 0, 0, 4, 10, 3)
+
+
 def test_restricted_runner_denies_oracle_reads_and_process_escape(tmp_path):
     """A submitted solver cannot delegate planning to the mounted verifier."""
     oracle_probe = tmp_path / "oracle_probe.py"

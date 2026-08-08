@@ -63,8 +63,9 @@ class Prefix:
     ranks: tuple[int, ...]
     actions: tuple[str, ...]
 
-    def comparison(self) -> tuple[object, ...]:
-        return self.energy, self.peak_thermal, self.contacts, self.ranks
+    def merge_comparison(self) -> tuple[object, ...]:
+        """Compare labels whose physical state and historical peak both match."""
+        return self.energy, self.contacts, self.ranks
 
 
 @dataclass
@@ -346,13 +347,13 @@ def outcomes(mission: Mission, state: State) -> list[dict[str, object]]:
 
 
 def optimize(mission: Mission) -> tuple[tuple[str, ...], tuple[int, ...]]:
-    states: dict[State, Prefix] = {
-        initial_state(mission): Prefix(0, 0, 0, (), ())
+    states: dict[tuple[State, int], Prefix] = {
+        (initial_state(mission), 0): Prefix(0, 0, 0, (), ())
     }
     for slot in range(mission.horizon):
-        next_states: dict[State, Prefix] = {}
+        next_states: dict[tuple[State, int], Prefix] = {}
         choices: list[Contact | None] = [None, *mission.contacts_by_slot[slot]]
-        for state, prefix in states.items():
+        for (state, _peak), prefix in states.items():
             prepared = prepare_slot(mission, state, slot)
             for rank, contact in enumerate(choices):
                 transition = apply_action(mission, prepared, slot, contact)
@@ -366,9 +367,13 @@ def optimize(mission: Mission) -> tuple[tuple[str, ...], tuple[int, ...]]:
                     ranks=prefix.ranks + (rank,),
                     actions=prefix.actions + ((contact.action_id if contact else "idle"),),
                 )
-                incumbent = next_states.get(next_state)
-                if incumbent is None or candidate.comparison() < incumbent.comparison():
-                    next_states[next_state] = candidate
+                merge_state = next_state, candidate.peak_thermal
+                incumbent = next_states.get(merge_state)
+                if (
+                    incumbent is None
+                    or candidate.merge_comparison() < incumbent.merge_comparison()
+                ):
+                    next_states[merge_state] = candidate
         if not next_states:
             raise RuntimeError(f"mission {mission.mission_id} has no feasible plan at slot {slot}")
         states = next_states
@@ -376,7 +381,7 @@ def optimize(mission: Mission) -> tuple[tuple[str, ...], tuple[int, ...]]:
     best_key: tuple[object, ...] | None = None
     best_actions: tuple[str, ...] | None = None
     best_prefix: tuple[int, ...] | None = None
-    for state, prefix in states.items():
+    for (state, _peak), prefix in states.items():
         scenario_outcomes = outcomes(mission, state)
         weighted = [int(row["weighted_loss"]) for row in scenario_outcomes]
         objective = (
