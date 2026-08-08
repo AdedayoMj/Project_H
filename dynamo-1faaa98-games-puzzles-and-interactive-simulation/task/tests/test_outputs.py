@@ -4,7 +4,9 @@ import csv
 import hashlib
 import json
 import os
+import random
 import re
+import secrets
 import shutil
 import stat
 import subprocess
@@ -227,7 +229,7 @@ def audit_output_directory(output_root: Path, input_root: Path) -> None:
 
 
 def rewrite_csv(path: Path, mutation) -> None:
-    """Apply a deterministic row mutation while preserving a table's header."""
+    """Apply a row mutation while preserving a table's header."""
     with path.open(newline="") as handle:
         reader = csv.DictReader(handle)
         fieldnames, rows = reader.fieldnames, list(reader)
@@ -239,93 +241,120 @@ def rewrite_csv(path: Path, mutation) -> None:
         writer.writerows(rows)
 
 
-def write_unseen_mission(destination: Path) -> str:
-    """Create a held-out mission with changed queues, resources, and geometry."""
-    source_entry = min(
+def write_unseen_missions(destination: Path) -> list[tuple[str, str]]:
+    """Create plural runtime-randomized missions that cannot be fixture-replayed."""
+    seed_text = os.environ.get("DOWNLINK_PRIVATE_SEED")
+    seed = int(seed_text, 0) if seed_text else secrets.randbits(128)
+    generator = random.Random(seed)
+    source_entries = sorted(
         mission_entries(INPUT),
-        key=lambda item: read_json(
-            INPUT / item["directory"] / "mission.json"
-        )["horizon_slots"],
-    )
-    mission_id = source_entry["mission_id"]
-    public_directory = INPUT / source_entry["directory"]
-    private_directory = destination / "missions" / mission_id
+        key=lambda item: (
+            read_json(INPUT / item["directory"] / "mission.json")[
+                "horizon_slots"
+            ],
+            item["mission_id"],
+        ),
+    )[:3]
     destination.mkdir(parents=True)
-    shutil.copytree(public_directory, private_directory)
     shutil.copy2(INPUT / "specification.md", destination / "specification.md")
+    records = []
+    provenance = []
 
-    ticket_path = private_directory / "mission.json"
-    ticket = read_json(ticket_path)
-    ticket["storage_capacity_packets"] -= 2
-    ticket["battery"]["initial_units"] += 3
-    ticket["battery"]["reserve_units"] += 1
-    ticket["thermal"]["limit_units"] += 2
-    ticket["slew"]["max_steps_per_slot"] = max(
-        2, ticket["slew"]["max_steps_per_slot"] - 1
-    )
-    station_pointing = {}
-    for station_number, station in enumerate(ticket["stations"]):
-        station["pointing_step"] = -int(station["pointing_step"]) + (
-            station_number % 2
+    for private_number, source_entry in enumerate(source_entries, start=1):
+        public_mission_id = source_entry["mission_id"]
+        private_mission_id = (
+            f"private-{private_number}-{generator.getrandbits(64):016x}"
         )
-        station_pointing[station["station_id"]] = station["pointing_step"]
-    ticket_path.write_text(json.dumps(ticket, indent=2) + "\n")
+        public_directory = INPUT / source_entry["directory"]
+        private_directory = destination / "missions" / private_mission_id
+        shutil.copytree(public_directory, private_directory)
 
-    def perturb_solar(rows):
-        for slot, row in enumerate(rows):
-            public_value = int(row["solar_units"])
-            row["solar_units"] = max(
-                0, public_value + ((slot * 3 + 1) % 5) - 2
+        ticket_path = private_directory / "mission.json"
+        ticket = read_json(ticket_path)
+        ticket["mission_id"] = private_mission_id
+        ticket["storage_capacity_packets"] = max(
+            4,
+            ticket["storage_capacity_packets"] - generator.randint(1, 3),
+        )
+        battery_boost = (
+            ticket["horizon_slots"] * ticket["battery"]["idle_cost_units"]
+            + generator.randint(4, 12)
+        )
+        ticket["battery"]["capacity_units"] += battery_boost
+        ticket["battery"]["initial_units"] += battery_boost
+        ticket["battery"]["reserve_units"] += generator.randint(0, 1)
+        ticket["thermal"]["limit_units"] += generator.randint(2, 6)
+        ticket["slew"]["max_steps_per_slot"] = max(
+            2,
+            ticket["slew"]["max_steps_per_slot"] - generator.randint(0, 1),
+        )
+        orientation = generator.choice((-1, 1))
+        pointing_shift = generator.randint(-2, 2)
+        station_pointing = {}
+        for station in ticket["stations"]:
+            station["pointing_step"] = (
+                orientation * int(station["pointing_step"])
+                + pointing_shift
+                + generator.randint(-1, 1)
             )
+            station_pointing[station["station_id"]] = station["pointing_step"]
+        ticket_path.write_text(json.dumps(ticket, indent=2) + "\n")
 
-    def perturb_packet_calendar(rows):
-        horizon = ticket["horizon_slots"]
-        for batch_number, row in enumerate(rows):
-            release = int(row["release_slot"])
-            deadline = int(row["deadline_slot"])
-            if batch_number % 4 == 1 and release < deadline:
-                release += 1
-            if batch_number % 3 == 0:
-                deadline = min(horizon - 1, deadline + 1)
-            elif batch_number % 3 == 2:
-                deadline = max(release, deadline - 1)
-            row["release_slot"] = release
-            row["deadline_slot"] = deadline
-            row["packet_count"] = int(row["packet_count"]) + 1 + (
-                batch_number % 2
-            )
+        def perturb_solar(rows):
+            for row in rows:
+                row["solar_units"] = max(
+                    0,
+                    int(row["solar_units"]) + generator.randint(-2, 2),
+                )
 
-    def perturb_contacts(rows):
-        for contact_number, row in enumerate(rows):
-            row["pointing_step"] = station_pointing[row["station_id"]]
-            row["nominal_capacity_packets"] = max(
-                2,
-                int(row["nominal_capacity_packets"]) + (contact_number % 3) - 1,
-            )
-            row["energy_units"] = max(
-                2, int(row["energy_units"]) + (contact_number % 2)
-            )
-            row["heat_units"] = max(
-                1,
-                int(row["heat_units"]) + ((contact_number + 1) % 3) - 1,
-            )
+        def perturb_packet_calendar(rows):
+            horizon = ticket["horizon_slots"]
+            for row in rows:
+                release = int(row["release_slot"])
+                deadline = int(row["deadline_slot"])
+                release += generator.randint(0, min(1, deadline - release))
+                deadline = min(
+                    horizon - 1,
+                    max(release, deadline + generator.randint(-1, 1)),
+                )
+                row["release_slot"] = release
+                row["deadline_slot"] = deadline
+                row["packet_count"] = (
+                    int(row["packet_count"]) + generator.randint(1, 3)
+                )
 
-    rewrite_csv(private_directory / "timeline.csv", perturb_solar)
-    rewrite_csv(private_directory / "packets.csv", perturb_packet_calendar)
-    rewrite_csv(private_directory / "contacts.csv", perturb_contacts)
-    (destination / "manifest.json").write_text(
-        json.dumps(
+        def perturb_contacts(rows):
+            for row in rows:
+                row["pointing_step"] = station_pointing[row["station_id"]]
+                row["nominal_capacity_packets"] = max(
+                    2,
+                    int(row["nominal_capacity_packets"])
+                    + generator.randint(-2, 2),
+                )
+                row["energy_units"] = (
+                    int(row["energy_units"]) + generator.randint(1, 3)
+                )
+                row["heat_units"] = max(
+                    1,
+                    int(row["heat_units"]) + generator.randint(-1, 2),
+                )
+
+        rewrite_csv(private_directory / "timeline.csv", perturb_solar)
+        rewrite_csv(private_directory / "packets.csv", perturb_packet_calendar)
+        rewrite_csv(private_directory / "contacts.csv", perturb_contacts)
+        records.append(
             {
-                "schema_version": 1,
-                "missions": [
-                    {"mission_id": mission_id, "directory": f"missions/{mission_id}"}
-                ],
-            },
-            indent=2,
+                "mission_id": private_mission_id,
+                "directory": f"missions/{private_mission_id}",
+            }
         )
+        provenance.append((private_mission_id, public_mission_id))
+
+    (destination / "manifest.json").write_text(
+        json.dumps({"schema_version": 1, "missions": records}, indent=2)
         + "\n"
     )
-    return mission_id
+    return provenance
 
 
 def invoke_submitted_solver(
@@ -338,6 +367,7 @@ def invoke_submitted_solver(
     """Execute a solver behind the verifier-read/process/network audit hook."""
     environment = os.environ.copy()
     environment.pop("DOWNLINK_APP_ROOT", None)
+    environment.pop("DOWNLINK_PRIVATE_SEED", None)
     environment.pop("PYTHONPATH", None)
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     return subprocess.run(
@@ -649,23 +679,33 @@ def test_restricted_runner_denies_oracle_reads_and_process_escape(tmp_path):
     assert "submitted solvers cannot use subprocess.Popen" in completed.stderr
 
 
-def test_reusable_solver_optimizes_a_private_changed_mission(tmp_path):
-    """Published schedules fail when timing, contacts, pointing and resources all change."""
+def test_reusable_solver_optimizes_runtime_randomized_private_missions(tmp_path):
+    """A solver must optimize several verify-time worlds, not replay known fixtures."""
     private_input = tmp_path / "private-input"
     private_output = tmp_path / "private-output"
-    mission_id = write_unseen_mission(private_input)
+    private_cases = write_unseen_missions(private_input)
     private_plans, private_certificates = calculate(private_input)
-    public_plan = next(
-        row for row in candidate_plan()["missions"] if row["mission_id"] == mission_id
-    )
-    assert [row["action_id"] for row in private_plans[0]["slots"]] != [
-        row["action_id"] for row in public_plan["slots"]
-    ]
-    assert private_certificates[0]["objective_prefix"] != next(
-        row["objective_prefix"]
-        for row in candidate_certificate()["missions"]
-        if row["mission_id"] == mission_id
-    )
+    public_ids = {row["mission_id"] for row in candidate_plan()["missions"]}
+    private_ids = [private_id for private_id, _public_id in private_cases]
+    public_entries = {
+        row["mission_id"]: row for row in mission_entries(INPUT)
+    }
+    assert len(private_cases) == 3
+    assert len(set(private_ids)) == 3
+    assert set(private_ids).isdisjoint(public_ids)
+    assert [row["mission_id"] for row in private_plans] == private_ids
+    assert [row["mission_id"] for row in private_certificates] == private_ids
+    for private_id, public_id in private_cases:
+        private_ticket = read_json(
+            private_input / "missions" / private_id / "mission.json"
+        )
+        public_ticket = read_json(
+            INPUT / public_entries[public_id]["directory"] / "mission.json"
+        )
+        assert private_ticket["mission_id"] == private_id
+        assert private_ticket["battery"]["capacity_units"] > public_ticket[
+            "battery"
+        ]["capacity_units"]
 
     completed = invoke_submitted_solver(
         SOLVER_PATH,
